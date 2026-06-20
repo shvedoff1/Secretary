@@ -18,6 +18,10 @@ export async function onPhoto(ctx: Context): Promise<void> {
     return;
   }
 
+  // Only read a photo when the bot is addressed (DM, @mention, or a reply to
+  // the bot) — otherwise we'd OCR every picture dropped in the group.
+  if (!isAddressed(ctx)) return;
+
   const largest = photos[photos.length - 1]!;
   let base64: string;
   try {
@@ -39,7 +43,7 @@ export async function onPhoto(ctx: Context): Promise<void> {
 
   await runAndRespond(ctx, {
     userContent: blocks,
-    addressed: true, // a receipt photo in a configured chat is always handled
+    addressed: true, // we only reach here when the bot was addressed
     source: 'photo',
     historyText: caption ? `[чек] ${caption}` : '[чек]',
   });

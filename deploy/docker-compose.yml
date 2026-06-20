@@ -1,13 +1,14 @@
-# Secretary bot + full-tunnel VLESS gateway.
+# Secretary bot + full-tunnel VLESS gateway — SERVER compose.
 #
-# The `vpn` service runs sing-box (VLESS client) with a TUN interface; the `bot`
-# service shares the vpn container's network namespace (network_mode:
-# service:vpn), so 100% of the bot's traffic — Telegram, Anthropic, Splid, DNS —
-# exits through the VPN. Nothing leaks around it.
+# Place this directory's contents at /srv/secretary on the box:
+#   /srv/secretary/docker-compose.yml
+#   /srv/secretary/.env                 (secrets: BOT_TOKEN, ANTHROPIC_API_KEY, ADMIN_TELEGRAM_ID)
+#   /srv/secretary/singbox/config.json  (secret: your VLESS config)
+#   /srv/secretary/data/                (created automatically; SQLite lives here)
 #
-# Secrets are NOT in this file:
-#   - bot secrets         -> ../.env            (BOT_TOKEN, ANTHROPIC_API_KEY, ...)
-#   - real VLESS config   -> ./singbox/config.json  (gitignored; copy from config.example.json)
+# `vpn` runs sing-box (VLESS client) with a TUN device; `bot` shares its network
+# namespace, so 100% of the bot's traffic exits through the VPN. The bot image is
+# pulled from GHCR (same path the site uses); CI sets BOT_IMAGE to the new tag.
 
 services:
   vpn:
@@ -18,8 +19,6 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    # Force DNS to a public resolver so queries enter the TUN and sing-box can
-    # tunnel/hijack them (avoids leaking to the host resolver).
     dns:
       - 1.1.1.1
     volumes:
@@ -32,19 +31,14 @@ services:
       retries: 3
 
   bot:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    # If the box can't build (or you build+push in CI), replace `build` with:
-    # image: ghcr.io/shvedoff1/secretary:latest
+    image: ${BOT_IMAGE:-ghcr.io/shvedoff1/secretary:latest}
     container_name: secretary-bot
     restart: unless-stopped
-    # All traffic rides the vpn container's network stack.
-    network_mode: "service:vpn"
+    network_mode: "service:vpn" # all traffic rides the VPN container's stack
     env_file:
-      - ../.env
+      - ./.env
     volumes:
-      - ../data:/app/data
+      - ./data:/app/data
     depends_on:
       vpn:
         condition: service_healthy

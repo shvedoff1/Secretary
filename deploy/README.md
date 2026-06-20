@@ -1,89 +1,97 @@
-# Deploy (server + full VLESS tunnel)
+# Deploy (same box as `blog`, full VLESS tunnel)
 
-Runs the bot on the same box as the `blog` site, with **all** of its traffic
-forced through a VLESS VPN (the box is in RU and can't reach Telegram/Anthropic
-directly).
+Mirrors `blog`'s pipeline: CI builds a Docker image, pushes it to **GHCR**, then
+SSHes into the box and `docker compose pull && up`. Secretary runs as its own
+compose project in `/srv/secretary` (no Caddy — the bot has no inbound ports).
+All of the bot's runtime traffic (Telegram, Anthropic, Splid, DNS) is forced
+through a **VLESS VPN** via a sing-box sidecar.
 
-> Status: **draft / awaiting two inputs** — see "What I still need" below. The
-> VPN sidecar + compose are wired; the VLESS outbound and the integration with
-> `blog`'s deploy method need to be filled in.
+Image pulls reach GHCR fine from the box (that's how the site deploys); only the
+bot's *runtime* traffic is blocked, which is exactly what the VPN handles. No
+bootstrap problem.
 
-## How it works
+## Architecture
 
-- `vpn` service = **sing-box** with a TUN interface (VLESS client). One process
-  handles TCP/UDP/DNS transparently.
-- `bot` service = this repo's Docker image, started with
-  `network_mode: "service:vpn"` — it has **no own network**, it uses the vpn
-  container's stack. So every request (Telegram long-poll, Anthropic API, Splid,
-  DNS) goes out through the tunnel. No per-library proxy config, no leaks.
+- `vpn` = **sing-box**, VLESS client with a TUN interface (one process: TCP/UDP/DNS).
+- `bot` = `ghcr.io/shvedoff1/secretary`, started with `network_mode: "service:vpn"`
+  — no own network, rides the vpn container's stack. Everything tunnels; nothing
+  leaks. The bot exposes no ports, so it needs no reverse proxy.
 
-## Prerequisites on the box
-
-- Docker + Docker Compose v2.
-- `/dev/net/tun` available and `NET_ADMIN` allowed for containers (default on
-  most VPS; fails on some restricted hosts — tell me if so).
-- A way to get the two images onto the box (see Bootstrapping).
-
-## Bootstrapping on a blocked box (important)
-
-GitHub/Docker Hub are often unreachable from RU, so pulling
-`ghcr.io/sagernet/sing-box` and building/pulling the bot image can fail —
-chicken-and-egg (need the VPN to fetch the VPN). Options, depending on how
-`blog` already does it:
-
-1. **CI builds, box pulls from a reachable registry.** If `blog` already
-   pushes images to a registry the box can reach, do the same for both images
-   (mirror sing-box there too). Preferred if that path exists.
-2. **Build/pull on a machine with access, `docker save` → `scp` → `docker load`**
-   on the box. Works without the box reaching any registry.
-3. The box already has some egress (existing proxy/VPN for the site) — then a
-   normal `docker compose pull/build` just works.
-
-Which one applies depends on `blog`'s setup — that's one of the inputs I need.
-
-## Steps
+## One-time setup on the box
 
 ```bash
-# 1. Secrets for the bot
-cp ../.env.example ../.env && $EDITOR ../.env        # BOT_TOKEN, ANTHROPIC_API_KEY, ADMIN_TELEGRAM_ID
+sudo mkdir -p /srv/secretary/singbox && cd /srv/secretary
 
-# 2. VPN config (real one is gitignored)
+# 1. Compose file + VPN config template (copy from the repo's deploy/ dir)
+#    docker-compose.yml  and  singbox/config.example.json
+
+# 2. Bot secrets
+cat > .env <<'EOF'
+BOT_TOKEN=...
+ANTHROPIC_API_KEY=...
+ADMIN_TELEGRAM_ID=...
+# optional: ANTHROPIC_MODEL, DEFAULT_CURRENCY, ENABLE_WEB_SEARCH, ...
+EOF
+
+# 3. VPN config (your real vless config — NOT in git)
 cp singbox/config.example.json singbox/config.json
-# fill vless-out from your vless:// link (I can generate this exactly — see below)
+#   (already filled for the handyhost VLESS link; see note below)
 
-# 3. Bring it up
-docker compose up -d --build
+# 4. GHCR access: the box must be able to pull the Secretary image.
+#    Either make the GHCR package public, or (same as the site) ensure the box
+#    is logged in:  echo $GHCR_PAT | docker login ghcr.io -u shvedoff1 --password-stdin
 
-# 4. Verify ALL egress goes through the VPN (should print the VPN exit IP, not the box IP)
-docker compose exec bot sh -c 'wget -qO- https://api.ipify.org || true'
-docker compose logs -f bot
+# 5. First start
+docker compose up -d
+docker compose ps
 ```
 
-## Verifying the tunnel
+### Verify the tunnel (do this first)
 
-- `docker compose exec bot sh -c 'wget -qO- https://api.ipify.org'` must return
-  the **VPN's** IP, not the server's. If it returns the server IP or times out,
-  traffic isn't going through the tunnel — stop and fix before relying on it.
-- Bot log should show `bot started (long polling)`.
+```bash
+docker compose exec -T bot node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(console.log)"
+```
+
+Must print **5.101.0.199** (the VLESS exit), not the server's IP. If it prints the
+server IP or errors, traffic isn't tunneling — fix before relying on it. Then
+`docker compose logs -f bot` should show `bot started (long polling)`.
+
+## CI/CD
+
+`.github/workflows/deploy.yml` runs on push to `main` (and manual dispatch):
+
+1. **ci** — `npm ci`, `npm run typecheck`, `npm test`, `npm run build`.
+2. **image** — build + push `ghcr.io/shvedoff1/secretary:latest` and
+   `:sha-<short>` (image path is lowercased — the repo name has a capital S).
+3. **deploy** — SSH to the box, `cd /srv/secretary`, set `BOT_IMAGE` to the new
+   tag, `docker compose pull && up -d`, and print the egress IP.
+
+### Required GitHub secrets (on the Secretary repo)
+
+Same values as `blog` (same box): `SSH_HOST`, `SSH_USER`, `SSH_KEY`.
+`GITHUB_TOKEN` is automatic and is used to push to GHCR.
+
+> The bot currently lives on `claude/telegram-expense-chatbot-mciloy`. The deploy
+> job only fires on `main`, so merge there when you're ready to ship (or trigger
+> it manually via *workflow_dispatch* after adjusting the branch filter).
+
+## VPN config note
+
+`singbox/config.json` is already generated from your link
+(`vless://…@5.101.0.199:443` REALITY / xtls-rprx-vision, SNI `www.ya.ru`). It is
+**gitignored** — copy it to the box manually; it never enters git.
+
+`SINGBOX_VERSION` defaults to `v1.11.15`. If that tag doesn't exist / fails to
+pull, set it in `.env` to a current `ghcr.io/sagernet/sing-box` tag. The config
+uses the 1.11 schema (`inet4_address`); on 1.12+ it still works but logs a
+deprecation warning.
 
 ## Updating
 
+Push to `main` → CI redeploys automatically. Manual:
+
 ```bash
-git pull
-docker compose up -d --build      # or: docker compose pull && up -d, if using a registry
+cd /srv/secretary && docker compose pull && docker compose up -d
 ```
 
-Data (SQLite) persists in `../data` (mounted volume) across rebuilds.
-
-## What I still need from you
-
-1. **`blog`'s deploy method** — paste (or grant repo access to) its
-   `docker-compose.yml` / Dockerfile / CI workflow (`.github/workflows/*`) /
-   nginx or Caddy config / any deploy script, and how images reach the box.
-   I'll then make this match (same registry/CI/compose project, reverse proxy if
-   relevant — though the bot needs no inbound port).
-2. **Your `vless://` link** (or the Xray/sing-box JSON). It encodes everything
-   (server, port, uuid, flow, TLS/REALITY/transport). I'll convert it into the
-   exact `vless-out` block and verify it against the pinned sing-box version.
-   It's a secret — it lives only in `singbox/config.json` (gitignored), not in
-   git.
+SQLite data persists in `/srv/secretary/data` across redeploys.

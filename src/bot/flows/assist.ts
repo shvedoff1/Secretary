@@ -163,8 +163,12 @@ async function runAndRespondInner(
   } catch (err) {
     logger.error({ err }, 'assistant call failed');
     if (args.addressed) {
+      const status = (err as { status?: number })?.status;
+      const overloaded = status === 529 || status === 503 || status === 429;
       await ctx.reply(
-        '⚠️ Не получилось обратиться к ИИ — похоже, он сейчас недоступен с текущего IP. Попробуй позже.',
+        overloaded
+          ? '⚠️ ИИ сейчас перегружен (529). Я уже несколько раз перепробовал — дай ему минутку и повтори. 🤙'
+          : '⚠️ Не получилось обратиться к ИИ. Попробуй ещё раз чуть позже.',
       );
     }
     return;

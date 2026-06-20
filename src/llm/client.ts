@@ -6,6 +6,13 @@ let client: Anthropic | undefined;
 export function getAnthropic(): Anthropic {
   if (client) return client;
   const { ANTHROPIC_API_KEY } = loadConfig();
-  client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+  // The SDK retries transient failures (429, 5xx incl. 529 "Overloaded") with
+  // exponential backoff + jitter and respects retry-after. Bump from the
+  // default 2 so brief overloads don't surface as a user-facing error.
+  client = new Anthropic({
+    apiKey: ANTHROPIC_API_KEY,
+    maxRetries: 5,
+    timeout: 120_000,
+  });
   return client;
 }

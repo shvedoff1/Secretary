@@ -98,9 +98,6 @@ export async function runAndRespond(
     return;
   }
 
-  // Record the user's turn for future context.
-  addTurn({ chatId, role: 'user', tgUserId, content: args.historyText });
-
   if (result.kind === 'expense') {
     if (!chatCfg?.provider_group_id) {
       await ctx.reply(
@@ -122,19 +119,23 @@ export async function runAndRespond(
       source: args.source,
       members,
     });
-    pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
+    // Expenses are a side-channel (preview/confirm), NOT dialogue — keep them out
+    // of conversation history so the assistant doesn't resurface old expenses on
+    // unrelated messages.
     return;
   }
 
-  // Text result. For a silent auto-expense scan that produced no expense, stay quiet.
+  // Text result. For a silent auto-expense scan that produced no expense, stay quiet
+  // and record nothing.
   if (!args.addressed) {
-    pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
     return;
   }
 
   await ctx.reply(result.text, {
     reply_to_message_id: ctx.message?.message_id,
   });
+  // Record this conversational exchange (and only this) for future context.
+  addTurn({ chatId, role: 'user', tgUserId, content: args.historyText });
   addTurn({ chatId, role: 'assistant', tgUserId: null, content: result.text });
   pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
 }
@@ -173,6 +174,15 @@ export async function rewordPending(
     logger.warn({ err }, 'could not load members for reword');
   }
 
+  // Give the model the current draft so a SHORT correction ("это Миша", "сумма
+  // 700", "дели на всех") is applied incrementally instead of being re-parsed
+  // from scratch (which would fail to look like a standalone expense).
+  const currentSummary = renderDraft(pending.draft, nameMapFromMembers(members));
+  const correctionContent =
+    `Это правка уже распознанной траты. Текущее превью:\n${currentSummary}\n\n` +
+    `Применни правку пользователя и верни ПОЛНУЮ трату через record_expense ` +
+    `(сумма, валюта, кто платил, на кого делим). Правка: "${correctionText}"`;
+
   const result = await runAssistant(
     {
       defaultCurrency: chatCfg.default_currency,
@@ -180,13 +190,15 @@ export async function rewordPending(
       memory: getMemory(chatId),
       senderName: senderName(ctx),
       history: [],
-      userContent: correctionText,
+      userContent: correctionContent,
     },
     { remember: (note) => (appendMemory(chatId, note), 'Запомнил.') },
   );
 
   if (result.kind !== 'expense') {
-    await ctx.reply('Не понял это как трату. Попробуйте: «такси 500 за меня и Колю».');
+    await ctx.reply(
+      'Не понял правку. Можешь переписать трату целиком, напр.: «такси 500 за меня и Колю».',
+    );
     return;
   }
 
@@ -199,7 +211,11 @@ export async function rewordPending(
   });
   updateDraft(pendingId, draft);
 
-  const text = renderDraft(draft, nameMapFromMembers(members));
+  const text = renderDraft(
+    draft,
+    nameMapFromMembers(members),
+    members.map((m) => m.name),
+  );
   try {
     await ctx.api.editMessageText(chatId, previewMessageId, text, {
       reply_markup: previewKeyboard(pendingId),

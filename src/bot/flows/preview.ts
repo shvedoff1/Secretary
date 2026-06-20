@@ -8,6 +8,7 @@ import { setEditTarget } from '../editTargets.js';
 export function renderDraft(
   draft: ExpenseDraft,
   nameOf: (id: string) => string,
+  roster?: string[],
 ): string {
   const lines: string[] = [];
   lines.push(`🧾 ${draft.title}`);
@@ -19,7 +20,10 @@ export function renderDraft(
 
   if (draft.unresolved.length > 0) {
     lines.push(`⚠️ Не распознаны: ${draft.unresolved.join(', ')}`);
-    lines.push('Нельзя записать, пока не исправите (✏️).');
+    if (roster && roster.length > 0) {
+      lines.push(`Участники группы: ${roster.join(', ')}`);
+    }
+    lines.push('✏️ Ответь на это сообщение и уточни, кто это (напр. «это Миша»).');
   }
   if (draft.notes) lines.push(`📝 ${draft.notes}`);
   if (draft.confidence < 0.6) {
@@ -67,7 +71,11 @@ export async function presentDraft(
     source: args.source,
   });
 
-  const text = renderDraft(args.draft, nameMapFromMembers(args.members));
+  const text = renderDraft(
+    args.draft,
+    nameMapFromMembers(args.members),
+    args.members.map((m) => m.name),
+  );
   const sent = await ctx.reply(text, {
     reply_markup: previewKeyboard(pending.id),
   });

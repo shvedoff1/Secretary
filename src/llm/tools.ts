@@ -15,7 +15,7 @@ export function buildTools(enableWebSearch: boolean): Anthropic.ToolUnion[] {
     {
       name: REMEMBER_TOOL,
       description:
-        'Save a durable fact about this chat/group (trip context, preferences, corrections) to long-term memory.',
+        'Save a durable note to long-term memory. ONLY call this when the user EXPLICITLY asks to remember/save something (e.g. "запомни…", "сохрани…", "remember that…"). Never auto-remember expenses, receipts, or casual chatter.',
       input_schema: rememberJsonSchema as unknown as Anthropic.Tool.InputSchema,
     },
   ];

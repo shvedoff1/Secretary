@@ -119,7 +119,9 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export BOT_IMAGE="$DEPLOY_IMAGE"
             docker compose pull
-            if ! docker compose up -d; then
+            # --force-recreate so containers re-bind the (possibly rewritten)
+            # config/.env files instead of keeping a stale single-file mount.
+            if ! docker compose up -d --force-recreate --remove-orphans; then
               echo "=== compose ps ==="; docker compose ps || true
               echo "=== vpn (sing-box) logs ==="; docker compose logs --no-color --tail=120 vpn || true
               echo "=== bot logs ==="; docker compose logs --no-color --tail=40 bot || true

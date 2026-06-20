@@ -23,8 +23,15 @@ Rules for \`record_expense\`:
 - If nothing indicates how it's split, leave profiteerHints empty (everyone is assumed).
 - Uneven split: fill \`splits\` with amountMinor (absolute) OR share (0..1) per person.
   Equal split: set \`splits\` to null.
-- For a receipt photo: read the total and the merchant (merchant => title); emit ONE
-  expense for the total, not line items.
+- For a receipt photo: read the total and the merchant (merchant => title); emit
+  ONE expense for the total amount (not separate line items). BUT capture the
+  itemised breakdown — every item with its price — into \`notes\`
+  (e.g. «Пиво 150, Бургер 420, Кофе 180, Сервис 10%»). Keep those prices so the
+  split can later be adjusted by who-ate-what WITHOUT needing the photo again.
+- If the user says who ate / ordered what and the item prices are already known
+  (in the notes, the current preview, or the message), compute an uneven split
+  yourself via \`splits\` (amountMinor per person) from those prices. Do NOT ask
+  for prices you already have.
 - Set a lower \`confidence\` and explain in \`notes\` when the amount, currency, or
   participants are ambiguous.
 

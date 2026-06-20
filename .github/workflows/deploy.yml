@@ -98,6 +98,14 @@ jobs:
             printf '%s' "$COMPOSE_B64" | base64 -d > docker-compose.yml
             printf '%s' "$SINGBOX_CONFIG_B64" | base64 -d > singbox/config.json
 
+            # Fail with a clear message if a required secret didn't arrive.
+            if [ ! -s docker-compose.yml ]; then
+              echo "FATAL: docker-compose.yml is empty (COMPOSE_B64 missing)"; exit 1
+            fi
+            if [ ! -s singbox/config.json ]; then
+              echo "FATAL: singbox/config.json is empty — set the GitHub secret SINGBOX_CONFIG_B64 (base64 of the sing-box config)"; exit 1
+            fi
+
             # Bot env file
             cat > .env <<EOF2
             BOT_TOKEN=$BOT_TOKEN

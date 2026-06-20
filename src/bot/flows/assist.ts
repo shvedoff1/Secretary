@@ -5,7 +5,7 @@ import { logger } from '../../logger.js';
 import { getProvider } from '../../core/registry.js';
 import { buildDraft } from '../../core/expenseService.js';
 import type { Member } from '../../core/types.js';
-import { runAssistant } from '../../llm/assistant.js';
+import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
@@ -70,22 +70,33 @@ export async function runAndRespond(
   const memory = getMemory(chatId);
   const history = recentTurns(chatId, cfg.CONVERSATION_HISTORY_LIMIT);
 
-  const result = await runAssistant(
-    {
-      defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
-      members: members.map((m) => ({ name: m.name, initials: m.initials })),
-      memory,
-      senderName: senderName(ctx),
-      history,
-      userContent: args.userContent,
-    },
-    {
-      remember: (note) => {
-        appendMemory(chatId, note);
-        return 'Запомнил.';
+  let result: AssistantResult;
+  try {
+    result = await runAssistant(
+      {
+        defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
+        members: members.map((m) => ({ name: m.name, initials: m.initials })),
+        memory,
+        senderName: senderName(ctx),
+        history,
+        userContent: args.userContent,
       },
-    },
-  );
+      {
+        remember: (note) => {
+          appendMemory(chatId, note);
+          return 'Запомнил.';
+        },
+      },
+    );
+  } catch (err) {
+    logger.error({ err }, 'assistant call failed');
+    if (args.addressed) {
+      await ctx.reply(
+        '⚠️ Не получилось обратиться к ИИ — похоже, он сейчас недоступен с текущего IP. Попробуй позже.',
+      );
+    }
+    return;
+  }
 
   // Record the user's turn for future context.
   addTurn({ chatId, role: 'user', tgUserId, content: args.historyText });

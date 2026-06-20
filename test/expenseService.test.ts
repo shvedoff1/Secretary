@@ -8,6 +8,11 @@ const members: Member[] = [
   { id: 'm', name: 'Маша', initials: 'MA' },
 ];
 
+const namedMembers: Member[] = [
+  { id: 'mi', name: 'Михаил Иванов', initials: 'МИ' },
+  { id: 'an', name: 'Антон', initials: 'АН' },
+];
+
 function parsed(over: Partial<ParsedExpense>): ParsedExpense {
   return {
     title: 'Taxi',
@@ -74,6 +79,28 @@ describe('buildDraft', () => {
     });
     expect(d.unresolved.length).toBeGreaterThan(0);
     expect(d.payers).toEqual([]);
+  });
+
+  it('resolves Russian diminutives via the built-in dictionary', () => {
+    const d = buildDraft({
+      parsed: parsed({ profiteerHints: ['Миха', 'Тоха'] }),
+      members: namedMembers,
+      senderMemberId: 'mi',
+      defaultCurrency: 'EUR',
+    });
+    expect(d.profiteers.map((p) => p.memberId).sort()).toEqual(['an', 'mi']);
+    expect(d.unresolved).toEqual([]);
+  });
+
+  it('prefers a chat-specific learned alias', () => {
+    const d = buildDraft({
+      parsed: parsed({ profiteerHints: ['бобёр'] }),
+      members: namedMembers,
+      senderMemberId: 'mi',
+      defaultCurrency: 'EUR',
+      aliases: new Map([['бобёр', 'an']]),
+    });
+    expect(d.profiteers.map((p) => p.memberId)).toEqual(['an']);
   });
 
   it('carries uneven splits by member hint', () => {

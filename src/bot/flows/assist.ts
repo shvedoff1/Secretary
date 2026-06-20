@@ -4,12 +4,13 @@ import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { getProvider } from '../../core/registry.js';
 import { buildDraft } from '../../core/expenseService.js';
-import type { Member } from '../../core/types.js';
+import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
+import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
   recentTurns,
@@ -49,6 +50,40 @@ async function clearThinking(ctx: Context): Promise<void> {
     await ctx.react([]);
   } catch {
     /* reactions are best-effort */
+  }
+}
+
+/**
+ * When a correction resolves a name that was previously unrecognised, remember
+ * the nickname → member mapping for next time. Only the unambiguous case (one
+ * unresolved name before, one new member after) is learned.
+ */
+function learnAliasFromCorrection(
+  chatId: number,
+  oldDraft: ExpenseDraft,
+  newDraft: ExpenseDraft,
+  members: Member[],
+): void {
+  // Real unresolved names only (skip synthetic placeholders like "(плательщик…)").
+  const oldNames = oldDraft.unresolved.filter((u) => !u.startsWith('('));
+  if (oldNames.length !== 1) return;
+
+  const idsOf = (d: ExpenseDraft): Set<string> =>
+    new Set([...d.payers, ...d.profiteers].map((s) => s.memberId));
+  const before = idsOf(oldDraft);
+  const added = [...idsOf(newDraft)].filter((id) => !before.has(id));
+  if (added.length !== 1) return;
+
+  const member = members.find((m) => m.id === added[0]);
+  if (!member) return;
+
+  const alias = oldNames[0]!;
+  try {
+    setAlias(chatId, alias, member.id, member.name);
+    appendMemory(chatId, `«${alias}» — это ${member.name}`);
+    logger.info({ chatId, alias, member: member.name }, 'learned name alias');
+  } catch (err) {
+    logger.warn({ err }, 'failed to learn name alias');
   }
 }
 
@@ -148,6 +183,7 @@ async function runAndRespondInner(
       members,
       senderMemberId: senderMapping?.provider_member_id ?? null,
       defaultCurrency: chatCfg.default_currency,
+      aliases: getAliasMap(chatId),
     });
     await presentDraft(ctx, {
       chatId,
@@ -259,8 +295,14 @@ async function rewordPendingInner(
     members,
     senderMemberId: senderMapping?.provider_member_id ?? null,
     defaultCurrency: chatCfg.default_currency,
+    aliases: getAliasMap(chatId),
   });
   updateDraft(pendingId, draft);
+
+  // Learn the nickname: if the previous draft had exactly one unresolved name
+  // and this correction resolved exactly one new member, remember that mapping
+  // (both as a fast lookup and a human-readable note in chat memory).
+  learnAliasFromCorrection(chatId, pending.draft, draft, members);
 
   const text = renderDraft(
     draft,

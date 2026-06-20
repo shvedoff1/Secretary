@@ -1,5 +1,6 @@
 import type { ParsedExpense, ExpenseDraft, Member, Split } from './types.js';
 import { normalizeName } from '../util/ids.js';
+import { sameGivenName } from './nameAliases.js';
 
 const ME_HINTS = new Set(['me', 'я', 'i', 'myself', 'мне', 'меня']);
 const ALL_HINTS = new Set([
@@ -15,9 +16,16 @@ function resolveHint(
   hint: string,
   members: Member[],
   senderMemberId: string | null,
+  aliases?: Map<string, string>,
 ): string | null {
   const n = normalizeName(hint);
   if (ME_HINTS.has(n)) return senderMemberId;
+
+  // chat-specific learned aliases win (the user taught these explicitly)
+  if (aliases) {
+    const id = aliases.get(n);
+    if (id && members.some((m) => m.id === id)) return id;
+  }
 
   // exact name
   const exact = members.find((m) => normalizeName(m.name) === n);
@@ -35,6 +43,10 @@ function resolveHint(
   );
   if (partial.length === 1) return partial[0]!.id;
 
+  // Russian diminutive dictionary (Миха → Михаил, Тоха → Антон, …)
+  const byAlias = members.filter((m) => sameGivenName(n, m.name));
+  if (byAlias.length === 1) return byAlias[0]!.id;
+
   return null;
 }
 
@@ -48,8 +60,10 @@ export function buildDraft(args: {
   members: Member[];
   senderMemberId: string | null;
   defaultCurrency: string;
+  /** Chat-specific learned aliases: normalized alias → member id. */
+  aliases?: Map<string, string>;
 }): ExpenseDraft {
-  const { parsed, members, senderMemberId, defaultCurrency } = args;
+  const { parsed, members, senderMemberId, defaultCurrency, aliases } = args;
   const currency = (parsed.currency || defaultCurrency).toUpperCase();
   const unresolved: string[] = [];
 
@@ -65,7 +79,7 @@ export function buildDraft(args: {
   } else {
     payers = [];
     for (const hint of parsed.payerHints) {
-      const id = resolveHint(hint, members, senderMemberId);
+      const id = resolveHint(hint, members, senderMemberId, aliases);
       if (id) payers.push({ memberId: id });
       else unresolved.push(hint);
     }
@@ -78,7 +92,7 @@ export function buildDraft(args: {
   if (parsed.splits && parsed.splits.length > 0) {
     profiteers = [];
     for (const s of parsed.splits) {
-      const id = resolveHint(s.memberHint, members, senderMemberId);
+      const id = resolveHint(s.memberHint, members, senderMemberId, aliases);
       if (!id) {
         unresolved.push(s.memberHint);
         continue;
@@ -100,7 +114,7 @@ export function buildDraft(args: {
         profiteers = everyone();
         break;
       }
-      const id = resolveHint(hint, members, senderMemberId);
+      const id = resolveHint(hint, members, senderMemberId, aliases);
       if (id) profiteers.push({ memberId: id });
       else unresolved.push(hint);
     }

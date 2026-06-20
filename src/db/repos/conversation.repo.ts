@@ -64,3 +64,10 @@ export function pruneOld(chatId: number, keep: number): void {
     )
     .run(chatId, chatId, keep);
 }
+
+/** Wipe all dialogue history for a chat. */
+export function clearTurns(chatId: number): void {
+  getDb()
+    .prepare('DELETE FROM conversation_turn WHERE chat_id = ?')
+    .run(chatId);
+}

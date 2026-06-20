@@ -22,6 +22,7 @@ import {
   appendMemory,
   clearMemory,
 } from '../../db/repos/memory.repo.js';
+import { clearTurns } from '../../db/repos/conversation.repo.js';
 
 /** Gate: supreme admin only, and only in a private chat (other chats' data must
  * not leak into a group). Returns false (and replies) if not allowed. */
@@ -210,7 +211,8 @@ export async function cmdClearMemory(ctx: Context): Promise<void> {
     return;
   }
   clearMemory(id);
-  await ctx.reply(`🧹 Память чата ${id} очищена.`);
+  clearTurns(id);
+  await ctx.reply(`🧹 Память и история диалога чата ${id} очищены.`);
 }
 
 // --- member links -----------------------------------------------------------

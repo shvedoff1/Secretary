@@ -4,6 +4,7 @@ import {
   appendMemory,
   clearMemory,
 } from '../../db/repos/memory.repo.js';
+import { clearTurns } from '../../db/repos/conversation.repo.js';
 
 export async function cmdMemory(ctx: Context): Promise<void> {
   if (!ctx.chat) return;
@@ -27,5 +28,6 @@ export async function cmdRemember(ctx: Context): Promise<void> {
 export async function cmdForget(ctx: Context): Promise<void> {
   if (!ctx.chat) return;
   clearMemory(ctx.chat.id);
-  await ctx.reply('🧹 Память чата очищена.');
+  clearTurns(ctx.chat.id);
+  await ctx.reply('🧹 Память и история диалога очищены.');
 }

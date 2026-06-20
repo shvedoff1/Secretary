@@ -28,7 +28,8 @@ jobs:
 
   image:
     needs: ci
-    if: github.ref == 'refs/heads/main'
+    # Build/push only for real deploys: main pushes or an explicit manual run.
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -64,7 +65,9 @@ jobs:
 
   deploy:
     needs: image
-    if: github.ref == 'refs/heads/main'
+    # Deploy only on main pushes or an explicit manual run — never automatically
+    # from a feature branch (the box is shared with the site).
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -40,9 +40,13 @@ in with it during deploy, so the package can stay private).
 
 ## Ship it
 
-The deploy job runs only on `main`. Merge the feature branch (a PR is opened for
-this) → it deploys automatically. Or run **Actions → build & deploy → Run
-workflow** manually.
+After setting the secrets above, deploy with one click — no server access:
+**Actions → build & deploy → Run workflow** (pick the current branch). This
+builds, pushes the image, and provisions the box end-to-end.
+
+Auto-deploy is intentionally limited to pushes on `main` (the box is shared with
+the site, so feature-branch pushes never deploy by themselves). When you're ready
+for push-to-deploy, merge this branch into `main`.
 
 ## Verify the tunnel
 

@@ -105,6 +105,10 @@ jobs:
             if [ ! -s singbox/config.json ]; then
               echo "FATAL: singbox/config.json is empty — set the GitHub secret SINGBOX_CONFIG_B64 (base64 of the sing-box config)"; exit 1
             fi
+            # Compat shim: sing-box >=1.11 made the legacy tun "inet4_address"
+            # field fatal. Rewrite it to the new "address" list so older configs
+            # (already stored in the secret) keep working without a re-paste.
+            sed -i -E 's/"inet4_address"[[:space:]]*:[[:space:]]*"([^"]+)"/"address": ["\1"]/' singbox/config.json
 
             # Bot env file
             cat > .env <<EOF2

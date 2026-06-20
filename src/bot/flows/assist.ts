@@ -23,6 +23,7 @@ import {
   type PendingSource,
 } from '../../db/repos/pending.repo.js';
 import { previewKeyboard } from '../keyboards.js';
+import { mdToTelegramHtml, stripMarkdown } from '../../util/telegramHtml.js';
 
 export function senderName(ctx: Context): string {
   const u = ctx.from;
@@ -50,6 +51,24 @@ async function clearThinking(ctx: Context): Promise<void> {
     await ctx.react([]);
   } catch {
     /* reactions are best-effort */
+  }
+}
+
+/**
+ * Send an assistant reply, rendering its markdown as Telegram HTML. If Telegram
+ * rejects the HTML (malformed entities), fall back to plain text so the message
+ * still goes through rather than being lost.
+ */
+async function replyMarkdown(
+  ctx: Context,
+  text: string,
+  extra: { reply_to_message_id?: number },
+): Promise<void> {
+  try {
+    await ctx.reply(mdToTelegramHtml(text), { ...extra, parse_mode: 'HTML' });
+  } catch (err) {
+    logger.warn({ err }, 'HTML reply failed, falling back to plain text');
+    await ctx.reply(stripMarkdown(text), extra);
   }
 }
 
@@ -208,7 +227,7 @@ async function runAndRespondInner(
     return;
   }
 
-  await ctx.reply(result.text, {
+  await replyMarkdown(ctx, result.text, {
     reply_to_message_id: ctx.message?.message_id,
   });
   // Record this conversational exchange (and only this) for future context.

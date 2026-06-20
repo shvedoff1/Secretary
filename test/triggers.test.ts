@@ -1,0 +1,64 @@
+import { describe, it, expect } from 'vitest';
+import { looksLikeExpense, isAddressed, routeMessage } from '../src/bot/triggers.js';
+import type { Context } from 'grammy';
+
+function ctx(over: Record<string, unknown>): Context {
+  return {
+    me: { id: 999, username: 'SecretaryBot' },
+    ...over,
+  } as unknown as Context;
+}
+
+describe('looksLikeExpense', () => {
+  it('matches spend-like text with a number', () => {
+    expect(looksLikeExpense('я потратил 500 за такси')).toBe(true);
+    expect(looksLikeExpense('dinner 60 split with Anna')).toBe(true);
+  });
+  it('ignores chatter and numberless text', () => {
+    expect(looksLikeExpense('всем привет, как дела')).toBe(false);
+    expect(looksLikeExpense('потратил кучу сил')).toBe(false);
+  });
+});
+
+describe('isAddressed', () => {
+  it('always true in private chats', () => {
+    expect(isAddressed(ctx({ chat: { type: 'private' } }))).toBe(true);
+  });
+  it('true when replying to the bot', () => {
+    const c = ctx({
+      chat: { type: 'group' },
+      message: { reply_to_message: { from: { id: 999 } } },
+    });
+    expect(isAddressed(c)).toBe(true);
+  });
+  it('true on @mention of the bot', () => {
+    const text = 'эй @SecretaryBot где корт';
+    const c = ctx({
+      chat: { type: 'group' },
+      message: {
+        text,
+        entities: [{ type: 'mention', offset: 3, length: 13 }],
+      },
+    });
+    expect(isAddressed(c)).toBe(true);
+  });
+  it('false for plain group chatter', () => {
+    const c = ctx({ chat: { type: 'group' }, message: { text: 'привет' } });
+    expect(isAddressed(c)).toBe(false);
+  });
+});
+
+describe('routeMessage', () => {
+  it('processes when addressed', () => {
+    const c = ctx({ chat: { type: 'private' }, message: { text: 'hi' } });
+    expect(routeMessage(c, 'hi')).toBe('process');
+  });
+  it('auto-expense for unaddressed spend in a group', () => {
+    const c = ctx({ chat: { type: 'group' }, message: { text: 'потратил 500 за такси' } });
+    expect(routeMessage(c, 'потратил 500 за такси')).toBe('auto-expense');
+  });
+  it('ignores unaddressed chatter in a group', () => {
+    const c = ctx({ chat: { type: 'group' }, message: { text: 'привет всем' } });
+    expect(routeMessage(c, 'привет всем')).toBe('ignore');
+  });
+});

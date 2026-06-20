@@ -1,0 +1,123 @@
+# Secretary — Telegram expense bot → Splid
+
+A Telegram bot that lives in a group chat and:
+
+- **records shared expenses** from plain language ("я потратил 500 за такси за меня
+  и Колю") or **receipt photos**, shows a preview with ✅/✏️/❌ buttons, and writes
+  the confirmed expense to **[Splid](https://splid.app)**;
+- doubles as a **chat assistant** — ask it questions (with web search), and it keeps
+  **per-chat memory** (trip context, group composition, currency, free-form notes);
+- is **admin-gated**: only approved users can use it, so it can't be abused.
+
+Parsing and receipt OCR use **Claude** (`claude-opus-4-8`, vision). Splid is integrated
+behind a swappable provider interface, so other targets (Splitwise, Sheets, …) can be
+added without touching the core.
+
+## How it works
+
+- **Expenses** are auto-detected in a group (no need to address the bot). The bot maps
+  Telegram users to Splid members; the sender is the default payer and everyone is the
+  default split unless the message says otherwise. Nothing is written until you tap ✅.
+- **Chat**: in a group the bot replies to general questions only when you **@mention it
+  or reply to its message**; in private chats it always replies. Reply to a preview
+  message with a corrected sentence to re-parse the expense.
+- **Memory**: `/remember`, `/memory`, `/forget`, and the bot can also save facts itself.
+
+## Setup
+
+1. **Create a bot** with [@BotFather](https://t.me/BotFather) → get the token.
+   - To let the bot auto-detect expense messages in groups, disable privacy mode:
+     BotFather → `/setprivacy` → your bot → **Disable**. (Otherwise it only sees
+     commands, @mentions, and replies.)
+2. **Find your Telegram numeric id** (e.g. via [@userinfobot](https://t.me/userinfobot)
+   or the bot's `/whoami`). This is the admin.
+3. **Get an Anthropic API key** at https://console.anthropic.com.
+4. Copy `.env.example` → `.env` and fill it in.
+
+### Run locally
+
+```bash
+npm install
+npm run dev      # watch mode
+# or
+npm run build && npm start
+```
+
+### Run with Docker
+
+```bash
+docker build -t secretary-bot .
+docker run --env-file .env -v "$(pwd)/data:/app/data" secretary-bot
+```
+
+The SQLite database lives in `./data` (mounted as a volume).
+
+### Configuration (`.env`)
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `BOT_TOKEN` | yes | — | From @BotFather |
+| `ANTHROPIC_API_KEY` | yes | — | Claude API key |
+| `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
+| `ANTHROPIC_MODEL` | no | `claude-opus-4-8` | Model id |
+| `DEFAULT_CURRENCY` | no | `EUR` | ISO 4217, used when unstated |
+| `DATABASE_PATH` | no | `./data/bot.sqlite` | SQLite file |
+| `LOG_LEVEL` | no | `info` | pino level |
+| `PENDING_TTL_MINUTES` | no | `30` | Preview expiry |
+| `CONVERSATION_HISTORY_LIMIT` | no | `20` | Turns kept as context |
+| `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
+
+## In-chat setup
+
+1. `/request` (each non-admin user) → admin approves via the inline buttons.
+2. `/group <invite-code>` — connect the chat to a Splid group (the invite code from the
+   Splid app). The group id is cached.
+3. `/members` — see the Splid roster.
+4. `/link <name|initials>` — link your Telegram account to a Splid member (admins can
+   link others by replying to their message). The sender must be linked to be the
+   default payer.
+
+Then just talk:
+
+- `я потратил 500 за такси за меня и Колю` → preview → ✅ → written to Splid.
+- send a **photo of a receipt** (optionally with a caption) → preview → ✅.
+- `/remember у нас поездка в Бали` then `@bot где корт поближе?`
+
+## Commands
+
+`/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
+`/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
+
+## Architecture
+
+```
+bot/        grammY handlers, triggers, auth gate, preview/confirm flow
+llm/        Claude assistant (tool-use router): record_expense | remember | web_search
+core/       provider-agnostic types + ExpenseProvider interface + registry + resolver
+providers/  splid/  (the ONLY place splid-js is imported)
+db/         better-sqlite3 + migrations + repos
+```
+
+The expense write path is a side-effecting tool gated behind a human confirmation:
+the model only *proposes* an expense; the user confirms before it is saved. Splid lives
+behind `ExpenseProvider` — add a file under `providers/` and register it in
+`core/registry.ts` to support another target.
+
+> **Note:** Splid has no official API; this uses the unofficial
+> [`splid-js`](https://github.com/LinusBolls/splid-js) client (group invite code →
+> group id, no account). It may change — which is exactly why it's isolated behind the
+> provider interface.
+
+## Tests
+
+```bash
+npm test
+```
+
+Covers money conversion, the Splid mapping, hint resolution, the parse schema, and the
+group trigger rules.
+
+## Deployment notes
+
+Runs as a single long-polling process (no public HTTPS/webhook needed). grammY supports
+webhooks with the same handlers if you later want to scale.

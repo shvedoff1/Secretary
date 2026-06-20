@@ -111,7 +111,13 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export BOT_IMAGE="$DEPLOY_IMAGE"
             docker compose pull
-            docker compose up -d
+            if ! docker compose up -d; then
+              echo "=== compose ps ==="; docker compose ps || true
+              echo "=== vpn (sing-box) logs ==="; docker compose logs --no-color --tail=120 vpn || true
+              echo "=== bot logs ==="; docker compose logs --no-color --tail=40 bot || true
+              docker logout ghcr.io || true
+              exit 1
+            fi
             docker logout ghcr.io || true
 
             docker compose ps

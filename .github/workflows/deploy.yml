@@ -67,25 +67,67 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: SSH deploy
+      - uses: actions/checkout@v4
+
+      # Ship the compose file (single source of truth lives in the repo).
+      - name: Copy compose to box
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: deploy/docker-compose.yml
+          target: /srv/secretary
+          strip_components: 1
+
+      # Write secrets, log into GHCR, pull & start — all hands-off.
+      - name: Deploy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          envs: DEPLOY_IMAGE
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,SINGBOX_CONFIG_B64,SINGBOX_VERSION,ANTHROPIC_MODEL,DEFAULT_CURRENCY
           script: |
             set -euo pipefail
+            test -e /dev/net/tun || { echo "FATAL: /dev/net/tun missing on host — bot needs TUN for the VPN"; exit 1; }
+
             cd /srv/secretary
+            mkdir -p singbox data
+            umask 077
+
+            # VPN config (passed base64 to survive multiline transport)
+            printf '%s' "$SINGBOX_CONFIG_B64" | base64 -d > singbox/config.json
+
+            # Bot env file
+            cat > .env <<EOF2
+            BOT_TOKEN=$BOT_TOKEN
+            ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+            ADMIN_TELEGRAM_ID=$ADMIN_TELEGRAM_ID
+            ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-8}
+            DEFAULT_CURRENCY=${DEFAULT_CURRENCY:-EUR}
+            SINGBOX_VERSION=${SINGBOX_VERSION:-v1.11.15}
+            EOF2
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export BOT_IMAGE="$DEPLOY_IMAGE"
-            echo "→ deploying $BOT_IMAGE"
             docker compose pull
             docker compose up -d
+            docker logout ghcr.io || true
+
             docker compose ps
-            # Confirm the bot's egress actually goes through the VPN (should
-            # print the VLESS exit IP, not the server's).
+            # Confirm egress rides the VPN (should print the VLESS exit IP, not the box).
             sleep 3
             docker compose exec -T bot node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(t=>console.log('egress IP:',t)).catch(e=>console.log('egress check failed:',e.message))" || true
             docker image prune -f
         env:
           DEPLOY_IMAGE: ${{ needs.image.outputs.image }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
+          SINGBOX_CONFIG_B64: ${{ secrets.SINGBOX_CONFIG_B64 }}
+          SINGBOX_VERSION: ${{ vars.SINGBOX_VERSION }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          DEFAULT_CURRENCY: ${{ vars.DEFAULT_CURRENCY }}

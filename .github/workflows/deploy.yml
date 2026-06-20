@@ -97,6 +97,9 @@ jobs:
 
             DIR="$HOME/secretary"
             mkdir -p "$DIR/data"
+            # The image runs as the unprivileged "node" user (UID 1000); make the
+            # bind-mounted data dir writable for it regardless of the host UID.
+            chmod 777 "$DIR/data"
             cd "$DIR"
             umask 077
 

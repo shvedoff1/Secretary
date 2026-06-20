@@ -1,0 +1,50 @@
+# Secretary bot + full-tunnel VLESS gateway.
+#
+# The `vpn` service runs sing-box (VLESS client) with a TUN interface; the `bot`
+# service shares the vpn container's network namespace (network_mode:
+# service:vpn), so 100% of the bot's traffic — Telegram, Anthropic, Splid, DNS —
+# exits through the VPN. Nothing leaks around it.
+#
+# Secrets are NOT in this file:
+#   - bot secrets         -> ../.env            (BOT_TOKEN, ANTHROPIC_API_KEY, ...)
+#   - real VLESS config   -> ./singbox/config.json  (gitignored; copy from config.example.json)
+
+services:
+  vpn:
+    image: ghcr.io/sagernet/sing-box:${SINGBOX_VERSION:-v1.11.15}
+    container_name: secretary-vpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # Force DNS to a public resolver so queries enter the TUN and sing-box can
+    # tunnel/hijack them (avoids leaking to the host resolver).
+    dns:
+      - 1.1.1.1
+    volumes:
+      - ./singbox/config.json:/etc/sing-box/config.json:ro
+    command: ["run", "-c", "/etc/sing-box/config.json"]
+    healthcheck:
+      test: ["CMD", "sing-box", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  bot:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    # If the box can't build (or you build+push in CI), replace `build` with:
+    # image: ghcr.io/shvedoff1/secretary:latest
+    container_name: secretary-bot
+    restart: unless-stopped
+    # All traffic rides the vpn container's network stack.
+    network_mode: "service:vpn"
+    env_file:
+      - ../.env
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      vpn:
+        condition: service_healthy

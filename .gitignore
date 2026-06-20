@@ -9,3 +9,6 @@ data/
 .env.local
 *.log
 .DS_Store
+
+# Real VPN config holds server/uuid/keys — keep only the example in git.
+deploy/singbox/config.json

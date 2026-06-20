@@ -16,7 +16,7 @@ UI). The box just needs Docker + Compose (already there — it runs the site) an
   — no own network, rides the vpn container's stack. Everything tunnels; nothing
   leaks. The bot exposes no ports, so no reverse proxy is needed.
 
-The deploy lives in its own compose project at `/srv/secretary` on the box
+The deploy lives in its own compose project at `~/secretary` (the deploy user's home) on the box
 (separate from the site). Image pulls reach GHCR fine (that's how the site
 deploys); only the bot's *runtime* traffic is blocked, which the VPN handles.
 
@@ -54,7 +54,7 @@ The deploy job prints the bot's egress IP at the end. It must be **5.101.0.199**
 (the VLESS exit), not the server's IP. To check anytime:
 
 ```bash
-docker compose -f /srv/secretary/docker-compose.yml exec -T bot \
+docker compose -f ~/secretary/docker-compose.yml exec -T bot \
   node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(console.log)"
 ```
 
@@ -69,6 +69,6 @@ Then in Telegram: `/start` → `/request` → approve from the admin account →
   `SINGBOX_VERSION` repo variable to a current `ghcr.io/sagernet/sing-box` tag.
   The config uses the 1.11 schema (`inet4_address`); on 1.12+ it still works but
   logs a deprecation warning.
-- Data (SQLite) persists in `/srv/secretary/data` across redeploys.
-- `deploy/docker-compose.yml` is the single source of truth — the workflow scp's
+- Data (SQLite) persists in `~/secretary/data` across redeploys.
+- `deploy/docker-compose.yml` is the single source of truth — the workflow base64-encodes
   it to the box each deploy.

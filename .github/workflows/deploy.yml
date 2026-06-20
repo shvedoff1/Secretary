@@ -72,34 +72,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Ship the compose file (single source of truth lives in the repo).
-      - name: Copy compose to box
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          source: deploy/docker-compose.yml
-          target: /srv/secretary
-          strip_components: 1
+      # Encode the compose file so the ssh step can write it on the box (no scp,
+      # no need for write access to /srv). Repo stays the single source of truth.
+      - name: Encode compose
+        run: echo "COMPOSE_B64=$(base64 -w0 deploy/docker-compose.yml)" >> "$GITHUB_ENV"
 
-      # Write secrets, log into GHCR, pull & start — all hands-off.
+      # Write everything under the user's home, log into GHCR, pull & start.
       - name: Deploy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,SINGBOX_CONFIG_B64,SINGBOX_VERSION,ANTHROPIC_MODEL,DEFAULT_CURRENCY
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,SINGBOX_CONFIG_B64,COMPOSE_B64,SINGBOX_VERSION,ANTHROPIC_MODEL,DEFAULT_CURRENCY
           script: |
             set -euo pipefail
             test -e /dev/net/tun || { echo "FATAL: /dev/net/tun missing on host — bot needs TUN for the VPN"; exit 1; }
 
-            cd /srv/secretary
-            mkdir -p singbox data
+            DIR="$HOME/secretary"
+            mkdir -p "$DIR/singbox" "$DIR/data"
+            cd "$DIR"
             umask 077
 
-            # VPN config (passed base64 to survive multiline transport)
+            # Compose file + VPN config (base64 to survive transport)
+            printf '%s' "$COMPOSE_B64" | base64 -d > docker-compose.yml
             printf '%s' "$SINGBOX_CONFIG_B64" | base64 -d > singbox/config.json
 
             # Bot env file

@@ -2,7 +2,7 @@ import type { Context } from 'grammy';
 import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
-import { isAddressed } from '../triggers.js';
+import { isAddressed, looksLikeExpense } from '../triggers.js';
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
 import { runAndRespond } from '../flows/assist.js';
 
@@ -10,17 +10,35 @@ export async function onPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message?.photo;
   if (!photos || photos.length === 0 || !ctx.chat || !ctx.from) return;
 
+  const caption = ctx.message?.caption?.trim() ?? '';
+  const addressed = isAddressed(ctx);
+  // Read a photo when the bot is addressed (DM / @mention / reply to the bot)
+  // OR the caption itself looks like an expense ("чек на 1200 за ужин"). A bare
+  // picture with no relevant caption is ignored — we don't OCR every photo.
+  if (!addressed && !(caption && looksLikeExpense(caption))) return;
+
+  await handleReceiptPhoto(ctx, photos, caption, addressed);
+}
+
+/**
+ * Download a photo and run it through the assistant as a receipt. Shared by the
+ * photo handler and the "reply to a photo with a ping" path in onMessage.
+ */
+export async function handleReceiptPhoto(
+  ctx: Context,
+  photos: readonly { file_id: string }[],
+  caption: string,
+  addressed: boolean,
+): Promise<void> {
+  if (!ctx.chat || photos.length === 0) return;
+
   const chatCfg = getChatConfig(ctx.chat.id);
   if (!chatCfg?.provider_group_id) {
-    if (isAddressed(ctx)) {
+    if (addressed) {
       await ctx.reply('Подключите группу Splid командой /group <код>, чтобы я разбирал чеки.');
     }
     return;
   }
-
-  // Only read a photo when the bot is addressed (DM, @mention, or a reply to
-  // the bot) — otherwise we'd OCR every picture dropped in the group.
-  if (!isAddressed(ctx)) return;
 
   const largest = photos[photos.length - 1]!;
   let base64: string;
@@ -28,7 +46,7 @@ export async function onPhoto(ctx: Context): Promise<void> {
     base64 = await downloadAsBase64(ctx, largest.file_id);
   } catch (err) {
     logger.error({ err }, 'failed to download receipt photo');
-    await ctx.reply('Не смог скачать фото чека, попробуйте ещё раз.');
+    if (addressed) await ctx.reply('Не смог скачать фото чека, попробуйте ещё раз.');
     return;
   }
 
@@ -38,12 +56,11 @@ export async function onPhoto(ctx: Context): Promise<void> {
       source: { type: 'base64', media_type: 'image/jpeg', data: base64 },
     },
   ];
-  const caption = ctx.message?.caption?.trim();
   if (caption) blocks.push({ type: 'text', text: caption });
 
   await runAndRespond(ctx, {
     userContent: blocks,
-    addressed: true, // we only reach here when the bot was addressed
+    addressed,
     source: 'photo',
     historyText: caption ? `[чек] ${caption}` : '[чек]',
   });

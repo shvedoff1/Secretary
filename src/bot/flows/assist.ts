@@ -32,6 +32,26 @@ export function senderName(ctx: Context): string {
   );
 }
 
+// "Thinking" indicator: react to the message we're processing, then clear it once
+// we're done. Reactions can fail (disabled in chat, missing rights) — never fatal.
+const THINKING = '👀' as const;
+
+async function setThinking(ctx: Context): Promise<void> {
+  try {
+    await ctx.react(THINKING);
+  } catch {
+    /* reactions are best-effort */
+  }
+}
+
+async function clearThinking(ctx: Context): Promise<void> {
+  try {
+    await ctx.react([]);
+  } catch {
+    /* reactions are best-effort */
+  }
+}
+
 /**
  * Run the LLM assistant for a message and act on the result:
  * expense → preview; text → reply (unless this was a silent auto-expense scan).
@@ -43,6 +63,23 @@ export async function runAndRespond(
     addressed: boolean;
     source: PendingSource;
     /** Plain text used for conversation history (e.g. caption or message text). */
+    historyText: string;
+  },
+): Promise<void> {
+  await setThinking(ctx);
+  try {
+    await runAndRespondInner(ctx, args);
+  } finally {
+    await clearThinking(ctx);
+  }
+}
+
+async function runAndRespondInner(
+  ctx: Context,
+  args: {
+    userContent: string | Anthropic.ContentBlockParam[];
+    addressed: boolean;
+    source: PendingSource;
     historyText: string;
   },
 ): Promise<void> {
@@ -145,6 +182,20 @@ export async function runAndRespond(
  * pending draft in place, editing the original preview message.
  */
 export async function rewordPending(
+  ctx: Context,
+  pendingId: string,
+  previewMessageId: number,
+  correctionText: string,
+): Promise<void> {
+  await setThinking(ctx);
+  try {
+    await rewordPendingInner(ctx, pendingId, previewMessageId, correctionText);
+  } finally {
+    await clearThinking(ctx);
+  }
+}
+
+async function rewordPendingInner(
   ctx: Context,
   pendingId: string,
   previewMessageId: number,

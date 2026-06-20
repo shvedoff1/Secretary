@@ -1,6 +1,18 @@
 import type { Context } from 'grammy';
+import { isAdmin } from '../../db/repos/users.repo.js';
 
 export async function cmdHelp(ctx: Context): Promise<void> {
+  const adminSection =
+    ctx.from && isAdmin(ctx.from.id)
+      ? [
+          '',
+          'Админ (в личке):',
+          '/chats — список чатов; /chat <id> — детали',
+          '/setgroup <id> <код> · /setcurrency <id> <CUR>',
+          '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id>',
+          '/setlink <id> <tgUserId> <имя> · /unlink <id> <tgUserId>',
+        ]
+      : [];
   await ctx.reply(
     [
       'Что я умею:',
@@ -16,6 +28,7 @@ export async function cmdHelp(ctx: Context): Promise<void> {
       '/forget — очистить заметки',
       '/whoami — кто я для бота',
       '/request — запросить доступ',
+      ...adminSection,
     ].join('\n'),
   );
 }

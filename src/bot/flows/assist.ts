@@ -7,7 +7,7 @@ import { buildDraft } from '../../core/expenseService.js';
 import type { Member } from '../../core/types.js';
 import { runAssistant } from '../../llm/assistant.js';
 import { toParsedExpense } from '../../llm/schema.js';
-import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
+import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
 import {
@@ -51,6 +51,9 @@ export async function runAndRespond(
   const tgUserId = ctx.from!.id;
 
   const chatCfg = getChatConfig(chatId);
+  if (chatCfg && ctx.chat?.type !== 'private' && ctx.chat && 'title' in ctx.chat && ctx.chat.title) {
+    setChatTitle(chatId, ctx.chat.title);
+  }
 
   // Load the member roster (for name resolution + context) if configured.
   let members: Member[] = [];

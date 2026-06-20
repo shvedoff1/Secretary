@@ -10,6 +10,17 @@ import { cmdMembers } from './commands/members.js';
 import { cmdLink } from './commands/link.js';
 import { cmdWhoami } from './commands/whoami.js';
 import { cmdMemory, cmdRemember, cmdForget } from './commands/memory.js';
+import {
+  cmdChats,
+  cmdChat,
+  cmdSetGroup,
+  cmdSetCurrency,
+  cmdSetMemory,
+  cmdAddMemory,
+  cmdClearMemory,
+  cmdSetLink,
+  cmdUnlink,
+} from './commands/admin.js';
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
 import { handleExpenseCallback } from './flows/confirm.js';
@@ -32,6 +43,17 @@ export function buildBot(token: string): Bot {
   bot.command('memory', cmdMemory);
   bot.command('remember', cmdRemember);
   bot.command('forget', cmdForget);
+
+  // Admin-only chat administration (private chat with the bot).
+  bot.command('chats', cmdChats);
+  bot.command('chat', cmdChat);
+  bot.command('setgroup', cmdSetGroup);
+  bot.command('setcurrency', cmdSetCurrency);
+  bot.command('setmemory', cmdSetMemory);
+  bot.command('addmemory', cmdAddMemory);
+  bot.command('clearmemory', cmdClearMemory);
+  bot.command('setlink', cmdSetLink);
+  bot.command('unlink', cmdUnlink);
 
   bot.callbackQuery(/^u:/, handleUserCallback);
   bot.callbackQuery(/^e:/, handleExpenseCallback);

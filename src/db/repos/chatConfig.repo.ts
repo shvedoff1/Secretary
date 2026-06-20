@@ -8,12 +8,58 @@ export interface ChatConfigRow {
   default_currency: string;
   created_by: number | null;
   created_at: number;
+  title: string | null;
 }
 
 export function getChatConfig(chatId: number): ChatConfigRow | undefined {
   return getDb()
     .prepare('SELECT * FROM chat_config WHERE chat_id = ?')
     .get(chatId) as ChatConfigRow | undefined;
+}
+
+export function listChatConfigs(): ChatConfigRow[] {
+  return getDb()
+    .prepare('SELECT * FROM chat_config ORDER BY created_at')
+    .all() as ChatConfigRow[];
+}
+
+/** Best-effort: remember a chat's title when we have it (no-op if no config row). */
+export function setChatTitle(chatId: number, title: string): void {
+  getDb()
+    .prepare('UPDATE chat_config SET title = ? WHERE chat_id = ? AND (title IS NULL OR title <> ?)')
+    .run(title, chatId, title);
+}
+
+/**
+ * Connect/replace the provider group for a chat without clobbering its currency
+ * or title. Used both in-chat (/group) and by the admin from DM (/setgroup).
+ */
+export function setProviderGroup(args: {
+  chatId: number;
+  providerName: string;
+  credential: string;
+  providerGroupId: string;
+  defaultCurrency: string;
+  createdBy: number;
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_config
+         (chat_id, provider_name, credential, provider_group_id, default_currency, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         provider_name = excluded.provider_name,
+         credential = excluded.credential,
+         provider_group_id = excluded.provider_group_id`,
+    )
+    .run(
+      args.chatId,
+      args.providerName,
+      args.credential,
+      args.providerGroupId,
+      args.defaultCurrency,
+      args.createdBy,
+    );
 }
 
 export function upsertChatConfig(args: {

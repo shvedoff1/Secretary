@@ -2,7 +2,11 @@ import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { getProvider } from '../../core/registry.js';
 import { ProviderError } from '../../core/provider.js';
-import { upsertChatConfig } from '../../db/repos/chatConfig.repo.js';
+import {
+  getChatConfig,
+  setProviderGroup,
+  setChatTitle,
+} from '../../db/repos/chatConfig.repo.js';
 
 export async function cmdGroup(ctx: Context): Promise<void> {
   if (!ctx.chat || !ctx.from) return;
@@ -24,14 +28,15 @@ export async function cmdGroup(ctx: Context): Promise<void> {
   }
 
   const { DEFAULT_CURRENCY } = loadConfig();
-  upsertChatConfig({
+  setProviderGroup({
     chatId: ctx.chat.id,
     providerName: 'splid',
     credential: code,
     providerGroupId: groupId,
-    defaultCurrency: DEFAULT_CURRENCY,
+    defaultCurrency: getChatConfig(ctx.chat.id)?.default_currency ?? DEFAULT_CURRENCY,
     createdBy: ctx.from.id,
   });
+  if (ctx.chat.title) setChatTitle(ctx.chat.id, ctx.chat.title);
 
   let count = 0;
   try {

@@ -1,24 +1,23 @@
-# Deploy (same box as `blog`, full VLESS tunnel)
+# Deploy (foreign VPS, no VPN)
 
-Fully automated, mirroring `blog`'s pipeline. On push to `main` (or manual
-dispatch) GitHub Actions: builds & tests → builds the Docker image and pushes it
-to **GHCR** → SSHes into the box and sets everything up itself (writes the
-compose file, `.env`, and the VPN config, logs into GHCR, pulls, and starts).
+Fully automated. On push to `main` (or manual dispatch) GitHub Actions:
+builds & tests → builds the Docker image and pushes it to **GHCR** → SSHes into
+the VPS and sets everything up itself (writes the compose file and `.env`, logs
+into GHCR, pulls, and starts).
 
-**No manual work on the server.** You only set GitHub secrets once (in the repo
-UI). The box just needs Docker + Compose (already there — it runs the site) and
-`/dev/net/tun` with `NET_ADMIN` (default on most VPS).
+**No manual work on the server.** You set GitHub secrets once (in the repo UI).
+The VPS just needs SSH access — the deploy installs Docker automatically if it's
+missing. Pick a host **outside Russia** so the bot can reach Telegram and
+Anthropic directly (Anthropic geo-blocks RU IPs with a 403).
 
 ## Architecture
 
-- `vpn` = **sing-box**, VLESS client with a TUN interface (one process: TCP/UDP/DNS).
-- `bot` = `ghcr.io/shvedoff1/secretary`, started with `network_mode: "service:vpn"`
-  — no own network, rides the vpn container's stack. Everything tunnels; nothing
-  leaks. The bot exposes no ports, so no reverse proxy is needed.
+- `bot` = `ghcr.io/shvedoff/secretary`, a single container. It reaches Telegram
+  and Anthropic directly over the VPS's own network — no VPN sidecar. The bot
+  exposes no ports (long-polling), so no reverse proxy is needed.
 
-The deploy lives in its own compose project at `~/secretary` (the deploy user's home) on the box
-(separate from the site). Image pulls reach GHCR fine (that's how the site
-deploys); only the bot's *runtime* traffic is blocked, which the VPN handles.
+The deploy lives in its own compose project at `~/secretary` (the deploy user's
+home) on the box.
 
 ## Set these once in GitHub (Settings → Secrets and variables → Actions)
 
@@ -26,14 +25,14 @@ deploys); only the bot's *runtime* traffic is blocked, which the VPN handles.
 
 | Secret | Value |
 |---|---|
-| `SSH_HOST`, `SSH_USER`, `SSH_KEY` | Same as `blog` (same box) |
+| `SSH_HOST`, `SSH_USER`, `SSH_KEY` | The foreign VPS (host/IP, user, private key) |
+| `SSH_PORT` | SSH port (optional — defaults to `22`) |
 | `BOT_TOKEN` | Telegram bot token (@BotFather) |
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `ADMIN_TELEGRAM_ID` | Your numeric Telegram id |
-| `SINGBOX_CONFIG_B64` | base64 of the sing-box config (provided to you; = `base64 -w0 deploy/singbox/config.json`) |
 
-**Variables (optional):** `SINGBOX_VERSION` (default `v1.11.15`),
-`ANTHROPIC_MODEL` (default `claude-opus-4-8`), `DEFAULT_CURRENCY` (default `EUR`).
+**Variables (optional):** `ANTHROPIC_MODEL` (default `claude-opus-4-8`),
+`DEFAULT_CURRENCY` (default `EUR`).
 
 `GITHUB_TOKEN` is automatic — used to push to and pull from GHCR (the box logs
 in with it during deploy, so the package can stay private).
@@ -44,18 +43,20 @@ After setting the secrets above, deploy with one click — no server access:
 **Actions → build & deploy → Run workflow** (pick the current branch). This
 builds, pushes the image, and provisions the box end-to-end.
 
-Auto-deploy is intentionally limited to pushes on `main` (the box is shared with
-the site, so feature-branch pushes never deploy by themselves). When you're ready
-for push-to-deploy, merge this branch into `main`.
+Auto-deploy runs on pushes to `main`; feature-branch pushes never deploy by
+themselves (use the manual dispatch). When you're ready for push-to-deploy,
+merge this branch into `main`.
 
-## Verify the tunnel
+## Verify
 
-The deploy job prints the bot's egress IP at the end. It must be **5.101.0.199**
-(the VLESS exit), not the server's IP. To check anytime:
+The deploy job probes Anthropic from inside the bot container at the end — it
+should print `anthropic reachable, status 200` (or `401`/`400`), **not** `403`.
+A 403 means the VPS IP is geo-blocked (i.e. it's in Russia) — move to a host
+elsewhere. To check anytime, run `Actions → diagnose → Run workflow`, or:
 
 ```bash
 docker compose -f ~/secretary/docker-compose.yml exec -T bot \
-  node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(console.log)"
+  node -e "fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'}}).then(r=>console.log(r.status))"
 ```
 
 Then in Telegram: `/start` → `/request` → approve from the admin account →
@@ -63,12 +64,6 @@ Then in Telegram: `/start` → `/request` → approve from the admin account →
 
 ## Notes
 
-- The real VPN config (`deploy/singbox/config.json`) is **gitignored**; it never
-  enters git. It reaches the box only via the `SINGBOX_CONFIG_B64` secret.
-- `SINGBOX_VERSION` defaults to `v1.11.15`. If that tag fails to pull, set the
-  `SINGBOX_VERSION` repo variable to a current `ghcr.io/sagernet/sing-box` tag.
-  The config uses the 1.11 schema (`inet4_address`); on 1.12+ it still works but
-  logs a deprecation warning.
 - Data (SQLite) persists in `~/secretary/data` across redeploys.
-- `deploy/docker-compose.yml` is the single source of truth — the workflow base64-encodes
-  it to the box each deploy.
+- `deploy/docker-compose.yml` is the single source of truth — the workflow
+  base64-encodes it to the box each deploy.

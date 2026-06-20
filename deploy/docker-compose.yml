@@ -1,44 +1,19 @@
-# Secretary bot + full-tunnel VLESS gateway — SERVER compose.
+# Secretary bot — SERVER compose (foreign VPS, no VPN needed).
 #
-# Place this directory's contents at /srv/secretary on the box:
-#   /srv/secretary/docker-compose.yml
-#   /srv/secretary/.env                 (secrets: BOT_TOKEN, ANTHROPIC_API_KEY, ADMIN_TELEGRAM_ID)
-#   /srv/secretary/singbox/config.json  (secret: your VLESS config)
-#   /srv/secretary/data/                (created automatically; SQLite lives here)
+# Deployed to ~/secretary on the box by the GitHub Actions deploy job:
+#   ~/secretary/docker-compose.yml   (written from the repo, base64)
+#   ~/secretary/.env                 (secrets: BOT_TOKEN, ANTHROPIC_API_KEY, ADMIN_TELEGRAM_ID)
+#   ~/secretary/data/                (SQLite lives here)
 #
-# `vpn` runs sing-box (VLESS client) with a TUN device; `bot` shares its network
-# namespace, so 100% of the bot's traffic exits through the VPN. The bot image is
-# pulled from GHCR (same path the site uses); CI sets BOT_IMAGE to the new tag.
+# The VPS is outside RU, so the bot reaches Telegram and Anthropic directly —
+# no VPN sidecar needed.
 
 services:
-  vpn:
-    image: ghcr.io/sagernet/sing-box:${SINGBOX_VERSION:-v1.11.15}
-    container_name: secretary-vpn
-    restart: unless-stopped
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    dns:
-      - 1.1.1.1
-    volumes:
-      - ./singbox/config.json:/etc/sing-box/config.json:ro
-    command: ["run", "-c", "/etc/sing-box/config.json"]
-    healthcheck:
-      test: ["CMD", "sing-box", "version"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
   bot:
     image: ${BOT_IMAGE:-ghcr.io/shvedoff1/secretary:latest}
     container_name: secretary-bot
     restart: unless-stopped
-    network_mode: "service:vpn" # all traffic rides the VPN container's stack
     env_file:
       - ./.env
     volumes:
       - ./data:/app/data
-    depends_on:
-      vpn:
-        condition: service_healthy

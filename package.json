@@ -17,6 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",
     "better-sqlite3": "^12.4.1",
+    "croner": "^9.1.0",
     "dotenv": "^17.2.3",
     "grammy": "^1.39.1",
     "pino": "^10.0.0",

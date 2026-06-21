@@ -10,6 +10,15 @@ import { toParsedExpense } from '../../llm/schema.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
+import { getTimezone, setTimezone } from '../../db/repos/chatSettings.repo.js';
+import { createTask } from '../../db/repos/scheduledTask.repo.js';
+import {
+  nextRunMs,
+  isValidSchedule,
+  isValidTimezone,
+  formatInTimezone,
+} from '../../util/schedule.js';
+import type { ScheduleTaskInput } from '../../llm/schema.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -107,6 +116,42 @@ function learnAliasFromCorrection(
 }
 
 /**
+ * Build the `schedule_task` handler for a chat: validates the model's cron +
+ * timezone, persists the task, remembers the chat timezone (so we only ask once),
+ * and returns a human confirmation the assistant relays back.
+ */
+export function makeScheduleTaskHandler(
+  chatId: number,
+  tgUserId: number,
+  defaultTz: string,
+): (input: ScheduleTaskInput) => string {
+  return (input) => {
+    const tz = isValidTimezone(input.timezone) ? input.timezone : defaultTz;
+    if (!isValidSchedule(input.cron, tz)) {
+      return 'Не понял расписание — уточни время (напр. «каждый день в 9 утра»).';
+    }
+    const next = nextRunMs(input.cron, tz);
+    if (next === null) {
+      return 'Это расписание уже не сработает — уточни время.';
+    }
+    setTimezone(chatId, tz);
+    const id = createTask({
+      chatId,
+      tgUserId,
+      title: input.title,
+      prompt: input.prompt,
+      cron: input.cron,
+      timezone: tz,
+      once: input.once,
+      nextRunAt: next,
+    });
+    const when = formatInTimezone(next, tz);
+    const kind = input.once ? 'Напоминание' : 'Регулярная задача';
+    return `${kind} #${id} «${input.title}» создана. Первый запуск: ${when} (${tz}). Список: /tasks`;
+  };
+}
+
+/**
  * Run the LLM assistant for a message and act on the result:
  * expense → preview; text → reply (unless this was a silent auto-expense scan).
  */
@@ -169,6 +214,7 @@ async function runAndRespondInner(
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memory,
         senderName: senderName(ctx),
+        timezone: getTimezone(chatId),
         history,
         userContent: args.userContent,
       },
@@ -177,6 +223,7 @@ async function runAndRespondInner(
           appendMemory(chatId, note);
           return 'Запомнил.';
         },
+        scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       },
     );
   } catch (err) {
@@ -302,10 +349,14 @@ async function rewordPendingInner(
       members: members.map((m) => ({ name: m.name, initials: m.initials })),
       memory: getMemory(chatId),
       senderName: senderName(ctx),
+      timezone: getTimezone(chatId),
       history: [],
       userContent: correctionContent,
     },
-    { remember: (note) => (appendMemory(chatId, note), 'Запомнил.') },
+    {
+      remember: (note) => (appendMemory(chatId, note), 'Запомнил.'),
+      scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+    },
   );
 
   if (result.kind !== 'expense') {

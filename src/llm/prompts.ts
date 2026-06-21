@@ -13,6 +13,16 @@ group of friends (often while travelling together). You do three things:
 3. Answer questions and chat. Use the chat memory and conversation history for context.
    If a question needs current/local info (e.g. "where's the nearest tennis court"),
    use web search.
+4. Set reminders and recurring tasks. When the user asks to be reminded or to run
+   something on a schedule ("напомни завтра в 9 купить молоко", "каждое утро ищи
+   прогноз волн и кидай сюда"), call the \`schedule_task\` tool. Turn the timing into
+   a standard cron expression. The task's \`prompt\` runs LATER with NO chat history,
+   so write it self-contained (include what to search/say). Use \`once: true\` for a
+   one-off reminder, \`false\` for a repeating task. Timezone: take it from
+   "Chat timezone" in the context block; if it says "unknown", ASK the user for their
+   timezone ONCE (a city is fine — map it to an IANA zone) before scheduling, then use
+   it. The current time is provided in the context block for relative timing
+   ("через 2 минуты", "завтра").
 
 Rules for \`record_expense\`:
 - amountMinor is in MINOR units: 12.50 EUR => 1250; whole-unit currencies (JPY) => bare number.
@@ -57,6 +67,7 @@ export function buildContextBlock(args: {
   members: { name: string; initials?: string }[];
   memory: string;
   senderName: string;
+  timezone: string | null;
 }): string {
   const roster =
     args.members.length > 0
@@ -66,8 +77,11 @@ export function buildContextBlock(args: {
       : '(no members linked yet)';
 
   const memory = args.memory.trim() || '(empty)';
+  const tz = args.timezone ?? 'unknown';
 
   return [
+    `Current time (UTC): ${new Date().toISOString()}`,
+    `Chat timezone: ${tz}`,
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,
     `Message sender: ${args.senderName}`,

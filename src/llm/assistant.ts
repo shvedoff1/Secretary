@@ -3,12 +3,19 @@ import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
 import { SYSTEM_PROMPT, buildContextBlock } from './prompts.js';
-import { buildTools, RECORD_EXPENSE_TOOL, REMEMBER_TOOL } from './tools.js';
+import {
+  buildTools,
+  RECORD_EXPENSE_TOOL,
+  REMEMBER_TOOL,
+  SCHEDULE_TASK_TOOL,
+} from './tools.js';
 import {
   RecordExpenseZ,
   RememberZ,
+  ScheduleTaskZ,
   toParsedExpense,
   type RecordExpenseInput,
+  type ScheduleTaskInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 
@@ -17,6 +24,8 @@ export interface AssistantContext {
   members: { name: string; initials?: string }[];
   memory: string;
   senderName: string;
+  /** Chat IANA timezone, or null if not set yet. */
+  timezone: string | null;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -25,6 +34,8 @@ export interface AssistantContext {
 export interface AssistantHandlers {
   /** Persist a remembered note; return a short human confirmation. */
   remember: (note: string) => string;
+  /** Create a reminder / recurring task; return a short human confirmation. */
+  scheduleTask: (input: ScheduleTaskInput) => string;
 }
 
 export type AssistantResult =
@@ -46,6 +57,7 @@ export async function runAssistant(
     members: ctx.members,
     memory: ctx.memory,
     senderName: ctx.senderName,
+    timezone: ctx.timezone,
   });
 
   const messages: Anthropic.MessageParam[] = [];
@@ -67,10 +79,26 @@ export async function runAssistant(
     const res = await anthropic.messages.create({
       model: cfg.ANTHROPIC_MODEL,
       max_tokens: 2048,
-      system: SYSTEM_PROMPT,
+      // Cache the stable prefix (tools render before system, so one breakpoint on
+      // the system block caches both tool schemas + system prompt). Re-reads cost
+      // ~0.1x: this is the main lever against per-call token cost.
+      system: [
+        { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+      ],
       tools,
       messages,
     });
+
+    logger.debug(
+      {
+        model: cfg.ANTHROPIC_MODEL,
+        input: res.usage.input_tokens,
+        output: res.usage.output_tokens,
+        cacheRead: res.usage.cache_read_input_tokens,
+        cacheWrite: res.usage.cache_creation_input_tokens,
+      },
+      'assistant usage',
+    );
 
     // record_expense short-circuits: it's a side-effecting action gated by a
     // human confirmation, so we stop and let the bot render a preview.
@@ -98,6 +126,20 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.remember(parsed.data.note)
             : 'Could not parse the note.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === SCHEDULE_TASK_TOOL) {
+          const parsed = ScheduleTaskZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'schedule_task input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.scheduleTask(parsed.data)
+            : 'Could not parse the task.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

@@ -7,6 +7,8 @@ A Telegram bot that lives in a group chat and:
   the confirmed expense to **[Splid](https://splid.app)**;
 - doubles as a **chat assistant** — ask it questions (with web search), and it keeps
   **per-chat memory** (trip context, group composition, currency, free-form notes);
+- **reminders & recurring tasks** in plain language ("напомни завтра в 9 купить молоко",
+  "каждое утро ищи прогноз волн и кидай сюда") — scheduled with cron + the chat's timezone;
 - is **admin-gated**: only approved users can use it, so it can't be abused.
 
 Parsing and receipt OCR use **Claude** (`claude-opus-4-8`, vision). Splid is integrated
@@ -22,6 +24,10 @@ added without touching the core.
   or reply to its message**; in private chats it always replies. Reply to a preview
   message with a corrected sentence to re-parse the expense.
 - **Memory**: `/remember`, `/memory`, `/forget`, and the bot can also save facts itself.
+- **Reminders**: ask in natural language and the bot creates a scheduled task (the first
+  time it asks the chat for its timezone, then reuses it). Manage with `/tasks` and
+  `/canceltask <id>`. A background scheduler fires due tasks every minute and posts the
+  result back to the chat.
 
 ## Setup
 
@@ -66,6 +72,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `PENDING_TTL_MINUTES` | no | `30` | Preview expiry |
 | `CONVERSATION_HISTORY_LIMIT` | no | `20` | Turns kept as context |
 | `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
+| `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own |
 
 ## In-chat setup
 
@@ -87,12 +94,14 @@ Then just talk:
 
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
+· reminders: `/tasks` `/canceltask <id>`
 
 ## Architecture
 
 ```
 bot/        grammY handlers, triggers, auth gate, preview/confirm flow
-llm/        Claude assistant (tool-use router): record_expense | remember | web_search
+llm/        Claude assistant (tool-use router): record_expense | remember | schedule_task | web_search
+scheduler.ts  background runner: fires due reminders/tasks every minute
 core/       provider-agnostic types + ExpenseProvider interface + registry + resolver
 providers/  splid/  (the ONLY place splid-js is imported)
 db/         better-sqlite3 + migrations + repos

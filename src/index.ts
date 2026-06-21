@@ -5,6 +5,7 @@ import { closeDb } from './db/client.js';
 import { ensureAdmin } from './db/repos/users.repo.js';
 import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
+import { runDueTasks } from './scheduler.js';
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -25,9 +26,18 @@ async function main(): Promise<void> {
   }, 5 * 60_000);
   sweeper.unref();
 
+  // Fire due reminders / recurring tasks every minute.
+  const scheduler = setInterval(() => {
+    void runDueTasks(bot).catch((err) => {
+      logger.warn({ err }, 'scheduler tick failed');
+    });
+  }, 60_000);
+  scheduler.unref();
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
     clearInterval(sweeper);
+    clearInterval(scheduler);
     await bot.stop();
     closeDb();
     process.exit(0);

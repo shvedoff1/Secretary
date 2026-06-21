@@ -11,21 +11,35 @@ function names(tools: ReturnType<typeof buildTools>): string[] {
 }
 
 describe('buildTools', () => {
-  it('exposes the custom tools with input schemas', () => {
-    const tools = buildTools(false);
-    for (const name of [RECORD_EXPENSE_TOOL, REMEMBER_TOOL, SCHEDULE_TASK_TOOL]) {
+  it('always exposes remember and schedule_task (general secretary, no Splid needed)', () => {
+    const tools = buildTools({ enableWebSearch: false, enableExpense: false });
+    const got = names(tools);
+    expect(got).toContain(REMEMBER_TOOL);
+    expect(got).toContain(SCHEDULE_TASK_TOOL);
+    for (const name of [REMEMBER_TOOL, SCHEDULE_TASK_TOOL]) {
       const tool = tools.find((t) => 'name' in t && t.name === name);
-      expect(tool, `missing tool ${name}`).toBeDefined();
       expect('input_schema' in tool!).toBe(true);
     }
   });
 
+  it('omits record_expense when Splid is not connected', () => {
+    const got = names(buildTools({ enableWebSearch: true, enableExpense: false }));
+    expect(got).not.toContain(RECORD_EXPENSE_TOOL);
+  });
+
+  it('exposes record_expense only when Splid is connected', () => {
+    const got = names(buildTools({ enableWebSearch: false, enableExpense: true }));
+    expect(got).toContain(RECORD_EXPENSE_TOOL);
+  });
+
   it('omits web search when disabled', () => {
-    expect(names(buildTools(false))).not.toContain('web_search');
+    expect(names(buildTools({ enableWebSearch: false, enableExpense: true }))).not.toContain(
+      'web_search',
+    );
   });
 
   it('adds the dynamic-filtering web_search variant when enabled', () => {
-    const webSearch = buildTools(true).find(
+    const webSearch = buildTools({ enableWebSearch: true, enableExpense: false }).find(
       (t) => 'name' in t && t.name === 'web_search',
     );
     expect(webSearch).toBeDefined();

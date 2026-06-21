@@ -1,14 +1,17 @@
-# Secretary — Telegram expense bot → Splid
+# Secretary — Telegram assistant (with optional Splid expenses)
 
-A Telegram bot that lives in a group chat and:
+A Telegram bot that works the same in private chats and groups — a general
+secretary with memory. It:
 
-- **records shared expenses** from plain language ("я потратил 500 за такси за меня
-  и Колю") or **receipt photos**, shows a preview with ✅/✏️/❌ buttons, and writes
-  the confirmed expense to **[Splid](https://splid.app)**;
-- doubles as a **chat assistant** — ask it questions (with web search), and it keeps
-  **per-chat memory** (trip context, group composition, currency, free-form notes);
-- **reminders & recurring tasks** in plain language ("напомни завтра в 9 купить молоко",
-  "каждое утро ищи прогноз волн и кидай сюда") — scheduled with cron + the chat's timezone;
+- **answers questions and chats** (with web search) and keeps **per-chat memory**
+  (preferences, context, free-form notes) — the same in DMs and groups, no setup needed;
+- handles **reminders & recurring tasks** in plain language ("напомни встать через
+  3 минуты", "каждое утро ищи прогноз волн и кидай сюда") — scheduled with cron + the
+  chat's timezone;
+- as an **optional add-on**, records **shared expenses** to **[Splid](https://splid.app)**
+  from plain language or **receipt photos** (preview with ✅/✏️/❌ before saving). This
+  only kicks in once a chat connects a Splid group with `/group`; everything else works
+  without it;
 - is **admin-gated**: only approved users can use it, so it can't be abused.
 
 Parsing and receipt OCR use **Claude** (`claude-opus-4-8`, vision). Splid is integrated

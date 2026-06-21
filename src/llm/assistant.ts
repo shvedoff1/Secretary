@@ -26,6 +26,8 @@ export interface AssistantContext {
   senderName: string;
   /** Chat IANA timezone, or null if not set yet. */
   timezone: string | null;
+  /** Whether a Splid group is connected (gates the record_expense add-on). */
+  splidConnected: boolean;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -50,7 +52,10 @@ export async function runAssistant(
 ): Promise<AssistantResult> {
   const cfg = loadConfig();
   const anthropic = getAnthropic();
-  const tools = buildTools(cfg.ENABLE_WEB_SEARCH);
+  const tools = buildTools({
+    enableWebSearch: cfg.ENABLE_WEB_SEARCH,
+    enableExpense: ctx.splidConnected,
+  });
 
   const contextBlock = buildContextBlock({
     defaultCurrency: ctx.defaultCurrency,
@@ -58,6 +63,7 @@ export async function runAssistant(
     memory: ctx.memory,
     senderName: ctx.senderName,
     timezone: ctx.timezone,
+    splidConnected: ctx.splidConnected,
   });
 
   const messages: Anthropic.MessageParam[] = [];

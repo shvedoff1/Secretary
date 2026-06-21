@@ -215,6 +215,7 @@ async function runAndRespondInner(
         memory,
         senderName: senderName(ctx),
         timezone: getTimezone(chatId),
+        splidConnected: !!chatCfg?.provider_group_id,
         history,
         userContent: args.userContent,
       },
@@ -243,7 +244,8 @@ async function runAndRespondInner(
   if (result.kind === 'expense') {
     if (!chatCfg?.provider_group_id) {
       await ctx.reply(
-        'Сначала подключите группу Splid командой /group <код-приглашения>.',
+        'Чтобы записывать траты в Splid, подключи группу: /group <код-приглашения>. ' +
+          'Это опционально — без него я и так помогу: напоминания, поиск, заметки. 🤙',
       );
       return;
     }
@@ -350,6 +352,7 @@ async function rewordPendingInner(
       memory: getMemory(chatId),
       senderName: senderName(ctx),
       timezone: getTimezone(chatId),
+      splidConnected: !!chatCfg.provider_group_id,
       history: [],
       userContent: correctionContent,
     },

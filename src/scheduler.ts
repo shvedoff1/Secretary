@@ -32,6 +32,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         memory: '',
         senderName: 'scheduler',
         timezone: task.timezone,
+        splidConnected: false,
         history: [],
         userContent: task.prompt,
       },

@@ -32,10 +32,10 @@ export function buildTools(enableWebSearch: boolean): Anthropic.ToolUnion[] {
   ];
 
   if (enableWebSearch) {
-    // Note: the newer web_search_20260209 variant adds dynamic result filtering
-    // (fewer tokens) but requires a newer @anthropic-ai/sdk than is pinned here.
-    // Upgrade the SDK to switch to it — deferred to keep this change focused.
-    tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 5 });
+    // _20260209 adds dynamic result filtering — Claude filters results before they
+    // hit the context window, cutting tokens on search-heavy turns. Supported on
+    // Opus 4.8 (current default) and Sonnet 4.6.
+    tools.push({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
   }
 
   return tools;

@@ -28,6 +28,12 @@ export interface AssistantContext {
   timezone: string | null;
   /** Whether a Splid group is connected (gates the record_expense add-on). */
   splidConnected: boolean;
+  /** Active reminders/tasks in this chat, shown so the model never recreates one. */
+  activeReminders?: { id: number; title: string; when: string }[];
+  /** Expose the remember tool (default true; false for scheduled runs). */
+  allowRemember?: boolean;
+  /** Expose the schedule_task tool (default true; false for scheduled runs). */
+  allowReminders?: boolean;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -42,7 +48,9 @@ export interface AssistantHandlers {
 
 export type AssistantResult =
   | { kind: 'expense'; input: RecordExpenseInput }
-  | { kind: 'text'; text: string };
+  // `scheduled` marks a turn that created/handled a reminder, so the caller can
+  // keep it out of conversation history (a lingering request would re-fire).
+  | { kind: 'text'; text: string; scheduled?: boolean };
 
 const MAX_ITERATIONS = 6;
 
@@ -55,6 +63,8 @@ export async function runAssistant(
   const tools = buildTools({
     enableWebSearch: cfg.ENABLE_WEB_SEARCH,
     enableExpense: ctx.splidConnected,
+    enableRemember: ctx.allowRemember !== false,
+    enableReminders: ctx.allowReminders !== false,
   });
 
   const contextBlock = buildContextBlock({
@@ -64,7 +74,10 @@ export async function runAssistant(
     senderName: ctx.senderName,
     timezone: ctx.timezone,
     splidConnected: ctx.splidConnected,
+    activeReminders: ctx.activeReminders ?? [],
   });
+
+  let scheduled = false;
 
   const messages: Anthropic.MessageParam[] = [];
   for (const turn of ctx.history) {
@@ -139,6 +152,7 @@ export async function runAssistant(
             is_error: !parsed.success,
           });
         } else if (block.name === SCHEDULE_TASK_TOOL) {
+          scheduled = true;
           const parsed = ScheduleTaskZ.safeParse(block.input);
           if (!parsed.success) {
             logger.warn({ err: parsed.error }, 'schedule_task input failed validation');
@@ -177,8 +191,8 @@ export async function runAssistant(
       .map((b) => b.text)
       .join('')
       .trim();
-    return { kind: 'text', text: text || '…' };
+    return { kind: 'text', text: text || '…', scheduled };
   }
 
-  return { kind: 'text', text: 'Что-то пошло не так, попробуй ещё раз.' };
+  return { kind: 'text', text: 'Что-то пошло не так, попробуй ещё раз.', scheduled };
 }

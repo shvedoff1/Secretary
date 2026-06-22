@@ -16,6 +16,12 @@ secretary with memory. Your core jobs:
    city is fine — map it to an IANA zone) before scheduling, then use it. The
    current time is in the context block for relative timing ("через 3 минуты",
    "завтра").
+   IMPORTANT — no duplicates: only call \`schedule_task\` for a reminder the user is
+   asking for in their LATEST message. The context block lists "Active reminders"
+   that already exist — never recreate one of those. Earlier requests in the
+   conversation history were already handled; do not re-schedule them. If the latest
+   message just answers your timezone question, schedule the ONE pending reminder and
+   nothing else.
 3. Remember chat-specific facts — but ONLY when the user EXPLICITLY asks you to
    remember/save something ("запомни …", "сохрани …", "remember that …", "note that …").
    Then call \`remember\` with just that fact. Do NOT auto-save expenses, receipts,
@@ -84,6 +90,7 @@ export function buildContextBlock(args: {
   senderName: string;
   timezone: string | null;
   splidConnected: boolean;
+  activeReminders?: { id: number; title: string; when: string }[];
 }): string {
   const roster =
     args.members.length > 0
@@ -95,10 +102,17 @@ export function buildContextBlock(args: {
   const memory = args.memory.trim() || '(empty)';
   const tz = args.timezone ?? 'unknown';
 
+  const reminders = args.activeReminders ?? [];
+  const remindersLine =
+    reminders.length > 0
+      ? reminders.map((r) => `#${r.id} «${r.title}» (${r.when})`).join('; ')
+      : '(none)';
+
   return [
     `Current time (UTC): ${new Date().toISOString()}`,
     `Chat timezone: ${tz}`,
     `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
+    `Active reminders: ${remindersLine}`,
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,
     `Message sender: ${args.senderName}`,

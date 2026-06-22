@@ -46,4 +46,18 @@ describe('buildTools', () => {
     // Guard the cost-saving variant: a downgrade to an older type should fail here.
     expect((webSearch as { type?: string }).type).toBe('web_search_20260209');
   });
+
+  it('omits remember and schedule_task for scheduled runs (no self-spawning)', () => {
+    const got = names(
+      buildTools({
+        enableWebSearch: true,
+        enableExpense: false,
+        enableRemember: false,
+        enableReminders: false,
+      }),
+    );
+    expect(got).not.toContain(REMEMBER_TOOL);
+    expect(got).not.toContain(SCHEDULE_TASK_TOOL);
+    expect(got).toContain('web_search'); // search still allowed when a task fires
+  });
 });

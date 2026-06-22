@@ -11,7 +11,11 @@ import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
 import { getTimezone, setTimezone } from '../../db/repos/chatSettings.repo.js';
-import { createTask } from '../../db/repos/scheduledTask.repo.js';
+import {
+  createTask,
+  listTasks,
+  findDuplicate,
+} from '../../db/repos/scheduledTask.repo.js';
 import {
   nextRunMs,
   isValidSchedule,
@@ -135,6 +139,12 @@ export function makeScheduleTaskHandler(
       return 'Это расписание уже не сработает — уточни время.';
     }
     setTimezone(chatId, tz);
+    // Guard against re-creating a reminder that already exists (e.g. the original
+    // request lingering in conversation history makes the model fire again).
+    const dup = findDuplicate(listTasks(chatId), { cron: input.cron, title: input.title });
+    if (dup) {
+      return `Это уже стоит — #${dup.id} «${dup.title}» (следующий запуск ${formatInTimezone(dup.nextRunAt, dup.timezone)}).`;
+    }
     const id = createTask({
       chatId,
       tgUserId,
@@ -216,6 +226,11 @@ async function runAndRespondInner(
         senderName: senderName(ctx),
         timezone: getTimezone(chatId),
         splidConnected: !!chatCfg?.provider_group_id,
+        activeReminders: listTasks(chatId).map((t) => ({
+          id: t.id,
+          title: t.title,
+          when: (t.once ? 'разово ' : '') + formatInTimezone(t.nextRunAt, t.timezone),
+        })),
         history,
         userContent: args.userContent,
       },
@@ -279,6 +294,9 @@ async function runAndRespondInner(
   await replyMarkdown(ctx, result.text, {
     reply_to_message_id: ctx.message?.message_id,
   });
+  // A reminder request is a completed side-action, not dialogue — keep it out of
+  // history so it can't replay and re-create the reminder on a later message.
+  if (result.scheduled) return;
   // Record this conversational exchange (and only this) for future context.
   addTurn({ chatId, role: 'user', tgUserId, content: args.historyText });
   addTurn({ chatId, role: 'assistant', tgUserId: null, content: result.text });

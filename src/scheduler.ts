@@ -2,8 +2,6 @@ import type { Bot } from 'grammy';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
 import { runAssistant } from './llm/assistant.js';
-import { makeScheduleTaskHandler } from './bot/flows/assist.js';
-import { appendMemory } from './db/repos/memory.repo.js';
 import {
   dueTasks,
   setNextRun,
@@ -33,16 +31,17 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: false,
+        // A firing reminder just produces text (optionally via web search). It must
+        // NOT be able to create reminders or write memory — otherwise a reminder
+        // could spawn more reminders every time it runs.
+        allowRemember: false,
+        allowReminders: false,
         history: [],
         userContent: task.prompt,
       },
       {
-        remember: (note) => (appendMemory(task.chatId, note), 'Запомнил.'),
-        scheduleTask: makeScheduleTaskHandler(
-          task.chatId,
-          task.tgUserId ?? 0,
-          cfg.DEFAULT_TIMEZONE,
-        ),
+        remember: () => 'noop',
+        scheduleTask: () => 'noop',
       },
     );
     if (result.kind === 'text' && result.text.trim()) {

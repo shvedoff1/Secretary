@@ -1,0 +1,49 @@
+import { describe, it, expect } from 'vitest';
+import { findDuplicate, type ScheduledTask } from '../src/db/repos/scheduledTask.repo.js';
+
+function task(over: Partial<ScheduledTask>): ScheduledTask {
+  return {
+    id: 1,
+    chatId: 100,
+    tgUserId: 1,
+    title: 'Кофе',
+    prompt: 'Напомни выпить кофе',
+    cron: '0 9 * * *',
+    timezone: 'Europe/Lisbon',
+    once: false,
+    enabled: true,
+    nextRunAt: 0,
+    lastRunAt: null,
+    createdAt: 0,
+    ...over,
+  };
+}
+
+describe('findDuplicate', () => {
+  it('matches same schedule + title (case/space-insensitive)', () => {
+    const existing = [task({ id: 7, title: 'Кофе' })];
+    const dup = findDuplicate(existing, { cron: '0 9 * * *', title: '  кофе ' });
+    expect(dup?.id).toBe(7);
+  });
+
+  it('does not match a different time', () => {
+    const existing = [task({ id: 7, cron: '0 9 * * *' })];
+    expect(
+      findDuplicate(existing, { cron: '0 10 * * *', title: 'Кофе' }),
+    ).toBeUndefined();
+  });
+
+  it('does not match a different title', () => {
+    const existing = [task({ id: 7, title: 'Кофе' })];
+    expect(
+      findDuplicate(existing, { cron: '0 9 * * *', title: 'Вода' }),
+    ).toBeUndefined();
+  });
+
+  it('ignores disabled tasks', () => {
+    const existing = [task({ id: 7, enabled: false })];
+    expect(
+      findDuplicate(existing, { cron: '0 9 * * *', title: 'Кофе' }),
+    ).toBeUndefined();
+  });
+});

@@ -47,6 +47,27 @@ function toTask(r: ScheduledTaskRow): ScheduledTask {
   };
 }
 
+function normalizeTitle(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Find an existing active task that is effectively the same as a candidate —
+ * same schedule + same title. Guards against the model recreating a reminder it
+ * already made (e.g. when the original request lingers in conversation history).
+ * Pure function over a task list so it can be unit-tested without a DB.
+ */
+export function findDuplicate(
+  tasks: ScheduledTask[],
+  candidate: { cron: string; title: string },
+): ScheduledTask | undefined {
+  const t = normalizeTitle(candidate.title);
+  return tasks.find(
+    (task) =>
+      task.enabled && task.cron === candidate.cron && normalizeTitle(task.title) === t,
+  );
+}
+
 export function createTask(args: {
   chatId: number;
   tgUserId: number | null;

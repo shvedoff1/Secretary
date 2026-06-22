@@ -48,6 +48,22 @@ export const ScheduleTaskZ = z.object({
 });
 export type ScheduleTaskInput = z.infer<typeof ScheduleTaskZ>;
 
+export const SurfForecastZ = z.object({
+  spots: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+      }),
+    )
+    .min(1)
+    .max(8),
+  day: z.enum(['today', 'tomorrow']),
+  timezone: z.string().min(1),
+});
+export type SurfForecastInput = z.infer<typeof SurfForecastZ>;
+
 // --- JSON Schemas for the Anthropic tool definitions (strict tool use) ---
 
 export const recordExpenseJsonSchema = {
@@ -151,4 +167,45 @@ export const scheduleTaskJsonSchema = {
     },
   },
   required: ['title', 'prompt', 'cron', 'timezone', 'once'],
+} as const;
+
+export const surfForecastJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    spots: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 8,
+      description:
+        'Several popular surf spots near the region the user means. YOU choose them from your own knowledge of the area (the user gives a region/point, not a spot list). Pick 3-6 well-known spots.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', description: 'Spot name, e.g. "Ribeira d\'Ilhas".' },
+          latitude: {
+            type: 'number',
+            description: 'Latitude of a point IN THE WATER at the spot (decimal degrees).',
+          },
+          longitude: {
+            type: 'number',
+            description: 'Longitude of a point IN THE WATER at the spot (decimal degrees).',
+          },
+        },
+        required: ['name', 'latitude', 'longitude'],
+      },
+    },
+    day: {
+      type: 'string',
+      enum: ['today', 'tomorrow'],
+      description: 'Which day to forecast.',
+    },
+    timezone: {
+      type: 'string',
+      description:
+        'IANA timezone for "today"/"tomorrow" and daytime hours. Use the chat timezone from the context block.',
+    },
+  },
+  required: ['spots', 'day', 'timezone'],
 } as const;

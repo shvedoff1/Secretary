@@ -17,8 +17,12 @@ Anthropic SDK. Splid behind a pluggable provider interface.
 
 - `src/bot/` — grammY handlers, commands, triggers, auth gate, preview/confirm flow.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
-  schedule_task | web_search`. Tools in `tools.ts`, Zod + JSON schemas in `schema.ts`,
-  system prompt + context block in `prompts.ts`.
+  schedule_task | surf_forecast | web_search`. Tools in `tools.ts`, Zod + JSON schemas
+  in `schema.ts`, system prompt + context block in `prompts.ts`.
+- `src/surf/` — `surf_forecast` skill: fetches wave/wind from Open-Meteo (the only place
+  that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
+  model supplies candidate spots + coords; the handler stays live in the scheduler so a
+  recurring evening task can post "where to go tomorrow".
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

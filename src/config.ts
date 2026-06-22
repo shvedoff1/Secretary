@@ -25,6 +25,8 @@ const ConfigSchema = z.object({
   PENDING_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   CONVERSATION_HISTORY_LIMIT: z.coerce.number().int().positive().default(20),
   ENABLE_WEB_SEARCH: boolish.default(true),
+  // surf_forecast tool (Open-Meteo marine API; no key needed).
+  ENABLE_SURF: boolish.default(true),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
 });

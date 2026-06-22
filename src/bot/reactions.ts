@@ -1,35 +1,35 @@
 import type { Context } from 'grammy';
+import type { ReactionTypeEmoji } from '@grammyjs/types';
 import { logger } from '../logger.js';
 
-// Telegram only allows a fixed set of emoji for message reactions (🤙/shaka is
-// not one of them). These are valid surfer-vibe picks.
-type ReactionEmoji = '😎' | '🔥';
+// Light chat seasoning: a small fraction of messages get a random positive
+// reaction. No LLM, no memory, no per-user rules.
+const REACT_PROBABILITY = 0.1;
 
-// Deterministic auto-reactions: drop an emoji reaction on specific users'
-// messages. Keyed by Telegram user id so it survives name/username changes —
-// no LLM, no memory, no cost. When several emoji are listed, one is picked at
-// random per message.
-const AUTO_REACTIONS = new Map<number, readonly ReactionEmoji[]>([
-  [68059142, ['😎', '🔥']], // Антоха
-]);
+// Positive subset of Telegram's allowed reaction emojis. `satisfies` makes the
+// build fail if any entry isn't a real Telegram reaction (typos, stray
+// variation selectors), so the allowed set is validated at compile time.
+export const POSITIVE_REACTIONS = [
+  '👍', '❤', '🔥', '🥰', '👏', '😁', '🎉', '🤩', '🙏', '👌', '😍', '💯',
+  '🤣', '⚡', '🏆', '🍓', '🍾', '💋', '🤝', '🤗', '🫡', '🆒', '💘', '🦄',
+  '😘', '😎',
+] as const satisfies readonly ReactionTypeEmoji['emoji'][];
 
 /**
- * React to the incoming message if its sender is in AUTO_REACTIONS. Best-effort:
- * skips slash-commands, and a failed reaction (disabled in chat, missing rights)
- * is logged but never throws — the middleware chain must continue.
+ * With ~10% probability, drop a random positive reaction on the incoming
+ * message. Best-effort: skips slash-commands, and a failed reaction (disabled in
+ * chat, missing rights) is logged but never throws — the middleware chain must
+ * continue.
  */
 export async function maybeAutoReact(ctx: Context): Promise<void> {
-  const userId = ctx.from?.id;
-  if (userId === undefined) return;
-  // Don't react to commands like /help — only real messages.
+  // Don't react to commands like /help — only real chat messages.
   if (ctx.message?.text?.startsWith('/')) return;
-  const choices = AUTO_REACTIONS.get(userId);
-  if (!choices || choices.length === 0) return;
-  const emoji = choices[Math.floor(Math.random() * choices.length)];
+  if (Math.random() >= REACT_PROBABILITY) return;
+  const emoji = POSITIVE_REACTIONS[Math.floor(Math.random() * POSITIVE_REACTIONS.length)];
   if (!emoji) return;
   try {
     await ctx.react(emoji);
   } catch (err) {
-    logger.debug({ err, userId }, 'auto-react failed');
+    logger.debug({ err }, 'auto-react failed');
   }
 }

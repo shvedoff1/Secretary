@@ -1,77 +1,68 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from 'grammy';
-import { maybeAutoReact } from '../src/bot/reactions.js';
-
-const ANTOHA = 68059142;
-const EMOJIS = ['😎', '🔥'];
+import { maybeAutoReact, POSITIVE_REACTIONS } from '../src/bot/reactions.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function fakeCtx(opts: {
-  userId?: number;
-  text?: string;
-  react?: Context['react'];
-}): Context {
+function fakeCtx(opts: { text?: string; react?: Context['react'] }): Context {
   return {
-    from: opts.userId === undefined ? undefined : { id: opts.userId },
     message: opts.text === undefined ? {} : { text: opts.text },
     react: opts.react ?? vi.fn(async () => {}),
   } as unknown as Context;
 }
 
 describe('maybeAutoReact', () => {
-  it('reacts to a configured user with one of their emojis', async () => {
+  it('reacts with a positive emoji when the 10% roll passes', async () => {
     const react = vi.fn(async () => {});
-    await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: 'привет', react }));
+    // First random() = probability roll (0.05 < 0.1 → react); second = emoji index.
+    vi.spyOn(Math, 'random').mockReturnValueOnce(0.05).mockReturnValueOnce(0);
+    await maybeAutoReact(fakeCtx({ text: 'привет', react }));
     expect(react).toHaveBeenCalledOnce();
-    expect(EMOJIS).toContain(react.mock.calls[0]?.[0]);
+    expect(POSITIVE_REACTIONS).toContain(react.mock.calls[0]?.[0]);
   });
 
-  it('picks randomly between the configured emojis', async () => {
-    const low = vi.fn(async () => {});
-    vi.spyOn(Math, 'random').mockReturnValue(0); // first choice
-    await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: 'a', react: low }));
-    expect(low).toHaveBeenCalledWith('😎');
-
-    const high = vi.fn(async () => {});
-    vi.spyOn(Math, 'random').mockReturnValue(0.99); // last choice
-    await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: 'b', react: high }));
-    expect(high).toHaveBeenCalledWith('🔥');
-  });
-
-  it('reacts to non-text messages from the configured user', async () => {
+  it('picks the emoji by index from the random draw', async () => {
     const react = vi.fn(async () => {});
-    // No text (e.g. a sticker/photo) — should still react.
-    await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: undefined, react }));
-    expect(EMOJIS).toContain(react.mock.calls[0]?.[0]);
+    vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.999);
+    await maybeAutoReact(fakeCtx({ text: 'yo', react }));
+    expect(react).toHaveBeenCalledWith(POSITIVE_REACTIONS[POSITIVE_REACTIONS.length - 1]);
   });
 
-  it('does nothing for other users', async () => {
+  it('does nothing when the 10% roll fails', async () => {
     const react = vi.fn(async () => {});
-    await maybeAutoReact(fakeCtx({ userId: 111, text: 'привет', react }));
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // >= 0.1 → skip
+    await maybeAutoReact(fakeCtx({ text: 'привет', react }));
     expect(react).not.toHaveBeenCalled();
   });
 
-  it('skips slash-commands', async () => {
+  it('skips slash-commands even if the roll would pass', async () => {
     const react = vi.fn(async () => {});
-    await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: '/help', react }));
+    vi.spyOn(Math, 'random').mockReturnValue(0); // would react if not a command
+    await maybeAutoReact(fakeCtx({ text: '/help', react }));
     expect(react).not.toHaveBeenCalled();
   });
 
-  it('ignores messages with no sender', async () => {
+  it('reacts to non-text messages (stickers/photos) too', async () => {
     const react = vi.fn(async () => {});
-    await maybeAutoReact(fakeCtx({ userId: undefined, react }));
-    expect(react).not.toHaveBeenCalled();
+    vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0);
+    await maybeAutoReact(fakeCtx({ text: undefined, react }));
+    expect(react).toHaveBeenCalledOnce();
   });
 
   it('swallows reaction errors (best-effort)', async () => {
     const react = vi.fn(async () => {
       throw new Error('reactions disabled');
     });
-    await expect(
-      maybeAutoReact(fakeCtx({ userId: ANTOHA, text: 'yo', react })),
-    ).resolves.toBeUndefined();
+    vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0);
+    await expect(maybeAutoReact(fakeCtx({ text: 'yo', react }))).resolves.toBeUndefined();
+  });
+
+  it('only lists positive reactions (no negative ones)', () => {
+    const negatives = ['👎', '💩', '🤮', '🖕', '😡', '🤬', '💔', '😭'];
+    for (const n of negatives) {
+      expect(POSITIVE_REACTIONS as readonly string[]).not.toContain(n);
+    }
   });
 });

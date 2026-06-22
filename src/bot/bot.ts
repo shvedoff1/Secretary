@@ -33,9 +33,9 @@ export function buildBot(token: string): Bot {
   // Default-deny gate (lets /start, /help, /request through for everyone).
   bot.use(authGate);
 
-  // Deterministic auto-reactions (e.g. react to a specific user's messages).
-  // Runs for any message type that passed the gate; reacts then continues the
-  // chain so normal routing (commands, expense/chat) still happens.
+  // Light auto-reactions: with a small probability, drop a random positive
+  // reaction on a message. Runs for any message type that passed the gate, then
+  // continues the chain so normal routing (commands, expense/chat) still happens.
   bot.on('message', async (ctx, next) => {
     await maybeAutoReact(ctx);
     await next();

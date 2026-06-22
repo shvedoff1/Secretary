@@ -13,10 +13,12 @@ describe('looksLikeExpense', () => {
   it('matches spend-like text with a number', () => {
     expect(looksLikeExpense('я потратил 500 за такси')).toBe(true);
     expect(looksLikeExpense('dinner 60 split with Anna')).toBe(true);
+    expect(looksLikeExpense('купил продукты на 500')).toBe(true);
   });
   it('ignores chatter and numberless text', () => {
     expect(looksLikeExpense('всем привет, как дела')).toBe(false);
     expect(looksLikeExpense('потратил кучу сил')).toBe(false);
+    expect(looksLikeExpense('купил продуктов')).toBe(false); // no number
   });
 });
 

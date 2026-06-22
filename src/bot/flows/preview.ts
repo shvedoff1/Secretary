@@ -32,6 +32,27 @@ export function renderDraft(
   return lines.join('\n');
 }
 
+/**
+ * Final message shown after the expense is recorded. Unlike the one-line
+ * confirmation it keeps the meaningful details (payer, split, notes) so they
+ * aren't lost when the preview message is edited in place. Rendered from the
+ * draft (not the preview text) so it's correct even on the retry path.
+ */
+export function renderConfirmed(
+  draft: ExpenseDraft,
+  nameOf: (id: string) => string,
+  providerName: string,
+): string {
+  const lines = [`✅ Записано в ${providerName}`];
+  lines.push(`🧾 ${draft.title}`);
+  lines.push(`💰 ${formatMoney(draft.amountMinor, draft.currency)}`);
+  const payerNames = draft.payers.map((p) => nameOf(p.memberId)).join(', ');
+  lines.push(`👤 Платил: ${payerNames || '—'}`);
+  lines.push(`👥 Делим на: ${describeProfiteers(draft.profiteers, nameOf)}`);
+  if (draft.notes) lines.push(`📝 ${draft.notes}`);
+  return lines.join('\n');
+}
+
 function describeProfiteers(
   profiteers: Split[],
   nameOf: (id: string) => string,

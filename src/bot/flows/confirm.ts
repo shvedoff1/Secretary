@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
+import type { Member } from '../../core/types.js';
 import { getProvider } from '../../core/registry.js';
 import { ProviderError } from '../../core/provider.js';
-import { formatMoney } from '../../util/money.js';
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
 import {
   getPending,
@@ -10,6 +10,7 @@ import {
 } from '../../db/repos/pending.repo.js';
 import { recordAudit } from '../../db/repos/audit.repo.js';
 import { previewKeyboard } from '../keyboards.js';
+import { renderConfirmed, nameMapFromMembers } from './preview.js';
 import { clearEditTarget } from '../editTargets.js';
 import { logger } from '../../logger.js';
 
@@ -98,12 +99,18 @@ async function submit(
       draft: pending.draft,
       outcome: 'submitted',
     });
+    // Re-render from the draft so the confirmation keeps the details (payer,
+    // split, notes) instead of collapsing to a single line. Names need members;
+    // a failed lookup just falls back to "(?)" without losing the rest.
+    let members: Member[] = [];
+    try {
+      members = await provider.listMembers({ groupId: cfg.provider_group_id });
+    } catch (err) {
+      logger.warn({ err, pendingId }, 'could not load members for confirmation');
+    }
     await safeEdit(
       ctx,
-      `✅ Записано в ${cfg.provider_name}: ${pending.draft.title} — ${formatMoney(
-        pending.draft.amountMinor,
-        pending.draft.currency,
-      )}`,
+      renderConfirmed(pending.draft, nameMapFromMembers(members), cfg.provider_name),
     );
     if (ctx.chat) clearEditTarget(ctx.chat.id, ctx.callbackQuery!.message!.message_id);
   } catch (err) {

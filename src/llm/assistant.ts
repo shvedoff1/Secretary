@@ -3,12 +3,19 @@ import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
 import { SYSTEM_PROMPT, buildContextBlock } from './prompts.js';
-import { buildTools, RECORD_EXPENSE_TOOL, REMEMBER_TOOL } from './tools.js';
+import {
+  buildTools,
+  RECORD_EXPENSE_TOOL,
+  REMEMBER_TOOL,
+  SCHEDULE_TASK_TOOL,
+} from './tools.js';
 import {
   RecordExpenseZ,
   RememberZ,
+  ScheduleTaskZ,
   toParsedExpense,
   type RecordExpenseInput,
+  type ScheduleTaskInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 
@@ -17,6 +24,16 @@ export interface AssistantContext {
   members: { name: string; initials?: string }[];
   memory: string;
   senderName: string;
+  /** Chat IANA timezone, or null if not set yet. */
+  timezone: string | null;
+  /** Whether a Splid group is connected (gates the record_expense add-on). */
+  splidConnected: boolean;
+  /** Active reminders/tasks in this chat, shown so the model never recreates one. */
+  activeReminders?: { id: number; title: string; when: string }[];
+  /** Expose the remember tool (default true; false for scheduled runs). */
+  allowRemember?: boolean;
+  /** Expose the schedule_task tool (default true; false for scheduled runs). */
+  allowReminders?: boolean;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -25,11 +42,15 @@ export interface AssistantContext {
 export interface AssistantHandlers {
   /** Persist a remembered note; return a short human confirmation. */
   remember: (note: string) => string;
+  /** Create a reminder / recurring task; return a short human confirmation. */
+  scheduleTask: (input: ScheduleTaskInput) => string;
 }
 
 export type AssistantResult =
   | { kind: 'expense'; input: RecordExpenseInput }
-  | { kind: 'text'; text: string };
+  // `scheduled` marks a turn that created/handled a reminder, so the caller can
+  // keep it out of conversation history (a lingering request would re-fire).
+  | { kind: 'text'; text: string; scheduled?: boolean };
 
 const MAX_ITERATIONS = 6;
 
@@ -39,14 +60,24 @@ export async function runAssistant(
 ): Promise<AssistantResult> {
   const cfg = loadConfig();
   const anthropic = getAnthropic();
-  const tools = buildTools(cfg.ENABLE_WEB_SEARCH);
+  const tools = buildTools({
+    enableWebSearch: cfg.ENABLE_WEB_SEARCH,
+    enableExpense: ctx.splidConnected,
+    enableRemember: ctx.allowRemember !== false,
+    enableReminders: ctx.allowReminders !== false,
+  });
 
   const contextBlock = buildContextBlock({
     defaultCurrency: ctx.defaultCurrency,
     members: ctx.members,
     memory: ctx.memory,
     senderName: ctx.senderName,
+    timezone: ctx.timezone,
+    splidConnected: ctx.splidConnected,
+    activeReminders: ctx.activeReminders ?? [],
   });
+
+  let scheduled = false;
 
   const messages: Anthropic.MessageParam[] = [];
   for (const turn of ctx.history) {
@@ -67,10 +98,26 @@ export async function runAssistant(
     const res = await anthropic.messages.create({
       model: cfg.ANTHROPIC_MODEL,
       max_tokens: 2048,
-      system: SYSTEM_PROMPT,
+      // Cache the stable prefix (tools render before system, so one breakpoint on
+      // the system block caches both tool schemas + system prompt). Re-reads cost
+      // ~0.1x: this is the main lever against per-call token cost.
+      system: [
+        { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+      ],
       tools,
       messages,
     });
+
+    logger.debug(
+      {
+        model: cfg.ANTHROPIC_MODEL,
+        input: res.usage.input_tokens,
+        output: res.usage.output_tokens,
+        cacheRead: res.usage.cache_read_input_tokens,
+        cacheWrite: res.usage.cache_creation_input_tokens,
+      },
+      'assistant usage',
+    );
 
     // record_expense short-circuits: it's a side-effecting action gated by a
     // human confirmation, so we stop and let the bot render a preview.
@@ -104,6 +151,21 @@ export async function runAssistant(
             content: confirmation,
             is_error: !parsed.success,
           });
+        } else if (block.name === SCHEDULE_TASK_TOOL) {
+          scheduled = true;
+          const parsed = ScheduleTaskZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'schedule_task input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.scheduleTask(parsed.data)
+            : 'Could not parse the task.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
         } else {
           toolResults.push({
             type: 'tool_result',
@@ -129,8 +191,8 @@ export async function runAssistant(
       .map((b) => b.text)
       .join('')
       .trim();
-    return { kind: 'text', text: text || '…' };
+    return { kind: 'text', text: text || '…', scheduled };
   }
 
-  return { kind: 'text', text: 'Что-то пошло не так, попробуй ещё раз.' };
+  return { kind: 'text', text: 'Что-то пошло не так, попробуй ещё раз.', scheduled };
 }

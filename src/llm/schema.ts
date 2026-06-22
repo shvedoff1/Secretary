@@ -39,6 +39,15 @@ export const RememberZ = z.object({
 });
 export type RememberInput = z.infer<typeof RememberZ>;
 
+export const ScheduleTaskZ = z.object({
+  title: z.string().min(1),
+  prompt: z.string().min(1),
+  cron: z.string().min(1),
+  timezone: z.string().min(1),
+  once: z.boolean(),
+});
+export type ScheduleTaskInput = z.infer<typeof ScheduleTaskZ>;
+
 // --- JSON Schemas for the Anthropic tool definitions (strict tool use) ---
 
 export const recordExpenseJsonSchema = {
@@ -111,4 +120,35 @@ export const rememberJsonSchema = {
     },
   },
   required: ['note'],
+} as const;
+
+export const scheduleTaskJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: {
+      type: 'string',
+      description: 'Short human-readable title, e.g. "Прогноз волн", "Купить молоко".',
+    },
+    prompt: {
+      type: 'string',
+      description:
+        'Self-contained instruction to run when the task fires (you will receive ONLY this text, no chat history). Include any web-search intent. E.g. "Найди прогноз по волнам для Эрисейры на сегодня и кратко напиши".',
+    },
+    cron: {
+      type: 'string',
+      description:
+        'Standard 5-field cron expression (minute hour day-of-month month day-of-week) for when to run. "Каждый день в 9:00" => "0 9 * * *". A one-off "через 2 минуты" => the single minute it should fire.',
+    },
+    timezone: {
+      type: 'string',
+      description:
+        'IANA timezone for the cron schedule (e.g. "Europe/Lisbon"). Use the chat timezone from the context block; if unknown, ask the user once before calling this tool.',
+    },
+    once: {
+      type: 'boolean',
+      description: 'true for a one-off reminder (disable after it fires); false for a recurring task.',
+    },
+  },
+  required: ['title', 'prompt', 'cron', 'timezone', 'once'],
 } as const;

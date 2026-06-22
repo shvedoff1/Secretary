@@ -1,12 +1,17 @@
-# Secretary — Telegram expense bot → Splid
+# Secretary — Telegram assistant (with optional Splid expenses)
 
-A Telegram bot that lives in a group chat and:
+A Telegram bot that works the same in private chats and groups — a general
+secretary with memory. It:
 
-- **records shared expenses** from plain language ("я потратил 500 за такси за меня
-  и Колю") or **receipt photos**, shows a preview with ✅/✏️/❌ buttons, and writes
-  the confirmed expense to **[Splid](https://splid.app)**;
-- doubles as a **chat assistant** — ask it questions (with web search), and it keeps
-  **per-chat memory** (trip context, group composition, currency, free-form notes);
+- **answers questions and chats** (with web search) and keeps **per-chat memory**
+  (preferences, context, free-form notes) — the same in DMs and groups, no setup needed;
+- handles **reminders & recurring tasks** in plain language ("напомни встать через
+  3 минуты", "каждое утро ищи прогноз волн и кидай сюда") — scheduled with cron + the
+  chat's timezone;
+- as an **optional add-on**, records **shared expenses** to **[Splid](https://splid.app)**
+  from plain language or **receipt photos** (preview with ✅/✏️/❌ before saving). This
+  only kicks in once a chat connects a Splid group with `/group`; everything else works
+  without it;
 - is **admin-gated**: only approved users can use it, so it can't be abused.
 
 Parsing and receipt OCR use **Claude** (`claude-opus-4-8`, vision). Splid is integrated
@@ -22,6 +27,10 @@ added without touching the core.
   or reply to its message**; in private chats it always replies. Reply to a preview
   message with a corrected sentence to re-parse the expense.
 - **Memory**: `/remember`, `/memory`, `/forget`, and the bot can also save facts itself.
+- **Reminders**: ask in natural language and the bot creates a scheduled task (the first
+  time it asks the chat for its timezone, then reuses it). Manage with `/tasks` and
+  `/canceltask <id>`. A background scheduler fires due tasks every minute and posts the
+  result back to the chat.
 
 ## Setup
 
@@ -66,6 +75,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `PENDING_TTL_MINUTES` | no | `30` | Preview expiry |
 | `CONVERSATION_HISTORY_LIMIT` | no | `20` | Turns kept as context |
 | `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
+| `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own |
 
 ## In-chat setup
 
@@ -87,12 +97,14 @@ Then just talk:
 
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
+· reminders: `/tasks` `/canceltask <id>`
 
 ## Architecture
 
 ```
 bot/        grammY handlers, triggers, auth gate, preview/confirm flow
-llm/        Claude assistant (tool-use router): record_expense | remember | web_search
+llm/        Claude assistant (tool-use router): record_expense | remember | schedule_task | web_search
+scheduler.ts  background runner: fires due reminders/tasks every minute
 core/       provider-agnostic types + ExpenseProvider interface + registry + resolver
 providers/  splid/  (the ONLY place splid-js is imported)
 db/         better-sqlite3 + migrations + repos

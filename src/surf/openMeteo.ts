@@ -22,6 +22,15 @@ export interface SurfSpot {
 
 export type ForecastDay = 'today' | 'tomorrow';
 
+/** A high or low tide on the target day (local extremum of the sea-level curve). */
+export interface TideEvent {
+  type: 'high' | 'low';
+  /** Local time HH:MM. */
+  time: string;
+  /** Sea level at the extremum, relative to mean sea level. */
+  heightM: number;
+}
+
 /** Aggregated daytime conditions for one spot on the target day. */
 export interface SpotForecast {
   name: string;
@@ -38,6 +47,10 @@ export interface SpotForecast {
   windDirectionDeg: number | null;
   /** Unit string reported by Open-Meteo for wind speed, e.g. "km/h". */
   windUnit: string;
+  /** High/low tides across the whole target day (tide-sensitive spots need this). */
+  tides: TideEvent[];
+  /** Unit string for sea level, e.g. "m". */
+  seaLevelUnit: string;
 }
 
 export type SpotForecastResult =
@@ -120,6 +133,50 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * High/low tides on the target day = local extrema of the hourly sea-level curve.
+ * Neighbours may sit on the adjacent day (the series spans 2 days), so a tide near
+ * midnight is still caught. Returns events in chronological order.
+ */
+function extractTides(
+  time: string[] | undefined,
+  series: unknown,
+  date: string,
+): TideEvent[] {
+  if (!time || !Array.isArray(series)) return [];
+  const events: TideEvent[] = [];
+  for (let i = 1; i < time.length - 1; i++) {
+    const t = time[i];
+    if (!t || !t.startsWith(date)) continue;
+    const prev = series[i - 1];
+    const cur = series[i];
+    const next = series[i + 1];
+    if (
+      typeof prev !== 'number' ||
+      typeof cur !== 'number' ||
+      typeof next !== 'number' ||
+      !Number.isFinite(prev) ||
+      !Number.isFinite(cur) ||
+      !Number.isFinite(next)
+    ) {
+      continue;
+    }
+    const isHigh = cur >= prev && cur >= next && (cur > prev || cur > next);
+    const isLow = cur <= prev && cur <= next && (cur < prev || cur < next);
+    if (!isHigh && !isLow) continue;
+    events.push({
+      type: isHigh ? 'high' : 'low',
+      time: t.slice(11, 16),
+      heightM: round2(cur),
+    });
+  }
+  return events;
+}
+
 /**
  * Fetch and aggregate one spot's daytime conditions for the target day.
  * Never throws: a failed spot comes back as { ok: false } so one bad spot
@@ -138,10 +195,11 @@ export async function fetchSpotForecast(
       fetchJson(MARINE_URL, {
         latitude: lat,
         longitude: lon,
-        hourly: 'wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period',
+        hourly:
+          'wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,sea_level_height_msl',
         timezone,
         forecast_days: '2',
-      }) as Promise<{ hourly?: HourlyBlock }>,
+      }) as Promise<{ hourly?: HourlyBlock; hourly_units?: Record<string, string> }>,
       fetchJson(WEATHER_URL, {
         latitude: lat,
         longitude: lon,
@@ -169,6 +227,8 @@ export async function fetchSpotForecast(
         windGustMax: max(pick(weather.hourly?.wind_gusts_10m, wIdx)),
         windDirectionDeg: circularMeanDeg(pick(weather.hourly?.wind_direction_10m, wIdx)),
         windUnit: weather.hourly_units?.wind_speed_10m ?? 'km/h',
+        tides: extractTides(marine.hourly?.time, marine.hourly?.sea_level_height_msl, date),
+        seaLevelUnit: marine.hourly_units?.sea_level_height_msl ?? 'm',
       },
     };
   } catch (err) {

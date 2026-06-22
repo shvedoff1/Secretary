@@ -1,4 +1,4 @@
-import type { ForecastDay, SpotForecastResult } from './openMeteo.js';
+import type { ForecastDay, SpotForecastResult, TideEvent } from './openMeteo.js';
 
 const COMPASS_16 = [
   'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
@@ -21,6 +21,11 @@ function num(n: number | null, unit: string): string {
   return n === null ? '—' : `${n}${unit}`;
 }
 
+function tides(events: TideEvent[], unit: string): string {
+  if (events.length === 0) return 'n/a';
+  return events.map((t) => `${t.type} ${t.time} (${t.heightM} ${unit})`).join(', ');
+}
+
 /**
  * Compact, data-only summary fed back to the model as the tool_result. The
  * model does the ranking and writes the final friendly recommendation — this
@@ -31,7 +36,9 @@ export function formatForecastSummary(
   date: string,
   results: SpotForecastResult[],
 ): string {
-  const lines: string[] = [`Wave forecast for ${day} (${date}), daytime hours:`];
+  const lines: string[] = [
+    `Forecast for ${day} (${date}). Waves/wind are daytime averages; tides list all highs/lows for the day:`,
+  ];
 
   const ok = results.filter((r): r is Extract<SpotForecastResult, { ok: true }> => r.ok);
   const failed = results.filter((r): r is Extract<SpotForecastResult, { ok: false }> => !r.ok);
@@ -47,6 +54,7 @@ export function formatForecastSummary(
       `dir ${dir(f.waveDirectionDeg)}`,
       `swell ${num(f.swellHeightAvgM, ' m')} @ ${num(f.swellPeriodAvgS, ' s')}`,
       `wind ${num(f.windSpeedAvg, ` ${f.windUnit}`)} (gust ${num(f.windGustMax, ` ${f.windUnit}`)}) from ${dir(f.windDirectionDeg)}`,
+      `tide ${tides(f.tides, f.seaLevelUnit)}`,
     ];
     lines.push(`- ${f.name}: ${parts.join(', ')}`);
   }

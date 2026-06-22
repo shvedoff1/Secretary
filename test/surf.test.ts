@@ -27,13 +27,22 @@ function daytimeSeries(day: number, night: number, spikeAt12?: number): number[]
   });
 }
 
+// Semidiurnal tide: 2 cycles/day → highs at 03:00 & 15:00, lows at 09:00 & 21:00.
+function tideSeries(): number[] {
+  return Array.from({ length: 24 }, (_, h) => round2(1 + Math.sin((h / 24) * 2 * Math.PI * 2)));
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function mockFetch(date: string): typeof fetch {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.includes('marine-api')) {
       return new Response(
         JSON.stringify({
-          hourly_units: { wave_height: 'm', wave_period: 's' },
+          hourly_units: { wave_height: 'm', wave_period: 's', sea_level_height_msl: 'm' },
           hourly: {
             time: hourlyTimes(date),
             wave_height: daytimeSeries(1.0, 9.0, 2.0),
@@ -41,6 +50,7 @@ function mockFetch(date: string): typeof fetch {
             wave_direction: daytimeSeries(315, 315),
             swell_wave_height: daytimeSeries(0.8, 0.8),
             swell_wave_period: daytimeSeries(12, 12),
+            sea_level_height_msl: tideSeries(),
           },
         }),
         { status: 200 },
@@ -92,6 +102,17 @@ describe('fetchSpotForecast', () => {
     expect(f.windGustMax).toBe(25); // daytime spike, not the 99 night value
     expect(f.windDirectionDeg).toBe(270);
     expect(f.windUnit).toBe('km/h');
+
+    // Tides: detect the semidiurnal highs/lows on the target day.
+    expect(f.seaLevelUnit).toBe('m');
+    const highs = f.tides.filter((t) => t.type === 'high').map((t) => t.time);
+    const lows = f.tides.filter((t) => t.type === 'low').map((t) => t.time);
+    expect(highs).toContain('03:00');
+    expect(lows).toContain('09:00');
+    expect(highs).toContain('15:00');
+    // Height at a high is ~2.0 m above MSL.
+    const firstHigh = f.tides.find((t) => t.type === 'high');
+    expect(firstHigh?.heightM).toBeCloseTo(2.0, 1);
   });
 
   it('returns ok:false (not a throw) when the API errors', async () => {
@@ -131,6 +152,11 @@ describe('formatForecastSummary', () => {
           windGustMax: 25,
           windDirectionDeg: 270,
           windUnit: 'km/h',
+          tides: [
+            { type: 'low', time: '06:40', heightM: 0.3 },
+            { type: 'high', time: '12:50', heightM: 2.1 },
+          ],
+          seaLevelUnit: 'm',
         },
       },
       { ok: false, name: 'Coxos', error: 'HTTP 500' },
@@ -141,6 +167,7 @@ describe('formatForecastSummary', () => {
     expect(out).toContain('Ribeira');
     expect(out).toContain('NW'); // 315° wave direction
     expect(out).toContain('km/h');
+    expect(out).toContain('tide low 06:40 (0.3 m), high 12:50 (2.1 m)');
     expect(out).toContain('Could not fetch: Coxos (HTTP 500)');
   });
 });

@@ -62,7 +62,7 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
     tools.push({
       name: SURF_FORECAST_TOOL,
       description:
-        'Get a wave/surf forecast for several spots and recommend where to go. Call this when the user asks about waves, surf, or where to go surfing ("какие волны завтра", "куда ехать на сёрф", "where will it be good"). You pick several popular spots near the region they mean (from your own knowledge) with coordinates of a point in the water, plus the day (today/tomorrow) and the chat timezone. After it returns, briefly recommend the best spot(s).',
+        'Get a wave, wind and tide forecast for several spots and recommend where (and when) to go. Call this when the user asks about waves, surf, or where to go surfing ("какие волны завтра", "куда ехать на сёрф", "where will it be good"). You pick several popular spots near the region they mean (from your own knowledge) with coordinates of a point in the water, plus the day (today/tomorrow) and the chat timezone. It returns per-spot wave/wind plus the day\'s high/low tide times — match each spot\'s ideal tide to recommend the best spot(s) and time(s).',
       input_schema: surfForecastJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }

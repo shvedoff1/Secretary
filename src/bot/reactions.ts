@@ -1,11 +1,16 @@
 import type { Context } from 'grammy';
 import { logger } from '../logger.js';
 
+// Telegram only allows a fixed set of emoji for message reactions (🤙/shaka is
+// not one of them). These are valid surfer-vibe picks.
+type ReactionEmoji = '😎' | '🔥';
+
 // Deterministic auto-reactions: drop an emoji reaction on specific users'
 // messages. Keyed by Telegram user id so it survives name/username changes —
-// no LLM, no memory, no cost. Add more entries as needed.
-const AUTO_REACTIONS = new Map<number, '🔥'>([
-  [68059142, '🔥'], // Антоха
+// no LLM, no memory, no cost. When several emoji are listed, one is picked at
+// random per message.
+const AUTO_REACTIONS = new Map<number, readonly ReactionEmoji[]>([
+  [68059142, ['😎', '🔥']], // Антоха
 ]);
 
 /**
@@ -18,7 +23,9 @@ export async function maybeAutoReact(ctx: Context): Promise<void> {
   if (userId === undefined) return;
   // Don't react to commands like /help — only real messages.
   if (ctx.message?.text?.startsWith('/')) return;
-  const emoji = AUTO_REACTIONS.get(userId);
+  const choices = AUTO_REACTIONS.get(userId);
+  if (!choices || choices.length === 0) return;
+  const emoji = choices[Math.floor(Math.random() * choices.length)];
   if (!emoji) return;
   try {
     await ctx.react(emoji);

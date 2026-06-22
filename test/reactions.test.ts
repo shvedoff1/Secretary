@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from 'grammy';
 import { maybeAutoReact } from '../src/bot/reactions.js';
 
 const ANTOHA = 68059142;
+const EMOJIS = ['😎', '🔥'];
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function fakeCtx(opts: {
   userId?: number;
@@ -17,18 +22,30 @@ function fakeCtx(opts: {
 }
 
 describe('maybeAutoReact', () => {
-  it('reacts to a configured user with their emoji', async () => {
+  it('reacts to a configured user with one of their emojis', async () => {
     const react = vi.fn(async () => {});
     await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: 'привет', react }));
     expect(react).toHaveBeenCalledOnce();
-    expect(react).toHaveBeenCalledWith('🔥');
+    expect(EMOJIS).toContain(react.mock.calls[0]?.[0]);
+  });
+
+  it('picks randomly between the configured emojis', async () => {
+    const low = vi.fn(async () => {});
+    vi.spyOn(Math, 'random').mockReturnValue(0); // first choice
+    await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: 'a', react: low }));
+    expect(low).toHaveBeenCalledWith('😎');
+
+    const high = vi.fn(async () => {});
+    vi.spyOn(Math, 'random').mockReturnValue(0.99); // last choice
+    await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: 'b', react: high }));
+    expect(high).toHaveBeenCalledWith('🔥');
   });
 
   it('reacts to non-text messages from the configured user', async () => {
     const react = vi.fn(async () => {});
     // No text (e.g. a sticker/photo) — should still react.
     await maybeAutoReact(fakeCtx({ userId: ANTOHA, text: undefined, react }));
-    expect(react).toHaveBeenCalledWith('🔥');
+    expect(EMOJIS).toContain(react.mock.calls[0]?.[0]);
   });
 
   it('does nothing for other users', async () => {

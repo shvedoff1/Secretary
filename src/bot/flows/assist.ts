@@ -7,6 +7,7 @@ import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { toParsedExpense } from '../../llm/schema.js';
+import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
@@ -266,6 +267,7 @@ async function runAndRespondInner(
           return 'Запомнил.';
         },
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+        surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
       },
     );
@@ -404,6 +406,7 @@ async function rewordPendingInner(
     {
       remember: (note) => (appendMemory(chatId, note), 'Запомнил.'),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+      surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
     },
   );

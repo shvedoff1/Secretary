@@ -26,12 +26,21 @@ import {
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
 import { handleExpenseCallback } from './flows/confirm.js';
+import { maybeAutoReact } from './reactions.js';
 
 export function buildBot(token: string): Bot {
   const bot = new Bot(token);
 
   // Default-deny gate (lets /start, /help, /request through for everyone).
   bot.use(authGate);
+
+  // Light auto-reactions: with a small probability, drop a random positive
+  // reaction on a message. Runs for any message type that passed the gate, then
+  // continues the chain so normal routing (commands, expense/chat) still happens.
+  bot.on('message', async (ctx, next) => {
+    await maybeAutoReact(ctx);
+    await next();
+  });
 
   bot.command('start', cmdStart);
   bot.command('help', cmdHelp);

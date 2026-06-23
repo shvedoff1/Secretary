@@ -10,6 +10,9 @@ import {
 } from './db/repos/scheduledTask.repo.js';
 import { nextRunMs } from './util/schedule.js';
 import { mdToTelegramHtml, stripMarkdown } from './util/telegramHtml.js';
+import { makeSurfForecastHandler } from './surf/index.js';
+
+const surfForecast = makeSurfForecastHandler();
 
 async function sendMarkdown(bot: Bot, chatId: number, text: string): Promise<void> {
   try {
@@ -43,6 +46,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       {
         remember: () => 'noop',
         scheduleTask: () => 'noop',
+        // Surf forecast stays live: a recurring evening task asks for tomorrow's
+        // forecast and the bot posts the recommendation to the chat.
+        surfForecast,
         addPoi: () => 'noop',
       },
     );

@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 
 const EXPENSE_KEYWORDS =
-  /(потрат|заплат|оплат|скинул|должен|долж|чек|счет|счёт|за\s|spent|paid|bought|cost|bill|check|lunch|dinner|breakfast|taxi|такси|обед|ужин|завтрак|груш|product|groсer|store|shop|кафе|cafe|restaurant|рестора)/i;
+  /(потрат|заплат|оплат|скинул|должен|долж|купил|чек|счет|счёт|за\s|spent|paid|bought|cost|bill|check|lunch|dinner|breakfast|taxi|такси|обед|ужин|завтрак|груш|product|groсer|store|shop|кафе|cafe|restaurant|рестора)/i;
 
 /** Heuristic: does this text look like it reports a spend? Requires a number. */
 export function looksLikeExpense(text: string): boolean {

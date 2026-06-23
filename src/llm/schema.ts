@@ -1,16 +1,20 @@
 import { z } from 'zod';
 import type { ParsedExpense } from '../core/types.js';
+import { majorToMinor } from '../util/money.js';
 
 // Zod schema used to validate the `record_expense` tool input the model emits.
+// Amounts are in the currency's NATURAL (major) units, exactly as said — the code
+// converts to minor units (knowing which currencies have no sub-unit), so the
+// model never has to guess the decimal scale (and can't ×100 a currency like IDR).
 export const ParsedSplitZ = z.object({
   memberHint: z.string(),
-  amountMinor: z.number().int().nullable(),
+  amount: z.number().nonnegative().nullable(),
   share: z.number().nullable(),
 });
 
 export const RecordExpenseZ = z.object({
   title: z.string().min(1),
-  amountMinor: z.number().int().nonnegative(),
+  amount: z.number().nonnegative(),
   currency: z.string().min(3).max(3),
   payerHints: z.array(z.string()),
   profiteerHints: z.array(z.string()),
@@ -22,13 +26,19 @@ export const RecordExpenseZ = z.object({
 export type RecordExpenseInput = z.infer<typeof RecordExpenseZ>;
 
 export function toParsedExpense(input: RecordExpenseInput): ParsedExpense {
+  const currency = input.currency.toUpperCase();
   return {
     title: input.title,
-    amountMinor: input.amountMinor,
-    currency: input.currency.toUpperCase(),
+    amountMinor: majorToMinor(input.amount, currency),
+    currency,
     payerHints: input.payerHints,
     profiteerHints: input.profiteerHints,
-    splits: input.splits,
+    splits:
+      input.splits?.map((s) => ({
+        memberHint: s.memberHint,
+        amountMinor: s.amount == null ? null : majorToMinor(s.amount, currency),
+        share: s.share,
+      })) ?? null,
     confidence: input.confidence,
     notes: input.notes,
   };
@@ -81,10 +91,11 @@ export const recordExpenseJsonSchema = {
   additionalProperties: false,
   properties: {
     title: { type: 'string', description: 'Short human-readable title, e.g. "Taxi", "Dinner".' },
-    amountMinor: {
-      type: 'integer',
+    amount: {
+      type: 'number',
       description:
-        'Total amount in MINOR units (e.g. cents). 12.50 EUR => 1250. Whole-unit currencies (JPY) use the bare number.',
+        'Total amount in the currency\'s NATURAL units, exactly as written/spoken — NOT minor units. ' +
+        '12.50 EUR => 12.50; 10000 IDR => 10000; 1500 JPY => 1500. Never multiply by 100.',
     },
     currency: {
       type: 'string',
@@ -105,16 +116,16 @@ export const recordExpenseJsonSchema = {
     splits: {
       type: ['array', 'null'],
       description:
-        'Uneven split. null => equal split among profiteers. Each entry: amountMinor (absolute) OR share (0..1), not both.',
+        'Uneven split. null => equal split among profiteers. Each entry: amount (absolute, in the same natural units as the top-level amount) OR share (0..1), not both.',
       items: {
         type: 'object',
         additionalProperties: false,
         properties: {
           memberHint: { type: 'string' },
-          amountMinor: { type: ['integer', 'null'] },
+          amount: { type: ['number', 'null'] },
           share: { type: ['number', 'null'] },
         },
-        required: ['memberHint', 'amountMinor', 'share'],
+        required: ['memberHint', 'amount', 'share'],
       },
     },
     confidence: { type: 'number', description: '0..1 confidence in this extraction.' },
@@ -125,7 +136,7 @@ export const recordExpenseJsonSchema = {
   },
   required: [
     'title',
-    'amountMinor',
+    'amount',
     'currency',
     'payerHints',
     'profiteerHints',

@@ -9,6 +9,28 @@ export function looksLikeExpense(text: string): boolean {
   return EXPENSE_KEYWORDS.test(text);
 }
 
+// Names/nicknames the bot answers to when addressed by name. Cyrillic isn't a
+// JS \w char, so \b boundaries don't work here — use letter lookarounds instead.
+// "бот" forms are listed explicitly (nominative/vocative) to avoid matching
+// inside words like "работа"/"ботинки".
+const BOT_NAME =
+  /(?<![а-яёa-z])(скай(лер[а-яё]{0,2})?|sky(ler)?|мисс(ис)?\.?\s+вайт|(miss|mrs?)\.?\s+white|ботик[ауе]?|ботяр[ауые]?|бот|bot)(?![а-яёa-z])/i;
+
+// Question / direct-request markers, paired with a bot-name mention below.
+const QUESTION_OR_REQUEST =
+  /[?？]|(?<![а-яёa-z])(что|чё|как|почему|зачем|когда|где|куда|откуда|сколько|какой|какая|какое|какие|кто|можешь|можно|подскажи|подскажешь|расскажи|расскажешь|напомни|посчитай|скажи|покажи|what|how|why|when|where|who|which|can|could|would|tell|does)(?![а-яёa-z])/i;
+
+/**
+ * Does this text address the bot by name with a question or direct request?
+ * Voice notes can't @mention or reply, so "Скай, какая погода?" / "бот, напомни
+ * …" / "миссис Вайт, посчитай …" should still be treated as addressed. Requires
+ * BOTH a name and a question/request marker, so merely talking about the bot
+ * ("скай вчера лагал") doesn't trigger it.
+ */
+export function addressesBotByName(text: string): boolean {
+  return BOT_NAME.test(text) && QUESTION_OR_REQUEST.test(text);
+}
+
 /** Was the bot directly addressed (DM, @mention, or reply to its message)? */
 export function isAddressed(ctx: Context): boolean {
   if (ctx.chat?.type === 'private') return true;

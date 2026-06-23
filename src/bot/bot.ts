@@ -25,6 +25,7 @@ import {
 } from './commands/admin.js';
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
+import { onVoice } from './handlers/onVoice.js';
 import { handleExpenseCallback } from './flows/confirm.js';
 import { maybeAutoReact } from './reactions.js';
 
@@ -74,6 +75,7 @@ export function buildBot(token: string): Bot {
   bot.callbackQuery(/^e:/, handleExpenseCallback);
 
   bot.on('message:photo', onPhoto);
+  bot.on('message:voice', onVoice);
   bot.on('message:text', onMessage);
 
   bot.catch((err) => {

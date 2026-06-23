@@ -85,7 +85,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY
           script: |
             set -euo pipefail
 
@@ -117,6 +117,11 @@ jobs:
             ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-8}
             DEFAULT_CURRENCY=${DEFAULT_CURRENCY:-EUR}
             EOF2
+            # Optional: voice transcription. Only write the key when present so an
+            # empty value can't shadow the in-app defaults (model / base URL).
+            if [ -n "${OPENAI_API_KEY:-}" ]; then
+              echo "OPENAI_API_KEY=$OPENAI_API_KEY" >> .env
+            fi
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export BOT_IMAGE="$DEPLOY_IMAGE"
@@ -143,3 +148,4 @@ jobs:
           ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
           DEFAULT_CURRENCY: ${{ vars.DEFAULT_CURRENCY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

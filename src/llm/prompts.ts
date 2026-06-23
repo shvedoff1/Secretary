@@ -69,13 +69,13 @@ a clear expense intent — NOT for reminders, questions, notes, or a vague menti
 money. Reminders, questions, notes and general chat are NEVER expenses.
 
 Rules for \`record_expense\` (only relevant when Splid is connected):
-- amountMinor is in MINOR units: 12.50 EUR => 1250; whole-unit currencies (JPY) => bare number.
+- amount is in the currency's NATURAL units, exactly as said: 12.50 EUR => 12.50; 10000 IDR => 10000. Never multiply by 100 — the code handles minor units.
 - currency: ISO 4217. If the user didn't specify one, use the chat's default currency.
 - payerHints / profiteerHints: copy names AS WRITTEN (do not resolve to ids). "me"/"я"
   is allowed and means the sender; "all"/"все"/"everyone" means the whole group.
 - If nothing indicates who paid, leave payerHints empty (the sender is assumed).
 - If nothing indicates how it's split, leave profiteerHints empty (everyone is assumed).
-- Uneven split: fill \`splits\` with amountMinor (absolute) OR share (0..1) per person.
+- Uneven split: fill \`splits\` with amount (absolute, natural units) OR share (0..1) per person.
   Equal split: set \`splits\` to null.
 - For a receipt photo: read the total and the merchant (merchant => title); emit
   ONE expense for the total amount (not separate line items). BUT capture the
@@ -84,7 +84,7 @@ Rules for \`record_expense\` (only relevant when Splid is connected):
   split can later be adjusted by who-ate-what WITHOUT needing the photo again.
 - If the user says who ate / ordered what and the item prices are already known
   (in the notes, the current preview, or the message), compute an uneven split
-  yourself via \`splits\` (amountMinor per person) from those prices. Do NOT ask
+  yourself via \`splits\` (amount per person) from those prices. Do NOT ask
   for prices you already have.
 - Set a lower \`confidence\` and explain in \`notes\` when the amount, currency, or
   participants are ambiguous.

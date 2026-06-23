@@ -188,36 +188,42 @@ export function makeAddPoiHandler(
 }
 
 /**
+ * What `runAndRespond` did with a message, so callers (e.g. the voice handler)
+ * can react accordingly: an expense was drafted, a text reply was sent, nothing
+ * was sent (silent auto-expense scan), or the assistant call failed.
+ */
+export type RespondOutcome = 'expense' | 'replied' | 'silent' | 'error';
+
+interface RunArgs {
+  userContent: string | Anthropic.ContentBlockParam[];
+  addressed: boolean;
+  source: PendingSource;
+  /** Plain text used for conversation history (e.g. caption or message text). */
+  historyText: string;
+  /**
+   * Manage the "thinking" reaction (👀 set while working, cleared when done).
+   * Defaults to true. Callers that own the message reaction themselves (the
+   * voice handler keeps a ✍️ on recorded expenses) pass false.
+   */
+  manageReaction?: boolean;
+}
+
+/**
  * Run the LLM assistant for a message and act on the result:
  * expense → preview; text → reply (unless this was a silent auto-expense scan).
+ * Returns what happened so callers can adjust their own UI (reactions, etc.).
  */
-export async function runAndRespond(
-  ctx: Context,
-  args: {
-    userContent: string | Anthropic.ContentBlockParam[];
-    addressed: boolean;
-    source: PendingSource;
-    /** Plain text used for conversation history (e.g. caption or message text). */
-    historyText: string;
-  },
-): Promise<void> {
-  await setThinking(ctx);
+export async function runAndRespond(ctx: Context, args: RunArgs): Promise<RespondOutcome> {
+  const manageReaction = args.manageReaction ?? true;
+  if (manageReaction) await setThinking(ctx);
   try {
-    await runAndRespondInner(ctx, args);
+    return await runAndRespondInner(ctx, args);
   } finally {
-    await clearThinking(ctx);
+    if (manageReaction) await clearThinking(ctx);
   }
 }
 
-async function runAndRespondInner(
-  ctx: Context,
-  args: {
-    userContent: string | Anthropic.ContentBlockParam[];
-    addressed: boolean;
-    source: PendingSource;
-    historyText: string;
-  },
-): Promise<void> {
+async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondOutcome> {
   const cfg = loadConfig();
   const chatId = ctx.chat!.id;
   const tgUserId = ctx.from!.id;
@@ -282,7 +288,7 @@ async function runAndRespondInner(
           : '⚠️ Не получилось обратиться к ИИ. Попробуй ещё раз чуть позже.',
       );
     }
-    return;
+    return 'error';
   }
 
   if (result.kind === 'expense') {
@@ -291,7 +297,7 @@ async function runAndRespondInner(
         'Чтобы записывать траты в Splid, подключи группу: /group <код-приглашения>. ' +
           'Это опционально — без него я и так помогу: напоминания, поиск, заметки. 🤙',
       );
-      return;
+      return 'replied';
     }
     const senderMapping = getMapping(chatId, tgUserId);
     const draft = buildDraft({
@@ -311,13 +317,13 @@ async function runAndRespondInner(
     // Expenses are a side-channel (preview/confirm), NOT dialogue — keep them out
     // of conversation history so the assistant doesn't resurface old expenses on
     // unrelated messages.
-    return;
+    return 'expense';
   }
 
   // Text result. For a silent auto-expense scan that produced no expense, stay quiet
   // and record nothing.
   if (!args.addressed) {
-    return;
+    return 'silent';
   }
 
   await replyMarkdown(ctx, result.text, {
@@ -325,11 +331,12 @@ async function runAndRespondInner(
   });
   // A reminder request is a completed side-action, not dialogue — keep it out of
   // history so it can't replay and re-create the reminder on a later message.
-  if (result.scheduled) return;
+  if (result.scheduled) return 'replied';
   // Record this conversational exchange (and only this) for future context.
   addTurn({ chatId, role: 'user', tgUserId, content: args.historyText });
   addTurn({ chatId, role: 'assistant', tgUserId: null, content: result.text });
   pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
+  return 'replied';
 }
 
 /**

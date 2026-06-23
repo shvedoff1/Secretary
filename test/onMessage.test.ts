@@ -10,6 +10,9 @@ vi.mock('../src/bot/flows/assist.js', () => ({
   runAndRespond: vi.fn(),
   rewordPending: vi.fn(),
 }));
+vi.mock('../src/bot/flows/lexicon.js', () => ({
+  learnFromMessage: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('../src/bot/editTargets.js', () => ({
   getEditTarget: vi.fn(() => undefined),
 }));
@@ -20,10 +23,12 @@ vi.mock('../src/bot/handlers/onPhoto.js', () => ({
 import { onMessage } from '../src/bot/handlers/onMessage.js';
 import { routeMessage, addressesBotByName } from '../src/bot/triggers.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
+import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
 const mockRun = vi.mocked(runAndRespond);
+const mockLearn = vi.mocked(learnFromMessage);
 
 function ctx(text: string): Context {
   return {
@@ -56,6 +61,16 @@ describe('onMessage by-name addressing', () => {
     await onMessage(ctx('всем привет'));
 
     expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('feeds every message to lexicon learning, even ignored chatter', async () => {
+    mockRoute.mockReturnValue('ignore');
+    mockByName.mockReturnValue(false);
+
+    await onMessage(ctx('тип здарова братик'));
+
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(mockLearn).toHaveBeenCalledWith(1, 'тип здарова братик');
   });
 
   it('keeps an unaddressed expense as a silent auto-expense scan', async () => {

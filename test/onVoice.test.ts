@@ -16,6 +16,9 @@ vi.mock('../src/bot/triggers.js', () => ({
 vi.mock('../src/bot/flows/assist.js', () => ({
   runAndRespond: vi.fn(),
 }));
+vi.mock('../src/bot/flows/lexicon.js', () => ({
+  learnFromMessage: vi.fn(() => Promise.resolve()),
+}));
 
 import { onVoice } from '../src/bot/handlers/onVoice.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../src/llm/transcribe.js';

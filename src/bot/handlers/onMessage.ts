@@ -2,12 +2,18 @@ import type { Context } from 'grammy';
 import { routeMessage, isAddressed, addressesBotByName } from '../triggers.js';
 import { getEditTarget } from '../editTargets.js';
 import { runAndRespond, rewordPending } from '../flows/assist.js';
+import { learnFromMessage } from '../flows/lexicon.js';
 import { handleReceiptPhoto } from './onPhoto.js';
 
 export async function onMessage(ctx: Context): Promise<void> {
   const text = ctx.message?.text;
   if (!text || !ctx.chat || !ctx.from) return;
   if (text.startsWith('/')) return; // commands handled elsewhere
+
+  // Passively learn the chat's slang from every message — even ones we won't reply
+  // to (that's the point: read the whole room). Fire-and-forget and best-effort, so
+  // it never delays or breaks the reply below.
+  void learnFromMessage(ctx.chat.id, text);
 
   const replyTo = ctx.message?.reply_to_message;
   if (replyTo) {

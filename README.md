@@ -28,6 +28,10 @@ added without touching the core.
   or reply to its message**; in private chats it always replies. Reply to a preview
   message with a corrected sentence to re-parse the expense.
 - **Memory**: `/remember`, `/memory`, `/forget`, and the bot can also save facts itself.
+- **Lexicon learning**: the bot quietly reads every message and, in batches, learns the
+  slang and distorted word-forms the chat uses (e.g. «тип» for «типа», «братик») via a
+  cheap model, then picks up that lingo in its own replies. View/reset per chat with
+  `/slang` (`/slang clear`).
 - **Reminders**: ask in natural language and the bot creates a scheduled task (the first
   time it asks the chat for its timezone, then reuses it). Manage with `/tasks` and
   `/canceltask <id>`. A background scheduler fires due tasks every minute and posts the
@@ -82,6 +86,11 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CONVERSATION_HISTORY_LIMIT` | no | `20` | Turns kept as context |
 | `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
 | `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own |
+| `ENABLE_LEXICON` | no | `true` | Learn the chat's slang from messages and reuse it |
+| `ANTHROPIC_LEXICON_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model for the extraction batches |
+| `LEXICON_BATCH_SIZE` | no | `30` | Extract after this many buffered messages… |
+| `LEXICON_MAX_AGE_HOURS` | no | `24` | …or once the oldest is this old, whichever first |
+| `LEXICON_MAX_TERMS` | no | `40` | Learned terms fed back into context |
 
 ## In-chat setup
 
@@ -105,7 +114,7 @@ Then just talk:
 
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
-· reminders: `/tasks` `/canceltask <id>`
+· reminders: `/tasks` `/canceltask <id>` · lexicon: `/slang` (`/slang clear`)
 
 ## Architecture
 

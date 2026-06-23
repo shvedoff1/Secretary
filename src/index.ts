@@ -6,6 +6,7 @@ import { ensureAdmin } from './db/repos/users.repo.js';
 import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
+import { flushStaleLexicons } from './bot/flows/lexicon.js';
 import { isHumorEnabled } from './llm/humorize.js';
 
 async function main(): Promise<void> {
@@ -50,10 +51,21 @@ async function main(): Promise<void> {
   }, 60_000);
   scheduler.unref();
 
+  // Catch-up extraction for chats that went quiet before filling a batch, so the
+  // "once a day" lexicon trigger still fires. Best-effort; the per-message path
+  // handles active chats.
+  const lexiconFlusher = setInterval(() => {
+    void flushStaleLexicons().catch((err) => {
+      logger.warn({ err }, 'lexicon flush tick failed');
+    });
+  }, 60 * 60_000);
+  lexiconFlusher.unref();
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
     clearInterval(sweeper);
     clearInterval(scheduler);
+    clearInterval(lexiconFlusher);
     await bot.stop();
     closeDb();
     process.exit(0);

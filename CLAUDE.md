@@ -16,6 +16,12 @@ Anthropic SDK. Splid behind a pluggable provider interface.
 ## Layout
 
 - `src/bot/` — grammY handlers, commands, triggers, auth gate, preview/confirm flow.
+  `flows/lexicon.ts` drives passive "lexicon learning": every incoming message is buffered
+  (`chat_lexicon_sample`), and in batches (N messages or once a day, whichever first) a
+  cheap model (`src/llm/lexicon.ts`, Haiku) extracts the chat's slang/distorted words into
+  `chat_lexicon`, which is fed back into the assistant context so the bot adopts the chat's
+  lingo. Managed per chat with `/slang` (`/slang clear`); a background flush in `index.ts`
+  covers chats that went quiet before filling a batch.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   schedule_task | surf_forecast | web_search`. Tools in `tools.ts`, Zod + JSON schemas
   in `schema.ts`, system prompt + context block in `prompts.ts`. `humorize.ts` is an

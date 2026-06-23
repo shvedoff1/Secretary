@@ -32,6 +32,7 @@ export async function cmdHelp(ctx: Context): Promise<void> {
       '/canceltask <id> — отменить задачу',
       '/poi — список мест (кафе, достопримечательности, планы) с ссылками на карту',
       '/delpoi <id> — удалить место',
+      '/slang — словечки, которые я подхватил из чата (/slang clear — сбросить)',
       '/whoami — кто я для бота',
       '/request — запросить доступ',
       ...adminSection,

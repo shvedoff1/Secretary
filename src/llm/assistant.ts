@@ -44,6 +44,8 @@ export interface AssistantContext {
   allowPoi?: boolean;
   /** Saved places in this chat, shown so the model can recall them and not duplicate. */
   places?: { name: string; category: string }[];
+  /** Learned slang/distorted words this chat uses, fed back so the bot talks like them. */
+  lexicon?: { term: string; gloss?: string }[];
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -95,6 +97,7 @@ export async function runAssistant(
     splidConnected: ctx.splidConnected,
     activeReminders: ctx.activeReminders ?? [],
     places: ctx.places ?? [],
+    lexicon: ctx.lexicon ?? [],
   });
 
   let scheduled = false;

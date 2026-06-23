@@ -73,6 +73,8 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
+| `ENABLE_HUMOR` | no | `false` | Rewrite the **tone** of plain-chat replies via a cheap OpenAI model (facts preserved; factual/tool answers untouched). Needs `OPENAI_API_KEY` |
+| `OPENAI_HUMOR_MODEL` | no | `gpt-5-mini` | Model used for the humorizer pass |
 | `DEFAULT_CURRENCY` | no | `EUR` | ISO 4217, used when unstated |
 | `DATABASE_PATH` | no | `./data/bot.sqlite` | SQLite file |
 | `LOG_LEVEL` | no | `info` | pino level |

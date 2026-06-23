@@ -64,7 +64,10 @@ export type AssistantResult =
   | { kind: 'expense'; input: RecordExpenseInput }
   // `scheduled` marks a turn that created/handled a reminder, so the caller can
   // keep it out of conversation history (a lingering request would re-fire).
-  | { kind: 'text'; text: string; scheduled?: boolean };
+  // `humorizable` is true only for a plain-chat answer (no tool was used), so
+  // the caller may run the optional tone-only humorizer over it without risking
+  // factual answers (expenses, surf, web search, reminders).
+  | { kind: 'text'; text: string; scheduled?: boolean; humorizable?: boolean };
 
 const MAX_ITERATIONS = 6;
 
@@ -95,6 +98,9 @@ export async function runAssistant(
   });
 
   let scheduled = false;
+  // Tracks whether any tool ran this turn. A plain-chat answer (no tools) is the
+  // only thing safe to hand to the tone-only humorizer downstream.
+  let usedTool = false;
 
   const messages: Anthropic.MessageParam[] = [];
   for (const turn of ctx.history) {
@@ -153,6 +159,7 @@ export async function runAssistant(
     }
 
     if (res.stop_reason === 'tool_use') {
+      usedTool = true;
       messages.push({ role: 'assistant', content: res.content });
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of res.content) {
@@ -226,7 +233,9 @@ export async function runAssistant(
     }
 
     if (res.stop_reason === 'pause_turn') {
-      // Server-side tool (web_search) hit the loop limit — resume.
+      // Server-side tool (web_search) hit the loop limit — resume. This is a
+      // tool answer, so it must not be humorized.
+      usedTool = true;
       messages.push({ role: 'assistant', content: res.content });
       continue;
     }
@@ -236,7 +245,7 @@ export async function runAssistant(
       .map((b) => b.text)
       .join('')
       .trim();
-    return { kind: 'text', text: text || '…', scheduled };
+    return { kind: 'text', text: text || '…', scheduled, humorizable: !usedTool };
   }
 
   return { kind: 'text', text: 'Что-то пошло не так, попробуй ещё раз.', scheduled };

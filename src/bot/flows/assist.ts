@@ -6,6 +6,7 @@ import { getProvider } from '../../core/registry.js';
 import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
+import { humorizeOrOriginal } from '../../llm/humorize.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
@@ -326,15 +327,24 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     return 'silent';
   }
 
-  await replyMarkdown(ctx, result.text, {
+  // For a plain-chat answer (no tool used), optionally run the tone-only
+  // humorizer. It's best-effort: disabled or failed → original text unchanged,
+  // so accuracy and delivery are never at risk. Factual/tool answers are left
+  // untouched (humorizable is false for them).
+  const replyText = result.humorizable
+    ? await humorizeOrOriginal(result.text)
+    : result.text;
+
+  await replyMarkdown(ctx, replyText, {
     reply_to_message_id: ctx.message?.message_id,
   });
   // A reminder request is a completed side-action, not dialogue — keep it out of
   // history so it can't replay and re-create the reminder on a later message.
   if (result.scheduled) return 'replied';
   // Record this conversational exchange (and only this) for future context.
+  // Store what we actually sent (the humorized text) so history matches the chat.
   addTurn({ chatId, role: 'user', tgUserId, content: args.historyText });
-  addTurn({ chatId, role: 'assistant', tgUserId: null, content: result.text });
+  addTurn({ chatId, role: 'assistant', tgUserId: null, content: replyText });
   pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
   return 'replied';
 }

@@ -6,9 +6,25 @@ import { ensureAdmin } from './db/repos/users.repo.js';
 import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
+import { isHumorEnabled } from './llm/humorize.js';
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+
+  // Log resolved feature flags at startup (no secrets) so a deploy can be
+  // verified from the logs. `humor` is true only when the flag is on AND an
+  // OpenAI key is present — exactly the condition for the humorizer to run.
+  const humor = isHumorEnabled();
+  logger.info(
+    {
+      model: cfg.ANTHROPIC_MODEL,
+      webSearch: cfg.ENABLE_WEB_SEARCH,
+      surf: cfg.ENABLE_SURF,
+      humor,
+      humorModel: humor ? cfg.OPENAI_HUMOR_MODEL : undefined,
+    },
+    'startup config',
+  );
 
   migrate();
   ensureAdmin(cfg.ADMIN_TELEGRAM_ID);

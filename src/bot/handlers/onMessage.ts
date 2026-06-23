@@ -1,5 +1,5 @@
 import type { Context } from 'grammy';
-import { routeMessage, isAddressed } from '../triggers.js';
+import { routeMessage, isAddressed, addressesBotByName } from '../triggers.js';
 import { getEditTarget } from '../editTargets.js';
 import { runAndRespond, rewordPending } from '../flows/assist.js';
 import { handleReceiptPhoto } from './onPhoto.js';
@@ -25,7 +25,13 @@ export async function onMessage(ctx: Context): Promise<void> {
     }
   }
 
-  const decision = routeMessage(ctx, text);
+  // Addressed → process; looks-like-expense → silent auto-expense; else ignore.
+  // Also answer a by-name question to the bot ("Скай, какая погода?") even when
+  // it isn't a reply/@mention — same rule as voice notes.
+  let decision = routeMessage(ctx, text);
+  if (decision !== 'process' && addressesBotByName(text)) {
+    decision = 'process';
+  }
   if (decision === 'ignore') return;
 
   await runAndRespond(ctx, {

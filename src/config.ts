@@ -19,6 +19,12 @@ const ConfigSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_TRANSCRIBE_MODEL: z.string().default('whisper-1'),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  // Optional "humorizer" pass: after Anthropic produces an accurate answer, a
+  // cheap OpenAI model rewrites the TONE of plain-chat replies to be funnier.
+  // Off by default and needs OPENAI_API_KEY; it never runs on factual/tool
+  // answers (expenses, surf, web search, reminders) so accuracy is preserved.
+  ENABLE_HUMOR: boolish.default(false),
+  OPENAI_HUMOR_MODEL: z.string().default('gpt-5-mini'),
   DEFAULT_CURRENCY: z
     .string()
     .length(3)

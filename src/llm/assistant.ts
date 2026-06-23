@@ -9,16 +9,19 @@ import {
   REMEMBER_TOOL,
   SCHEDULE_TASK_TOOL,
   SURF_FORECAST_TOOL,
+  ADD_POI_TOOL,
 } from './tools.js';
 import {
   RecordExpenseZ,
   RememberZ,
   ScheduleTaskZ,
   SurfForecastZ,
+  AddPoiZ,
   toParsedExpense,
   type RecordExpenseInput,
   type ScheduleTaskInput,
   type SurfForecastInput,
+  type AddPoiInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 
@@ -37,6 +40,10 @@ export interface AssistantContext {
   allowRemember?: boolean;
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
+  /** Expose the add_poi tool (default true; false for scheduled runs). */
+  allowPoi?: boolean;
+  /** Saved places in this chat, shown so the model can recall them and not duplicate. */
+  places?: { name: string; category: string }[];
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -49,6 +56,8 @@ export interface AssistantHandlers {
   scheduleTask: (input: ScheduleTaskInput) => string;
   /** Fetch a wave forecast for the given spots; return a compact data summary. */
   surfForecast: (input: SurfForecastInput) => Promise<string>;
+  /** Save a point of interest; return a short human confirmation. */
+  addPoi: (input: AddPoiInput) => string;
 }
 
 export type AssistantResult =
@@ -71,6 +80,7 @@ export async function runAssistant(
     enableRemember: ctx.allowRemember !== false,
     enableReminders: ctx.allowReminders !== false,
     enableSurf: cfg.ENABLE_SURF,
+    enablePoi: ctx.allowPoi !== false,
   });
 
   const contextBlock = buildContextBlock({
@@ -81,6 +91,7 @@ export async function runAssistant(
     timezone: ctx.timezone,
     splidConnected: ctx.splidConnected,
     activeReminders: ctx.activeReminders ?? [],
+    places: ctx.places ?? [],
   });
 
   let scheduled = false;
@@ -180,6 +191,20 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? await handlers.surfForecast(parsed.data)
             : 'Could not parse the forecast request.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === ADD_POI_TOOL) {
+          const parsed = AddPoiZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'add_poi input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.addPoi(parsed.data)
+            : 'Could not parse the place.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

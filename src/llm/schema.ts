@@ -39,6 +39,16 @@ export const RememberZ = z.object({
 });
 export type RememberInput = z.infer<typeof RememberZ>;
 
+export const AddPoiZ = z.object({
+  name: z.string().min(1),
+  category: z.enum(['cafe', 'sight', 'plan', 'place']),
+  description: z.string().nullable(),
+  address: z.string().nullable(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
+});
+export type AddPoiInput = z.infer<typeof AddPoiZ>;
+
 export const ScheduleTaskZ = z.object({
   title: z.string().min(1),
   prompt: z.string().min(1),
@@ -136,6 +146,42 @@ export const rememberJsonSchema = {
     },
   },
   required: ['note'],
+} as const;
+
+export const addPoiJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: {
+      type: 'string',
+      description: 'Short name of the place, e.g. "Кафе Tartine", "Belém Tower".',
+    },
+    category: {
+      type: 'string',
+      enum: ['cafe', 'sight', 'plan', 'place'],
+      description:
+        'cafe = cafe/restaurant/bar/food; sight = landmark/museum/attraction already visited; plan = a place they want to go later; place = anything else.',
+    },
+    description: {
+      type: ['string', 'null'],
+      description:
+        'Why it is worth keeping, in the user\'s words (e.g. "лучший флэт уайт", "красивый вид на закат"). null if none.',
+    },
+    address: {
+      type: ['string', 'null'],
+      description:
+        'Street address, neighbourhood, or city if mentioned — used to build a Google Maps search when exact coordinates are unknown. null if none.',
+    },
+    latitude: {
+      type: ['number', 'null'],
+      description: 'Latitude if precisely known (e.g. from a shared map pin). null otherwise.',
+    },
+    longitude: {
+      type: ['number', 'null'],
+      description: 'Longitude if precisely known. null otherwise.',
+    },
+  },
+  required: ['name', 'category', 'description', 'address', 'latitude', 'longitude'],
 } as const;
 
 export const scheduleTaskJsonSchema = {

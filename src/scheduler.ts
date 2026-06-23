@@ -39,6 +39,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // could spawn more reminders every time it runs.
         allowRemember: false,
         allowReminders: false,
+        allowPoi: false,
         history: [],
         userContent: task.prompt,
       },
@@ -48,6 +49,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // Surf forecast stays live: a recurring evening task asks for tomorrow's
         // forecast and the bot posts the recommendation to the chat.
         surfForecast,
+        addPoi: () => 'noop',
       },
     );
     if (result.kind === 'text' && result.text.trim()) {

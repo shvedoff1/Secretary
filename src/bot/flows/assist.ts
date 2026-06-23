@@ -11,6 +11,8 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
+import { addPoi, listPois } from '../../db/repos/poi.repo.js';
+import { normalizeCategory } from '../../util/poi.js';
 import { getTimezone, setTimezone } from '../../db/repos/chatSettings.repo.js';
 import {
   createTask,
@@ -23,7 +25,7 @@ import {
   isValidTimezone,
   formatInTimezone,
 } from '../../util/schedule.js';
-import type { ScheduleTaskInput } from '../../llm/schema.js';
+import type { ScheduleTaskInput, AddPoiInput } from '../../llm/schema.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -163,6 +165,29 @@ export function makeScheduleTaskHandler(
 }
 
 /**
+ * Build the `add_poi` handler for a chat: persists the place and returns a short
+ * human confirmation the assistant relays back.
+ */
+export function makeAddPoiHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: AddPoiInput) => string {
+  return (input) => {
+    const poi = addPoi({
+      chatId,
+      tgUserId,
+      name: input.name,
+      category: normalizeCategory(input.category),
+      description: input.description,
+      address: input.address,
+      latitude: input.latitude,
+      longitude: input.longitude,
+    });
+    return `Добавил в места: ${poi.name}. Список: /poi`;
+  };
+}
+
+/**
  * Run the LLM assistant for a message and act on the result:
  * expense → preview; text → reply (unless this was a silent auto-expense scan).
  */
@@ -232,6 +257,7 @@ async function runAndRespondInner(
           title: t.title,
           when: (t.once ? 'разово ' : '') + formatInTimezone(t.nextRunAt, t.timezone),
         })),
+        places: listPois(chatId).map((p) => ({ name: p.name, category: p.category })),
         history,
         userContent: args.userContent,
       },
@@ -242,6 +268,7 @@ async function runAndRespondInner(
         },
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         surfForecast: makeSurfForecastHandler(),
+        addPoi: makeAddPoiHandler(chatId, tgUserId),
       },
     );
   } catch (err) {
@@ -380,6 +407,7 @@ async function rewordPendingInner(
       remember: (note) => (appendMemory(chatId, note), 'Запомнил.'),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),
+      addPoi: makeAddPoiHandler(chatId, tgUserId),
     },
   );
 

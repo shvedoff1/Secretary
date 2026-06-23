@@ -4,12 +4,14 @@ import {
   rememberJsonSchema,
   scheduleTaskJsonSchema,
   surfForecastJsonSchema,
+  addPoiJsonSchema,
 } from './schema.js';
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
 export const REMEMBER_TOOL = 'remember';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
+export const ADD_POI_TOOL = 'add_poi';
 
 export interface ToolOptions {
   enableWebSearch: boolean;
@@ -23,6 +25,8 @@ export interface ToolOptions {
   /** Expose the surf_forecast tool. Default true; stays on for scheduled runs so a
    *  recurring evening task can produce the "where to go tomorrow" report. */
   enableSurf?: boolean;
+  /** Expose the add_poi tool. Default true; disabled for scheduled runs. */
+  enablePoi?: boolean;
 }
 
 export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
@@ -64,6 +68,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Get a wave, wind and tide forecast for several spots and recommend where (and when) to go. Call this when the user asks about waves, surf, or where to go surfing ("какие волны завтра", "куда ехать на сёрф", "where will it be good"). You pick several popular spots near the region they mean (from your own knowledge) with coordinates of a point in the water, plus the day (today/tomorrow) and the chat timezone. It returns per-spot wave/wind plus the day\'s high/low tide times — match each spot\'s ideal tide to recommend the best spot(s) and time(s).',
       input_schema: surfForecastJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enablePoi !== false) {
+    tools.push({
+      name: ADD_POI_TOOL,
+      description:
+        'Save a point of interest to this chat\'s list of places — a cafe/restaurant worth remembering, a sight they visited, or a place they plan to go. Call this when the user wants to keep a place ("запиши это кафе", "добавь в места", "хочу сходить сюда", "сохрани это место"). Pick the best category and copy any address or coordinates mentioned so a Google Maps link can be built. View the list with /poi.',
+      input_schema: addPoiJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

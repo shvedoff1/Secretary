@@ -1,6 +1,6 @@
 import type { Context } from 'grammy';
 import { logger } from '../../logger.js';
-import { isAddressed, routeMessage } from '../triggers.js';
+import { isAddressed, routeMessage, addressesBotByName } from '../triggers.js';
 import { runAndRespond } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
@@ -72,8 +72,13 @@ export async function onVoice(ctx: Context): Promise<void> {
   }
 
   // Route the transcript exactly like a text message: addressed → process,
-  // looks-like-expense → silent auto-expense, otherwise ignore.
-  const decision = routeMessage(ctx, transcript);
+  // looks-like-expense → silent auto-expense, otherwise ignore. A voice note
+  // can't @mention or reply, so also treat a by-name question to the bot
+  // ("Скай, какая погода?") as addressed and answer it.
+  let decision = routeMessage(ctx, transcript);
+  if (decision !== 'process' && addressesBotByName(transcript)) {
+    decision = 'process';
+  }
   if (decision === 'ignore') {
     await clearWriting(ctx);
     return;

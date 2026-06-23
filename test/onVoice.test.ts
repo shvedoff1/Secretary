@@ -11,6 +11,7 @@ vi.mock('../src/util/telegramFile.js', () => ({
 vi.mock('../src/bot/triggers.js', () => ({
   isAddressed: vi.fn(),
   routeMessage: vi.fn(),
+  addressesBotByName: vi.fn(),
 }));
 vi.mock('../src/bot/flows/assist.js', () => ({
   runAndRespond: vi.fn(),
@@ -18,13 +19,14 @@ vi.mock('../src/bot/flows/assist.js', () => ({
 
 import { onVoice } from '../src/bot/handlers/onVoice.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../src/llm/transcribe.js';
-import { isAddressed, routeMessage } from '../src/bot/triggers.js';
+import { isAddressed, routeMessage, addressesBotByName } from '../src/bot/triggers.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
 
 const mockEnabled = vi.mocked(isTranscriptionEnabled);
 const mockTranscribe = vi.mocked(transcribeAudio);
 const mockAddressed = vi.mocked(isAddressed);
 const mockRoute = vi.mocked(routeMessage);
+const mockByName = vi.mocked(addressesBotByName);
 const mockRun = vi.mocked(runAndRespond);
 
 // Bare writing-hand codepoint (no variation selector) — the only form Telegram
@@ -46,6 +48,7 @@ function fakeCtx() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockByName.mockReturnValue(false); // off unless a test opts in
 });
 
 describe('onVoice reaction lifecycle', () => {
@@ -90,6 +93,21 @@ describe('onVoice reaction lifecycle', () => {
     expect(react).toHaveBeenNthCalledWith(1, WRITING);
     expect(react).toHaveBeenNthCalledWith(2, []);
     expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('answers a by-name question even when routing would ignore it', async () => {
+    mockEnabled.mockReturnValue(true);
+    mockTranscribe.mockResolvedValue('Скай, какая погода?');
+    mockAddressed.mockReturnValue(false);
+    mockRoute.mockReturnValue('ignore'); // not an expense, not @-addressed
+    mockByName.mockReturnValue(true); // …but it names the bot with a question
+    mockRun.mockResolvedValue('replied');
+
+    const { ctx } = fakeCtx();
+    await onVoice(ctx);
+
+    expect(mockRun).toHaveBeenCalledOnce();
+    expect(mockRun.mock.calls[0]?.[1]).toMatchObject({ addressed: true });
   });
 
   it('clears the reaction and nags (when addressed) on an empty transcript', async () => {

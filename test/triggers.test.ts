@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { looksLikeExpense, isAddressed, routeMessage } from '../src/bot/triggers.js';
+import {
+  looksLikeExpense,
+  isAddressed,
+  routeMessage,
+  addressesBotByName,
+} from '../src/bot/triggers.js';
 import type { Context } from 'grammy';
 
 function ctx(over: Record<string, unknown>): Context {
@@ -47,6 +52,31 @@ describe('isAddressed', () => {
   it('false for plain group chatter', () => {
     const c = ctx({ chat: { type: 'group' }, message: { text: 'привет' } });
     expect(isAddressed(c)).toBe(false);
+  });
+});
+
+describe('addressesBotByName', () => {
+  it('matches a question to the bot by its various names', () => {
+    expect(addressesBotByName('Скай, какая погода в Чангу?')).toBe(true);
+    expect(addressesBotByName('скайлер, посчитай сколько я потратил')).toBe(true);
+    expect(addressesBotByName('миссис Вайт, напомни завтра позвонить')).toBe(true);
+    expect(addressesBotByName('мисс вайт, что там по волнам')).toBe(true);
+    expect(addressesBotByName('бот, сколько время в Токио?')).toBe(true);
+    expect(addressesBotByName('ботик, расскажи анекдот')).toBe(true);
+    expect(addressesBotByName('Sky, what is the weather?')).toBe(true);
+    expect(addressesBotByName('Mrs White, when is the meeting?')).toBe(true);
+  });
+
+  it('requires both a name and a question/request marker', () => {
+    expect(addressesBotByName('скай вчера лагал')).toBe(false); // name, no question
+    expect(addressesBotByName('какая сегодня погода?')).toBe(false); // question, no name
+    expect(addressesBotByName('спасибо, скай')).toBe(false); // name, just thanks
+  });
+
+  it('does not fire on words that merely contain the letters', () => {
+    expect(addressesBotByName('сколько стоит работа сантехника?')).toBe(false);
+    expect(addressesBotByName('где мои ботинки?')).toBe(false);
+    expect(addressesBotByName('какой выбрать оборот речи?')).toBe(false);
   });
 });
 

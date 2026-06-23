@@ -132,4 +132,48 @@ describe('humorize', () => {
       expect(await humorizeOrOriginal('plain')).toBe('plain');
     });
   });
+
+  describe('humorizeWithPreview', () => {
+    it('sends the pre-OpenAI original, then returns the rewrite', async () => {
+      setEnv({ ENABLE_HUMOR: 'true', OPENAI_API_KEY: 'sk-test' });
+      vi.stubGlobal('fetch', vi.fn(async () => completion('after')));
+      const { humorizeWithPreview } = await import('../src/llm/humorize.js');
+
+      const sent: string[] = [];
+      const out = await humorizeWithPreview('before', async (o) => {
+        sent.push(o);
+      });
+
+      expect(sent).toEqual(['before']); // original captured before the rewrite
+      expect(out).toBe('after');
+    });
+
+    it('does not send a preview (or call the API) when disabled', async () => {
+      setEnv({ ENABLE_HUMOR: 'false', OPENAI_API_KEY: 'sk-test' });
+      const fetchMock = vi.fn(async () => completion('after'));
+      vi.stubGlobal('fetch', fetchMock);
+      const { humorizeWithPreview } = await import('../src/llm/humorize.js');
+
+      const sent: string[] = [];
+      const out = await humorizeWithPreview('before', async (o) => {
+        sent.push(o);
+      });
+
+      expect(sent).toEqual([]);
+      expect(out).toBe('before');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('still returns the rewrite when the preview send fails', async () => {
+      setEnv({ ENABLE_HUMOR: 'true', OPENAI_API_KEY: 'sk-test' });
+      vi.stubGlobal('fetch', vi.fn(async () => completion('after')));
+      const { humorizeWithPreview } = await import('../src/llm/humorize.js');
+
+      const out = await humorizeWithPreview('before', async () => {
+        throw new Error('admin DM blocked');
+      });
+
+      expect(out).toBe('after');
+    });
+  });
 });

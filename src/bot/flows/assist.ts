@@ -6,7 +6,7 @@ import { getProvider } from '../../core/registry.js';
 import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
-import { humorizeOrOriginal } from '../../llm/humorize.js';
+import { humorizeWithPreview } from '../../llm/humorize.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
@@ -330,9 +330,12 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // For a plain-chat answer (no tool used), optionally run the tone-only
   // humorizer. It's best-effort: disabled or failed → original text unchanged,
   // so accuracy and delivery are never at risk. Factual/tool answers are left
-  // untouched (humorizable is false for them).
+  // untouched (humorizable is false for them). When the humorizer runs, the
+  // pre-OpenAI original is DM'd to the admin so the before/after can be compared.
   const replyText = result.humorizable
-    ? await humorizeOrOriginal(result.text)
+    ? await humorizeWithPreview(result.text, async (original) => {
+        await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
+      })
     : result.text;
 
   await replyMarkdown(ctx, replyText, {

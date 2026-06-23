@@ -81,3 +81,22 @@ export async function humorizeOrOriginal(text: string): Promise<string> {
     return text;
   }
 }
+
+/**
+ * Like {@link humorizeOrOriginal}, but when the humorizer is active it first
+ * hands the pre-OpenAI original to `sendOriginal` (used to DM the admin the
+ * "before" text for side-by-side comparison). The preview is best-effort and
+ * never blocks or breaks the reply; when humour is disabled nothing is sent.
+ */
+export async function humorizeWithPreview(
+  text: string,
+  sendOriginal: (original: string) => Promise<void>,
+): Promise<string> {
+  if (!isHumorEnabled()) return text;
+  try {
+    await sendOriginal(text);
+  } catch (err) {
+    logger.warn({ err }, 'failed to send humor preview');
+  }
+  return humorizeOrOriginal(text);
+}

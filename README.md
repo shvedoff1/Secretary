@@ -9,7 +9,8 @@ secretary with memory. It:
   3 минуты", "каждое утро ищи прогноз волн и кидай сюда") — scheduled with cron + the
   chat's timezone;
 - as an **optional add-on**, records **shared expenses** to **[Splid](https://splid.app)**
-  from plain language or **receipt photos** (preview with ✅/✏️/❌ before saving). This
+  from plain language, **voice messages**, or **receipt photos** (preview with ✅/✏️/❌
+  before saving). This
   only kicks in once a chat connects a Splid group with `/group`; everything else works
   without it;
 - is **admin-gated**: only approved users can use it, so it can't be abused.
@@ -69,6 +70,9 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `ANTHROPIC_API_KEY` | yes | — | Claude API key |
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
 | `ANTHROPIC_MODEL` | no | `claude-opus-4-8` | Model id |
+| `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
+| `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
+| `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
 | `DEFAULT_CURRENCY` | no | `EUR` | ISO 4217, used when unstated |
 | `DATABASE_PATH` | no | `./data/bot.sqlite` | SQLite file |
 | `LOG_LEVEL` | no | `info` | pino level |
@@ -91,6 +95,8 @@ Then just talk:
 
 - `я потратил 500 за такси за меня и Колю` → preview → ✅ → written to Splid.
 - send a **photo of a receipt** (optionally with a caption) → preview → ✅.
+- send a **voice message** (“потратил 500 за такси”) → transcribed → preview → ✅
+  (needs `OPENAI_API_KEY`).
 - `/remember у нас поездка в Бали` then `@bot где корт поближе?`
 
 ## Commands

@@ -1,10 +1,10 @@
 import type { Context } from 'grammy';
 import type Anthropic from '@anthropic-ai/sdk';
-import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { isAddressed, looksLikeExpense } from '../triggers.js';
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
 import { runAndRespond } from '../flows/assist.js';
+import { downloadTelegramFile } from '../../util/telegramFile.js';
 
 export async function onPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message?.photo;
@@ -43,7 +43,7 @@ export async function handleReceiptPhoto(
   const largest = photos[photos.length - 1]!;
   let base64: string;
   try {
-    base64 = await downloadAsBase64(ctx, largest.file_id);
+    base64 = (await downloadTelegramFile(ctx, largest.file_id)).toString('base64');
   } catch (err) {
     logger.error({ err }, 'failed to download receipt photo');
     if (addressed) await ctx.reply('Не смог скачать фото чека, попробуйте ещё раз.');
@@ -64,15 +64,4 @@ export async function handleReceiptPhoto(
     source: 'photo',
     historyText: caption ? `[чек] ${caption}` : '[чек]',
   });
-}
-
-async function downloadAsBase64(ctx: Context, fileId: string): Promise<string> {
-  const { BOT_TOKEN } = loadConfig();
-  const file = await ctx.api.getFile(fileId);
-  if (!file.file_path) throw new Error('no file_path from Telegram');
-  const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`download failed: ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  return buf.toString('base64');
 }

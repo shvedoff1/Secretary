@@ -3,7 +3,7 @@ import type { ExpenseDraft } from '../../core/types.js';
 import { shortId } from '../../util/ids.js';
 
 export type PendingStatus = 'awaiting' | 'confirmed' | 'cancelled' | 'expired';
-export type PendingSource = 'text' | 'photo';
+export type PendingSource = 'text' | 'photo' | 'voice';
 
 export interface PendingRow {
   id: string;

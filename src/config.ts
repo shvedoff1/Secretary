@@ -13,6 +13,12 @@ const ConfigSchema = z.object({
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
 
   ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
+  // Speech-to-text for voice messages. Optional: without a key, voice notes are
+  // ignored (we never transcribe). OpenAI's audio API is called over plain HTTP,
+  // so no extra npm dependency is needed.
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_TRANSCRIBE_MODEL: z.string().default('whisper-1'),
+  OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   DEFAULT_CURRENCY: z
     .string()
     .length(3)

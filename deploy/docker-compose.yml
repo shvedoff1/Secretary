@@ -2,7 +2,8 @@
 #
 # Deployed to ~/secretary on the box by the GitHub Actions deploy job:
 #   ~/secretary/docker-compose.yml   (written from the repo, base64)
-#   ~/secretary/.env                 (secrets: BOT_TOKEN, ANTHROPIC_API_KEY, ADMIN_TELEGRAM_ID)
+#   ~/secretary/.env                 (secrets: BOT_TOKEN, ANTHROPIC_API_KEY, ADMIN_TELEGRAM_ID,
+#                                      optional OPENAI_API_KEY for voice transcription)
 #   ~/secretary/data/                (SQLite lives here)
 #
 # The VPS is outside RU, so the bot reaches Telegram and Anthropic directly —

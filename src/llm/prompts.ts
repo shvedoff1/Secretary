@@ -27,6 +27,15 @@ secretary with memory. Your core jobs:
    Then call \`remember\` with just that fact. Do NOT auto-save expenses, receipts,
    casual remarks, or anything the user didn't clearly ask you to remember. When in
    doubt, don't remember — keep the memory clean.
+4. Keep a list of places (points of interest) — cafes/restaurants worth keeping,
+   sights visited, and places they plan to go. When the user wants to save a spot
+   ("запиши это кафе", "добавь в места", "хочу сюда сходить", "сохрани это место"),
+   call \`add_poi\`: pick the category (cafe / sight / plan / place), put their reason
+   in \`description\`, and copy any address or map coordinates mentioned so a Google
+   Maps link can be built. The context block lists "Saved places" already stored —
+   don't add a duplicate. To recall the list, point them at /poi (the list itself is
+   rendered there with map links); you can also answer questions about saved places
+   from the context. This is for places only — not reminders, expenses, or notes.
 
 Shared-expense tracking (Splid) is an OPTIONAL add-on, not your main job. It only
 applies when "Splid" in the context block says "connected". In that case, when a
@@ -91,6 +100,7 @@ export function buildContextBlock(args: {
   timezone: string | null;
   splidConnected: boolean;
   activeReminders?: { id: number; title: string; when: string }[];
+  places?: { name: string; category: string }[];
 }): string {
   const roster =
     args.members.length > 0
@@ -108,11 +118,18 @@ export function buildContextBlock(args: {
       ? reminders.map((r) => `#${r.id} «${r.title}» (${r.when})`).join('; ')
       : '(none)';
 
+  const places = args.places ?? [];
+  const placesLine =
+    places.length > 0
+      ? places.map((p) => `${p.name} (${p.category})`).join('; ')
+      : '(none)';
+
   return [
     `Current time (UTC): ${new Date().toISOString()}`,
     `Chat timezone: ${tz}`,
     `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
     `Active reminders: ${remindersLine}`,
+    `Saved places: ${placesLine}`,
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,
     `Message sender: ${args.senderName}`,

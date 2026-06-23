@@ -11,6 +11,7 @@ import { cmdLink } from './commands/link.js';
 import { cmdWhoami } from './commands/whoami.js';
 import { cmdMemory, cmdRemember, cmdForget } from './commands/memory.js';
 import { cmdTasks, cmdCancelTask } from './commands/tasks.js';
+import { cmdPoi, cmdDelPoi } from './commands/poi.js';
 import {
   cmdChats,
   cmdChat,
@@ -46,6 +47,8 @@ export function buildBot(token: string): Bot {
   bot.command('forget', cmdForget);
   bot.command('tasks', cmdTasks);
   bot.command('canceltask', cmdCancelTask);
+  bot.command('poi', cmdPoi);
+  bot.command('delpoi', cmdDelPoi);
 
   // Admin-only chat administration (private chat with the bot).
   bot.command('chats', cmdChats);
@@ -81,6 +84,8 @@ export const BOT_COMMANDS = [
   { command: 'forget', description: 'Очистить заметки' },
   { command: 'tasks', description: 'Напоминания и регулярные задачи' },
   { command: 'canceltask', description: 'Отменить задачу по id' },
+  { command: 'poi', description: 'Список мест (кафе, достопримечательности, планы)' },
+  { command: 'delpoi', description: 'Удалить место по id' },
   { command: 'whoami', description: 'Кто я для бота' },
   { command: 'request', description: 'Запросить доступ' },
 ];

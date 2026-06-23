@@ -4,6 +4,7 @@ import {
   RECORD_EXPENSE_TOOL,
   REMEMBER_TOOL,
   SCHEDULE_TASK_TOOL,
+  ADD_POI_TOOL,
 } from '../src/llm/tools.js';
 
 function names(tools: ReturnType<typeof buildTools>): string[] {
@@ -59,5 +60,15 @@ describe('buildTools', () => {
     expect(got).not.toContain(REMEMBER_TOOL);
     expect(got).not.toContain(SCHEDULE_TASK_TOOL);
     expect(got).toContain('web_search'); // search still allowed when a task fires
+  });
+
+  it('exposes add_poi by default and omits it when disabled', () => {
+    expect(names(buildTools({ enableWebSearch: false, enableExpense: false }))).toContain(
+      ADD_POI_TOOL,
+    );
+    const scheduled = names(
+      buildTools({ enableWebSearch: true, enableExpense: false, enablePoi: false }),
+    );
+    expect(scheduled).not.toContain(ADD_POI_TOOL);
   });
 });

@@ -3,11 +3,13 @@ import {
   recordExpenseJsonSchema,
   rememberJsonSchema,
   scheduleTaskJsonSchema,
+  addPoiJsonSchema,
 } from './schema.js';
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
 export const REMEMBER_TOOL = 'remember';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
+export const ADD_POI_TOOL = 'add_poi';
 
 export interface ToolOptions {
   enableWebSearch: boolean;
@@ -18,6 +20,8 @@ export interface ToolOptions {
   /** Expose the schedule_task tool. Default true; disabled for scheduled runs so a
    *  firing reminder can't create more reminders. */
   enableReminders?: boolean;
+  /** Expose the add_poi tool. Default true; disabled for scheduled runs. */
+  enablePoi?: boolean;
 }
 
 export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
@@ -50,6 +54,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Create a reminder or recurring task. Call this ONLY for a NEW request in the user\'s latest message (e.g. "напомни встать через 3 минуты", "каждое утро ищи прогноз волн и кидай сюда"). Convert the timing into a cron expression. The task `prompt` runs later WITHOUT chat history, so make it self-contained. Never recreate a reminder that already appears in "Active reminders" in the context. Confirm timezone with the user once if it is unknown in the context.',
       input_schema: scheduleTaskJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enablePoi !== false) {
+    tools.push({
+      name: ADD_POI_TOOL,
+      description:
+        'Save a point of interest to this chat\'s list of places — a cafe/restaurant worth remembering, a sight they visited, or a place they plan to go. Call this when the user wants to keep a place ("запиши это кафе", "добавь в места", "хочу сходить сюда", "сохрани это место"). Pick the best category and copy any address or coordinates mentioned so a Google Maps link can be built. View the list with /poi.',
+      input_schema: addPoiJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

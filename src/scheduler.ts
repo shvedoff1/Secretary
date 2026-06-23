@@ -36,12 +36,14 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // could spawn more reminders every time it runs.
         allowRemember: false,
         allowReminders: false,
+        allowPoi: false,
         history: [],
         userContent: task.prompt,
       },
       {
         remember: () => 'noop',
         scheduleTask: () => 'noop',
+        addPoi: () => 'noop',
       },
     );
     if (result.kind === 'text' && result.text.trim()) {

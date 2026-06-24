@@ -5,6 +5,8 @@ Anthropic SDK. Splid behind a pluggable provider interface.
 
 ## Working agreements
 
+- **Always open a PR.** Every change ships as a pull request — create one for the
+  working branch (don't just push the branch and stop), even when not explicitly asked.
 - **Always write tests.** Every change ships with tests — new behavior gets new tests,
   bug fixes get a regression test. If you're worried a change might break something,
   that's the signal to add a test rather than skip it. Prefer fast, dependency-free

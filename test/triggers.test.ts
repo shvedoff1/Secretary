@@ -4,6 +4,7 @@ import {
   isAddressed,
   routeMessage,
   addressesBotByName,
+  isMoneyContext,
 } from '../src/bot/triggers.js';
 import type { Context } from 'grammy';
 
@@ -24,6 +25,34 @@ describe('looksLikeExpense', () => {
     expect(looksLikeExpense('всем привет, как дела')).toBe(false);
     expect(looksLikeExpense('потратил кучу сил')).toBe(false);
     expect(looksLikeExpense('купил продуктов')).toBe(false); // no number
+  });
+});
+
+describe('isMoneyContext', () => {
+  it('treats every receipt photo as money — never humorized', () => {
+    expect(isMoneyContext({ source: 'photo', userText: '', replyText: 'хаха' })).toBe(true);
+  });
+  it('flags a spend-like incoming message', () => {
+    expect(
+      isMoneyContext({ source: 'text', userText: 'потратил 500 за такси', replyText: 'ок' }),
+    ).toBe(true);
+  });
+  it('flags a reply that itself talks money (model answered a receipt in text)', () => {
+    expect(
+      isMoneyContext({
+        source: 'text',
+        userText: 'раскинь чек',
+        replyText: 'Доширак 200 на Ивана, ужин 1500 на всех',
+      }),
+    ).toBe(true);
+  });
+  it('leaves plain chatter humorizable', () => {
+    expect(
+      isMoneyContext({ source: 'text', userText: 'как дела', replyText: 'всё чилл, бро' }),
+    ).toBe(false);
+    expect(
+      isMoneyContext({ source: 'voice', userText: 'какая погода', replyText: 'солнечно' }),
+    ).toBe(false);
   });
 });
 

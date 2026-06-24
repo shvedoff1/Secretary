@@ -7,6 +7,7 @@ import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { humorizeWithPreview } from '../../llm/humorize.js';
+import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
@@ -306,20 +307,30 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       return 'replied';
     }
     const senderMapping = getMapping(chatId, tgUserId);
-    const draft = buildDraft({
-      parsed: toParsedExpense(result.input),
-      members,
-      senderMemberId: senderMapping?.provider_member_id ?? null,
-      defaultCurrency: chatCfg.default_currency,
-      aliases: getAliasMap(chatId),
-    });
-    await presentDraft(ctx, {
-      chatId,
-      tgUserId,
-      draft,
-      source: args.source,
-      members,
-    });
+    // The model may have split a receipt into several per-group expenses. Show
+    // its breakdown explanation once (if any), then a separate preview for each
+    // expense so every group can be confirmed/edited on its own.
+    if (result.preamble) {
+      await replyMarkdown(ctx, result.preamble, {
+        reply_to_message_id: ctx.message?.message_id,
+      });
+    }
+    for (const input of result.inputs) {
+      const draft = buildDraft({
+        parsed: toParsedExpense(input),
+        members,
+        senderMemberId: senderMapping?.provider_member_id ?? null,
+        defaultCurrency: chatCfg.default_currency,
+        aliases: getAliasMap(chatId),
+      });
+      await presentDraft(ctx, {
+        chatId,
+        tgUserId,
+        draft,
+        source: args.source,
+        members,
+      });
+    }
     // Expenses are a side-channel (preview/confirm), NOT dialogue — keep them out
     // of conversation history so the assistant doesn't resurface old expenses on
     // unrelated messages.
@@ -335,9 +346,19 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // For a plain-chat answer (no tool used), optionally run the tone-only
   // humorizer. It's best-effort: disabled or failed → original text unchanged,
   // so accuracy and delivery are never at risk. Factual/tool answers are left
-  // untouched (humorizable is false for them). When the humorizer runs, the
-  // pre-OpenAI original is DM'd to the admin so the before/after can be compared.
-  const replyText = result.humorizable
+  // untouched (humorizable is false for them). Money is ALSO left untouched even
+  // when no tool ran — a receipt photo, a spend-like message, or a reply that
+  // talks money never goes to OpenAI, so amounts/names/splits can't be garbled.
+  // When the humorizer runs, the pre-OpenAI original is DM'd to the admin so the
+  // before/after can be compared.
+  const safeToHumorize =
+    result.humorizable &&
+    !isMoneyContext({
+      source: args.source,
+      userText: args.historyText,
+      replyText: result.text,
+    });
+  const replyText = safeToHumorize
     ? await humorizeWithPreview(result.text, async (original) => {
         await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
       })
@@ -436,7 +457,10 @@ async function rewordPendingInner(
     },
   );
 
-  if (result.kind !== 'expense') {
+  // A reword corrects ONE existing preview in place, so we apply just the first
+  // expense the model returns (it's told to return the whole trade as one).
+  const rewordInput = result.kind === 'expense' ? result.inputs[0] : undefined;
+  if (!rewordInput) {
     await ctx.reply(
       'Не понял правку. Можешь переписать трату целиком, напр.: «такси 500 за меня и Колю».',
     );
@@ -445,7 +469,7 @@ async function rewordPendingInner(
 
   const senderMapping = getMapping(chatId, tgUserId);
   const draft = buildDraft({
-    parsed: toParsedExpense(result.input),
+    parsed: toParsedExpense(rewordInput),
     members,
     senderMemberId: senderMapping?.provider_member_id ?? null,
     defaultCurrency: chatCfg.default_currency,

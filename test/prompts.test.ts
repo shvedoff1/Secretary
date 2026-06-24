@@ -18,6 +18,20 @@ describe('SYSTEM_PROMPT lexicon guidance', () => {
   });
 });
 
+// A receipt with items belonging to different people must split into several
+// expenses, and "everyone except X" must be expanded from the roster — both were
+// the cases the bot used to fluff, so guard the guidance against silent removal.
+describe('SYSTEM_PROMPT receipt-splitting guidance', () => {
+  it('tells the model to emit several record_expense calls per group', () => {
+    expect(SYSTEM_PROMPT).toContain('GROUPS');
+    expect(SYSTEM_PROMPT).toMatch(/SEVERAL\s+`?record_expense/);
+  });
+
+  it('tells the model to expand "everyone except X" from the roster', () => {
+    expect(SYSTEM_PROMPT).toContain('EXCEPT');
+  });
+});
+
 describe('buildContextBlock lexicon section', () => {
   const base = {
     defaultCurrency: 'EUR',

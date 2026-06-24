@@ -306,20 +306,30 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       return 'replied';
     }
     const senderMapping = getMapping(chatId, tgUserId);
-    const draft = buildDraft({
-      parsed: toParsedExpense(result.input),
-      members,
-      senderMemberId: senderMapping?.provider_member_id ?? null,
-      defaultCurrency: chatCfg.default_currency,
-      aliases: getAliasMap(chatId),
-    });
-    await presentDraft(ctx, {
-      chatId,
-      tgUserId,
-      draft,
-      source: args.source,
-      members,
-    });
+    // The model may have split a receipt into several per-group expenses. Show
+    // its breakdown explanation once (if any), then a separate preview for each
+    // expense so every group can be confirmed/edited on its own.
+    if (result.preamble) {
+      await replyMarkdown(ctx, result.preamble, {
+        reply_to_message_id: ctx.message?.message_id,
+      });
+    }
+    for (const input of result.inputs) {
+      const draft = buildDraft({
+        parsed: toParsedExpense(input),
+        members,
+        senderMemberId: senderMapping?.provider_member_id ?? null,
+        defaultCurrency: chatCfg.default_currency,
+        aliases: getAliasMap(chatId),
+      });
+      await presentDraft(ctx, {
+        chatId,
+        tgUserId,
+        draft,
+        source: args.source,
+        members,
+      });
+    }
     // Expenses are a side-channel (preview/confirm), NOT dialogue — keep them out
     // of conversation history so the assistant doesn't resurface old expenses on
     // unrelated messages.
@@ -436,7 +446,10 @@ async function rewordPendingInner(
     },
   );
 
-  if (result.kind !== 'expense') {
+  // A reword corrects ONE existing preview in place, so we apply just the first
+  // expense the model returns (it's told to return the whole trade as one).
+  const rewordInput = result.kind === 'expense' ? result.inputs[0] : undefined;
+  if (!rewordInput) {
     await ctx.reply(
       'Не понял правку. Можешь переписать трату целиком, напр.: «такси 500 за меня и Колю».',
     );
@@ -445,7 +458,7 @@ async function rewordPendingInner(
 
   const senderMapping = getMapping(chatId, tgUserId);
   const draft = buildDraft({
-    parsed: toParsedExpense(result.input),
+    parsed: toParsedExpense(rewordInput),
     members,
     senderMemberId: senderMapping?.provider_member_id ?? null,
     defaultCurrency: chatCfg.default_currency,

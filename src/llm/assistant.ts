@@ -63,7 +63,12 @@ export interface AssistantHandlers {
 }
 
 export type AssistantResult =
-  | { kind: 'expense'; input: RecordExpenseInput }
+  // One turn can yield SEVERAL expenses: a receipt that splits into groups
+  // ("всё моё кроме доширака — он Ивану; палки на всех кроме Иры") is decomposed
+  // into one expense per group, each previewed/confirmed on its own. `preamble`
+  // is the model's short plain-text explanation of the breakdown, shown once
+  // above the previews (null when it didn't explain — e.g. a single expense).
+  | { kind: 'expense'; inputs: RecordExpenseInput[]; preamble: string | null }
   // `scheduled` marks a turn that created/handled a reminder, so the caller can
   // keep it out of conversation history (a lingering request would re-fire).
   // `humorizable` is true only for a plain-chat answer (no tool was used), so
@@ -146,19 +151,33 @@ export async function runAssistant(
     );
 
     // record_expense short-circuits: it's a side-effecting action gated by a
-    // human confirmation, so we stop and let the bot render a preview.
-    const recordBlock = res.content.find(
+    // human confirmation, so we stop and let the bot render a preview. The model
+    // may emit SEVERAL record_expense calls in one turn (a receipt split into
+    // per-group expenses) — collect them all, plus any text block it wrote
+    // alongside to explain the breakdown.
+    const recordBlocks = res.content.filter(
       (b): b is Anthropic.ToolUseBlock =>
         b.type === 'tool_use' && b.name === RECORD_EXPENSE_TOOL,
     );
-    if (recordBlock) {
-      const parsed = RecordExpenseZ.safeParse(recordBlock.input);
-      if (parsed.success) return { kind: 'expense', input: parsed.data };
-      logger.warn({ err: parsed.error }, 'record_expense input failed validation');
-      return {
-        kind: 'text',
-        text: 'Не смог разобрать трату — попробуй сформулировать иначе (сумма, на кого делим).',
-      };
+    if (recordBlocks.length > 0) {
+      const inputs: RecordExpenseInput[] = [];
+      for (const block of recordBlocks) {
+        const parsed = RecordExpenseZ.safeParse(block.input);
+        if (parsed.success) inputs.push(parsed.data);
+        else logger.warn({ err: parsed.error }, 'record_expense input failed validation');
+      }
+      if (inputs.length === 0) {
+        return {
+          kind: 'text',
+          text: 'Не смог разобрать трату — попробуй сформулировать иначе (сумма, на кого делим).',
+        };
+      }
+      const preamble = res.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+        .trim();
+      return { kind: 'expense', inputs, preamble: preamble || null };
     }
 
     if (res.stop_reason === 'tool_use') {

@@ -81,13 +81,31 @@ Rules for \`record_expense\` (only relevant when Splid is connected):
   is allowed and means the sender; "all"/"все"/"everyone" means the whole group.
 - If nothing indicates who paid, leave payerHints empty (the sender is assumed).
 - If nothing indicates how it's split, leave profiteerHints empty (everyone is assumed).
+- "Everyone EXCEPT X" ("на всех кроме Иры", "all but Sam"): you have the full
+  member roster in the context block — expand it yourself into an explicit
+  profiteerHints list of every member except X. Do NOT emit a literal "кроме …"
+  hint; name the people who DO share.
 - Uneven split: fill \`splits\` with amount (absolute, natural units) OR share (0..1) per person.
   Equal split: set \`splits\` to null.
-- For a receipt photo: read the total and the merchant (merchant => title); emit
-  ONE expense for the total amount (not separate line items). BUT capture the
-  itemised breakdown — every item with its price — into \`notes\`
-  (e.g. «Пиво 150, Бургер 420, Кофе 180, Сервис 10%»). Keep those prices so the
-  split can later be adjusted by who-ate-what WITHOUT needing the photo again.
+- For a receipt where the WHOLE bill is shared the same way: read the total and the
+  merchant (merchant => title); emit ONE expense for the total amount (not separate
+  line items). BUT capture the itemised breakdown — every item with its price — into
+  \`notes\` (e.g. «Пиво 150, Бургер 420, Кофе 180, Сервис 10%»). Keep those prices so
+  the split can later be adjusted by who-ate-what WITHOUT needing the photo again.
+- A receipt that splits into GROUPS — different items belong to different people
+  ("всё моё кроме доширака и спрайта — они Ивану", "палки-вонялки на всех кроме
+  Иры, остальное на всех") — DON'T cram it into one expense. Emit SEVERAL
+  \`record_expense\` calls in the SAME reply, one per group of people:
+  • each call's \`amount\` = the SUM of that group's item prices (do the math yourself);
+  • \`title\` = those items (e.g. «Доширак + Спрайт»);
+  • \`profiteerHints\` = who shares that group;
+  • \`notes\` = the items with prices that went into it.
+  Items that are only the payer's own create no debt — fold them into one
+  payer-only expense (profiteerHints = ["я"]) or skip them; either way SAY which.
+  ALONGSIDE the tool calls, write ONE short plain-text message that explains the
+  breakdown — what items landed in each expense and who splits each — so the user
+  can eyeball it. (For a simple single expense, no explanation needed — the preview
+  speaks for itself.)
 - If the user says who ate / ordered what and the item prices are already known
   (in the notes, the current preview, or the message), compute an uneven split
   yourself via \`splits\` (amount per person) from those prices. Do NOT ask

@@ -12,6 +12,7 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
+import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
 import { getTimezone, setTimezone } from '../../db/repos/chatSettings.repo.js';
@@ -265,6 +266,10 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           when: (t.once ? 'разово ' : '') + formatInTimezone(t.nextRunAt, t.timezone),
         })),
         places: listPois(chatId).map((p) => ({ name: p.name, category: p.category })),
+        lexicon: getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
+          term: e.term,
+          gloss: e.gloss,
+        })),
         history,
         userContent: args.userContent,
       },

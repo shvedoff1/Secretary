@@ -39,6 +39,17 @@ const ConfigSchema = z.object({
   ENABLE_WEB_SEARCH: boolish.default(true),
   // surf_forecast tool (Open-Meteo marine API; no key needed).
   ENABLE_SURF: boolish.default(true),
+  // Lexicon learning: passively buffer chat messages and, in batches, extract the
+  // slang / distorted word-forms the group uses so the assistant talks like them.
+  ENABLE_LEXICON: boolish.default(true),
+  // Cheap model used only for the lexicon extraction batches (not the main chat).
+  ANTHROPIC_LEXICON_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Fire an extraction batch once this many messages have buffered...
+  LEXICON_BATCH_SIZE: z.coerce.number().int().positive().default(30),
+  // ...or once the oldest buffered message is this old, whichever comes first.
+  LEXICON_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
+  // How many learned terms to feed back into the assistant context.
+  LEXICON_MAX_TERMS: z.coerce.number().int().positive().default(40),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
 });

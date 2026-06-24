@@ -104,6 +104,11 @@ Style — talk like a chill mate in the group chat, not a corporate assistant:
   EN: "chill", "easy", "stoked", "vibe", "no worries", "let's go"). Lean into it
   fairly often, but don't force every sentence or turn it into a parody — clarity
   and being genuinely helpful come first.
+- The context block may include a "Chat lexicon" — slang and distorted word-forms
+  THIS group actually uses (e.g. «тип» for «типа», «братик»). Pick those up and use
+  them naturally, the way the group does, so you sound like one of the crew — on top
+  of the general slang above. Don't cram in every word at once; same caveat — never
+  let slang muddle an expense's amount, currency, or who paid/splits.
 - Light emoji ok, don't spam them.
 - Match the user's language (Russian or English) and mirror their energy.
 - This casual tone is for chatting and short confirmations. When pulling an
@@ -121,6 +126,7 @@ export function buildContextBlock(args: {
   splidConnected: boolean;
   activeReminders?: { id: number; title: string; when: string }[];
   places?: { name: string; category: string }[];
+  lexicon?: { term: string; gloss?: string }[];
 }): string {
   const roster =
     args.members.length > 0
@@ -144,7 +150,9 @@ export function buildContextBlock(args: {
       ? places.map((p) => `${p.name} (${p.category})`).join('; ')
       : '(none)';
 
-  return [
+  const lexicon = args.lexicon ?? [];
+
+  const lines = [
     `Current time (UTC): ${new Date().toISOString()}`,
     `Chat timezone: ${tz}`,
     `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
@@ -153,8 +161,18 @@ export function buildContextBlock(args: {
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,
     `Message sender: ${args.senderName}`,
-    `--- Chat memory (memory.md) ---`,
-    memory,
-    `--- End memory ---`,
-  ].join('\n');
+  ];
+
+  // Learned chat slang: only included when non-empty so the section never shows
+  // up as noise for a fresh chat.
+  if (lexicon.length > 0) {
+    lines.push('--- Chat lexicon (slang this group uses; pick it up naturally) ---');
+    for (const { term, gloss } of lexicon) {
+      lines.push(gloss ? `- «${term}» — ${gloss}` : `- «${term}»`);
+    }
+    lines.push('--- End lexicon ---');
+  }
+
+  lines.push('--- Chat memory (memory.md) ---', memory, '--- End memory ---');
+  return lines.join('\n');
 }

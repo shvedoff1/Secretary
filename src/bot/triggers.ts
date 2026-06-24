@@ -9,6 +9,26 @@ export function looksLikeExpense(text: string): boolean {
   return EXPENSE_KEYWORDS.test(text);
 }
 
+/**
+ * Should a reply be kept AWAY from the tone-only humorizer (OpenAI)? Money is
+ * never humorized — the rewrite can drop or distort amounts, names and splits,
+ * which is unacceptable for expenses. A turn counts as money-context when it
+ * came from a receipt photo, the user's message looked like a spend, or the
+ * reply itself talks money (e.g. the model answered a receipt in plain text
+ * without calling the expense tool). Better to lose a joke than mangle a number.
+ */
+export function isMoneyContext(args: {
+  source: string;
+  userText: string;
+  replyText: string;
+}): boolean {
+  return (
+    args.source === 'photo' ||
+    looksLikeExpense(args.userText) ||
+    looksLikeExpense(args.replyText)
+  );
+}
+
 // Names/nicknames the bot answers to when addressed by name. Cyrillic isn't a
 // JS \w char, so \b boundaries don't work here — use letter lookarounds instead.
 // "бот" forms are listed explicitly (nominative/vocative) to avoid matching

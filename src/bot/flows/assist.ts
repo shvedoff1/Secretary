@@ -270,7 +270,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   }
 
   const memory = getMemory(chatId);
-  const history = recentTurns(chatId, cfg.CONVERSATION_HISTORY_LIMIT);
+  const history = recentTurns(
+    chatId,
+    cfg.CONVERSATION_HISTORY_LIMIT,
+    cfg.CONVERSATION_HISTORY_MAX_AGE_HOURS * 60 * 60 * 1000,
+  );
 
   let result: AssistantResult;
   try {

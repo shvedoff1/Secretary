@@ -3,6 +3,7 @@ import { routeMessage, isAddressed, addressesBotByName } from '../triggers.js';
 import { getEditTarget } from '../editTargets.js';
 import { runAndRespond, rewordPending } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
+import { getTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
 
 export async function onMessage(ctx: Context): Promise<void> {
@@ -42,9 +43,15 @@ export async function onMessage(ctx: Context): Promise<void> {
 
   // When the user replies to some other message and addresses us (e.g. «запомни,
   // это трата» pointing at a spend we missed), include that referenced message as
-  // context so the assistant can act on the example — e.g. learn its expense
-  // keywords. Earlier branches already handled replies to our preview/photo.
-  const quoted = replyTo?.text ?? replyTo?.caption;
+  // context so the assistant can act on the example — e.g. record it or learn its
+  // expense keywords. Earlier branches already handled replies to our preview/photo.
+  // A replied-to VOICE note has no text/caption, so fall back to its cached
+  // transcript (stashed when we transcribed it) — otherwise the bot would see the
+  // user's «это трата» with no idea which expense they mean.
+  const quoted =
+    replyTo?.text ??
+    replyTo?.caption ??
+    (replyTo ? getTranscript(ctx.chat.id, replyTo.message_id) : undefined);
   const userContent =
     decision === 'process' && quoted
       ? `[В ответ на сообщение: "${quoted}"]\n${text}`

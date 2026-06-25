@@ -83,3 +83,44 @@ describe('onMessage by-name addressing', () => {
     expect(mockRun.mock.calls[0]?.[1]).toMatchObject({ addressed: false });
   });
 });
+
+describe('onMessage reply context', () => {
+  it('recovers a replied-to voice note transcript as context for the assistant', async () => {
+    const { setTranscript } = await import('../src/bot/transcriptCache.js');
+    setTranscript(1, 555, 'Иван проспонсировал поход. 2000 Айдейр');
+    mockRoute.mockReturnValue('process');
+
+    const c = {
+      message: {
+        text: 'это была трата',
+        reply_to_message: { message_id: 555 }, // a voice note: no text/caption
+      },
+      chat: { id: 1, type: 'group' },
+      from: { id: 2 },
+    } as unknown as Context;
+
+    await onMessage(c);
+
+    expect(mockRun).toHaveBeenCalledOnce();
+    const args = mockRun.mock.calls[0]?.[1] as { userContent: string };
+    expect(args.userContent).toContain('Иван проспонсировал поход. 2000 Айдейр');
+    expect(args.userContent).toContain('это была трата');
+  });
+
+  it('passes plain text (no quote block) when replying to a voice we never transcribed', async () => {
+    mockRoute.mockReturnValue('process');
+    const c = {
+      message: {
+        text: 'это была трата',
+        reply_to_message: { message_id: 999 }, // unknown id → no cached transcript
+      },
+      chat: { id: 1, type: 'group' },
+      from: { id: 2 },
+    } as unknown as Context;
+
+    await onMessage(c);
+
+    const args = mockRun.mock.calls[0]?.[1] as { userContent: string };
+    expect(args.userContent).toBe('это была трата');
+  });
+});

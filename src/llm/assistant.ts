@@ -7,6 +7,7 @@ import {
   buildTools,
   RECORD_EXPENSE_TOOL,
   REMEMBER_TOOL,
+  LEARN_EXPENSE_TOOL,
   SCHEDULE_TASK_TOOL,
   SURF_FORECAST_TOOL,
   ADD_POI_TOOL,
@@ -14,11 +15,13 @@ import {
 import {
   RecordExpenseZ,
   RememberZ,
+  LearnExpenseZ,
   ScheduleTaskZ,
   SurfForecastZ,
   AddPoiZ,
   toParsedExpense,
   type RecordExpenseInput,
+  type LearnExpenseInput,
   type ScheduleTaskInput,
   type SurfForecastInput,
   type AddPoiInput,
@@ -38,6 +41,8 @@ export interface AssistantContext {
   activeReminders?: { id: number; title: string; when: string }[];
   /** Expose the remember tool (default true; false for scheduled runs). */
   allowRemember?: boolean;
+  /** Expose the learn_expense_pattern tool (default true; false for scheduled runs). */
+  allowExpenseLearning?: boolean;
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
   /** Expose the add_poi tool (default true; false for scheduled runs). */
@@ -54,6 +59,8 @@ export interface AssistantContext {
 export interface AssistantHandlers {
   /** Persist a remembered note; return a short human confirmation. */
   remember: (note: string) => string;
+  /** Add trigger words to the chat's expense dictionary; return a confirmation. */
+  learnExpense: (input: LearnExpenseInput) => string;
   /** Create a reminder / recurring task; return a short human confirmation. */
   scheduleTask: (input: ScheduleTaskInput) => string;
   /** Fetch a wave forecast for the given spots; return a compact data summary. */
@@ -88,6 +95,7 @@ export async function runAssistant(
     enableWebSearch: cfg.ENABLE_WEB_SEARCH,
     enableExpense: ctx.splidConnected,
     enableRemember: ctx.allowRemember !== false,
+    enableExpenseLearning: ctx.allowExpenseLearning !== false,
     enableReminders: ctx.allowReminders !== false,
     enableSurf: cfg.ENABLE_SURF,
     enablePoi: ctx.allowPoi !== false,
@@ -191,6 +199,20 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.remember(parsed.data.note)
             : 'Could not parse the note.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === LEARN_EXPENSE_TOOL) {
+          const parsed = LearnExpenseZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'learn_expense_pattern input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.learnExpense(parsed.data)
+            : 'Could not parse the expense keywords.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

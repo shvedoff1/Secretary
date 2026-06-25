@@ -1,4 +1,5 @@
 import type { Context } from 'grammy';
+import { getExpenseTerms } from '../db/repos/expenseTerm.repo.js';
 
 const EXPENSE_KEYWORDS =
   /(потрат|заплат|оплат|скинул|должен|долж|купил|чек|счет|счёт|за\s|spent|paid|bought|cost|bill|check|lunch|dinner|breakfast|taxi|такси|обед|ужин|завтрак|груш|product|groсer|store|shop|кафе|cafe|restaurant|рестора)/i;
@@ -7,6 +8,22 @@ const EXPENSE_KEYWORDS =
 export function looksLikeExpense(text: string): boolean {
   if (!/\d/.test(text)) return false;
   return EXPENSE_KEYWORDS.test(text);
+}
+
+/**
+ * Like {@link looksLikeExpense}, but also consults the chat's LEARNED expense
+ * dictionary (`chat_expense_term`) — words/phrases the user taught at runtime via
+ * «запомни, это трата». Still requires a number (an expense reports an amount), so
+ * a learned term alone can't misfire on chatter. Falls back to the base heuristic
+ * if the chat has taught nothing.
+ */
+export function looksLikeExpenseForChat(chatId: number, text: string): boolean {
+  if (looksLikeExpense(text)) return true;
+  if (!/\d/.test(text)) return false;
+  const terms = getExpenseTerms(chatId);
+  if (terms.length === 0) return false;
+  const lower = text.toLowerCase();
+  return terms.some((t) => lower.includes(t));
 }
 
 /**
@@ -21,12 +38,13 @@ export function isMoneyContext(args: {
   source: string;
   userText: string;
   replyText: string;
+  /** When given, also matches the chat's learned expense dictionary. */
+  chatId?: number;
 }): boolean {
-  return (
-    args.source === 'photo' ||
-    looksLikeExpense(args.userText) ||
-    looksLikeExpense(args.replyText)
-  );
+  if (args.source === 'photo') return true;
+  const looksMoney = (t: string): boolean =>
+    args.chatId != null ? looksLikeExpenseForChat(args.chatId, t) : looksLikeExpense(t);
+  return looksMoney(args.userText) || looksMoney(args.replyText);
 }
 
 // Names/nicknames the bot answers to when addressed by name. Cyrillic isn't a
@@ -84,6 +102,9 @@ export type RouteDecision = 'process' | 'auto-expense' | 'ignore';
  */
 export function routeMessage(ctx: Context, text: string): RouteDecision {
   if (isAddressed(ctx)) return 'process';
-  if (looksLikeExpense(text)) return 'auto-expense';
+  const chatId = ctx.chat?.id;
+  const isExpense =
+    chatId != null ? looksLikeExpenseForChat(chatId, text) : looksLikeExpense(text);
+  if (isExpense) return 'auto-expense';
   return 'ignore';
 }

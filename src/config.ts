@@ -25,6 +25,12 @@ const ConfigSchema = z.object({
   // answers (expenses, surf, web search, reminders) so accuracy is preserved.
   ENABLE_HUMOR: boolish.default(false),
   OPENAI_HUMOR_MODEL: z.string().default('gpt-5-mini'),
+  // Optional "expense quip": when an expense is detected, a cheap OpenAI model
+  // riffs a 1-2 line joke that is sent as a SEPARATE message next to the expense
+  // preview. It carries no expense data (the preview/confirm flow is untouched),
+  // so it can never corrupt amounts/names. Needs OPENAI_API_KEY; reuses
+  // OPENAI_HUMOR_MODEL. On by default — best-effort, never blocks the expense.
+  ENABLE_EXPENSE_QUIP: boolish.default(true),
   DEFAULT_CURRENCY: z
     .string()
     .length(3)

@@ -7,12 +7,14 @@ import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { humorizeWithPreview } from '../../llm/humorize.js';
+import { expenseQuip } from '../../llm/expenseQuip.js';
 import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
+import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
@@ -92,6 +94,21 @@ async function replyMarkdown(
 }
 
 /**
+ * Send a best-effort comic riff as a SEPARATE message next to the expense
+ * preview. Never throws and never blocks: a disabled feature, an OpenAI failure,
+ * or a Telegram send error are all swallowed so the expense flow is untouched.
+ */
+async function sendExpenseQuip(ctx: Context, summary: string): Promise<void> {
+  if (!summary.trim()) return;
+  try {
+    const quip = await expenseQuip(summary);
+    if (quip) await ctx.reply(quip);
+  } catch (err) {
+    logger.warn({ err }, 'failed to send expense quip');
+  }
+}
+
+/**
  * When a correction resolves a name that was previously unrecognised, remember
  * the nickname → member mapping for next time. Only the unambiguous case (one
  * unresolved name before, one new member after) is learned.
@@ -164,6 +181,26 @@ export function makeScheduleTaskHandler(
     const when = formatInTimezone(next, tz);
     const kind = input.once ? 'Напоминание' : 'Регулярная задача';
     return `${kind} #${id} «${input.title}» создана. Первый запуск: ${when} (${tz}). Список: /tasks`;
+  };
+}
+
+/**
+ * Build the `learn_expense_pattern` handler for a chat: persists the taught
+ * trigger words into the chat's expense dictionary and returns a short human
+ * confirmation. Future messages containing a stored term (with a number) will
+ * auto-route as expenses — no redeploy needed.
+ */
+export function makeLearnExpenseHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: { keywords: string[] }) => string {
+  return (input) => {
+    const added = addExpenseTerms(chatId, input.keywords, tgUserId);
+    if (added.length === 0) {
+      return 'Уже знаю такие слова — ничего нового не добавил.';
+    }
+    const list = added.map((t) => `«${t}»`).join(', ');
+    return `Запомнил: сообщения со словами ${list} теперь считаю тратами. Список: /trata`;
   };
 }
 
@@ -279,6 +316,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           appendMemory(chatId, note);
           return 'Запомнил.';
         },
+        learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
@@ -331,6 +369,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         members,
       });
     }
+    // Fire a standalone comic riff next to the expense preview(s). Best-effort and
+    // fire-and-forget: it's a SEPARATE message carrying no expense data, so it can
+    // never corrupt amounts/names and never blocks the preview. Built from the
+    // expense titles only (what was bought), never the figures.
+    void sendExpenseQuip(ctx, result.inputs.map((i) => i.title).filter(Boolean).join(', '));
     // Expenses are a side-channel (preview/confirm), NOT dialogue — keep them out
     // of conversation history so the assistant doesn't resurface old expenses on
     // unrelated messages.
@@ -357,6 +400,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       source: args.source,
       userText: args.historyText,
       replyText: result.text,
+      chatId,
     });
   const replyText = safeToHumorize
     ? await humorizeWithPreview(result.text, async (original) => {
@@ -451,6 +495,7 @@ async function rewordPendingInner(
     },
     {
       remember: (note) => (appendMemory(chatId, note), 'Запомнил.'),
+      learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),

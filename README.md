@@ -28,6 +28,16 @@ added without touching the core.
   or reply to its message**; in private chats it always replies. Reply to a preview
   message with a corrected sentence to re-parse the expense.
 - **Memory**: `/remember`, `/memory`, `/forget`, and the bot can also save facts itself.
+- **Expense dictionary (no redeploy)**: on top of the built-in spend keywords, you can
+  teach the bot your chat's own expense vocabulary at runtime. Reply to a message it
+  missed with «запомни, это трата» and it extracts the distinctive word(s) into the
+  chat's dictionary, so future messages with that word auto-route as expenses.
+  View/add/reset with `/trata` (`/trata дошик, на бензин`, `/trata clear`).
+- **Voice transcript to admin**: every transcribed voice note is also DM'd to the admin
+  (with the chat + sender), so flaky transcriptions can be spotted at a glance.
+- **Expense quip**: when an expense is detected, a cheap OpenAI model fires a short joke
+  as a **separate** message next to the preview (on by default; carries no expense data,
+  so it can never corrupt amounts/names). Toggle with `ENABLE_EXPENSE_QUIP`.
 - **Lexicon learning**: the bot quietly reads every message and, in batches, learns the
   slang and distorted word-forms the chat uses (e.g. «тип» for «типа», «братик») via a
   cheap model, then picks up that lingo in its own replies. View/reset per chat with
@@ -78,7 +88,8 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
 | `ENABLE_HUMOR` | no | `false` | Rewrite the **tone** of plain-chat replies via a cheap OpenAI model (facts preserved; factual/tool answers untouched). Needs `OPENAI_API_KEY` |
-| `OPENAI_HUMOR_MODEL` | no | `gpt-5-mini` | Model used for the humorizer pass |
+| `OPENAI_HUMOR_MODEL` | no | `gpt-5-mini` | Model used for the humorizer pass (and the expense quip) |
+| `ENABLE_EXPENSE_QUIP` | no | `true` | Post a short OpenAI joke as a **separate** message next to each detected expense (no expense data, so it can't corrupt amounts/names). Needs `OPENAI_API_KEY`; reuses `OPENAI_HUMOR_MODEL` |
 | `DEFAULT_CURRENCY` | no | `EUR` | ISO 4217, used when unstated |
 | `DATABASE_PATH` | no | `./data/bot.sqlite` | SQLite file |
 | `LOG_LEVEL` | no | `info` | pino level |
@@ -115,6 +126,7 @@ Then just talk:
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
 · reminders: `/tasks` `/canceltask <id>` · lexicon: `/slang` (`/slang clear`)
+· expense dictionary: `/trata` (`/trata <word>`, `/trata clear`)
 
 ## Architecture
 

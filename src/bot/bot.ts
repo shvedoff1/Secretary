@@ -13,6 +13,7 @@ import { cmdMemory, cmdRemember, cmdForget } from './commands/memory.js';
 import { cmdTasks, cmdCancelTask } from './commands/tasks.js';
 import { cmdPoi, cmdDelPoi } from './commands/poi.js';
 import { cmdSlang } from './commands/lexicon.js';
+import { cmdTrata } from './commands/expenseTerm.js';
 import {
   cmdChats,
   cmdChat,
@@ -61,6 +62,7 @@ export function buildBot(token: string): Bot {
   bot.command('poi', cmdPoi);
   bot.command('delpoi', cmdDelPoi);
   bot.command('slang', cmdSlang);
+  bot.command('trata', cmdTrata);
 
   // Admin-only chat administration (private chat with the bot).
   bot.command('chats', cmdChats);
@@ -100,6 +102,7 @@ export const BOT_COMMANDS = [
   { command: 'poi', description: 'Список мест (кафе, достопримечательности, планы)' },
   { command: 'delpoi', description: 'Удалить место по id' },
   { command: 'slang', description: 'Словечки, которые я подхватил из чата' },
+  { command: 'trata', description: 'Слова, которые я считаю тратами' },
   { command: 'whoami', description: 'Кто я для бота' },
   { command: 'request', description: 'Запросить доступ' },
 ];

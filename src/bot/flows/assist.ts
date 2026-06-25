@@ -7,7 +7,6 @@ import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { humorizeWithPreview } from '../../llm/humorize.js';
-import { expenseQuip } from '../../llm/expenseQuip.js';
 import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
@@ -90,21 +89,6 @@ async function replyMarkdown(
   } catch (err) {
     logger.warn({ err }, 'HTML reply failed, falling back to plain text');
     await ctx.reply(stripMarkdown(text), extra);
-  }
-}
-
-/**
- * Send a best-effort comic riff as a SEPARATE message next to the expense
- * preview. Never throws and never blocks: a disabled feature, an OpenAI failure,
- * or a Telegram send error are all swallowed so the expense flow is untouched.
- */
-async function sendExpenseQuip(ctx: Context, summary: string): Promise<void> {
-  if (!summary.trim()) return;
-  try {
-    const quip = await expenseQuip(summary);
-    if (quip) await ctx.reply(quip);
-  } catch (err) {
-    logger.warn({ err }, 'failed to send expense quip');
   }
 }
 
@@ -369,11 +353,6 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         members,
       });
     }
-    // Fire a standalone comic riff next to the expense preview(s). Best-effort and
-    // fire-and-forget: it's a SEPARATE message carrying no expense data, so it can
-    // never corrupt amounts/names and never blocks the preview. Built from the
-    // expense titles only (what was bought), never the figures.
-    void sendExpenseQuip(ctx, result.inputs.map((i) => i.title).filter(Boolean).join(', '));
     // Expenses are a side-channel (preview/confirm), NOT dialogue — keep them out
     // of conversation history so the assistant doesn't resurface old expenses on
     // unrelated messages.

@@ -12,6 +12,7 @@ import { recordAudit } from '../../db/repos/audit.repo.js';
 import { previewKeyboard } from '../keyboards.js';
 import { renderConfirmed, nameMapFromMembers } from './preview.js';
 import { clearEditTarget } from '../editTargets.js';
+import { expenseQuip } from '../../llm/expenseQuip.js';
 import { logger } from '../../logger.js';
 
 /** Handles callback queries with the `e:` prefix (expense preview actions). */
@@ -108,9 +109,13 @@ async function submit(
     } catch (err) {
       logger.warn({ err, pendingId }, 'could not load members for confirmation');
     }
+    // Add a comic riff to the final confirmation. Best-effort and AFTER the write
+    // landed (the expense is already recorded), so it's display-only and can never
+    // corrupt the data. Disabled/failed → null → confirmation shown without it.
+    const quip = await expenseQuip(pending.draft.title);
     await safeEdit(
       ctx,
-      renderConfirmed(pending.draft, nameMapFromMembers(members), cfg.provider_name),
+      renderConfirmed(pending.draft, nameMapFromMembers(members), cfg.provider_name, quip),
     );
     if (ctx.chat) clearEditTarget(ctx.chat.id, ctx.callbackQuery!.message!.message_id);
   } catch (err) {

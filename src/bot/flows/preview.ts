@@ -37,11 +37,16 @@ export function renderDraft(
  * confirmation it keeps the meaningful details (payer, split, notes) so they
  * aren't lost when the preview message is edited in place. Rendered from the
  * draft (not the preview text) so it's correct even on the retry path.
+ *
+ * `quip` is an optional comic riff appended at the very bottom (a separate block,
+ * never mixed with the data lines). It is display-only and added AFTER the
+ * expense is already written, so it can never affect the recorded amounts/names.
  */
 export function renderConfirmed(
   draft: ExpenseDraft,
   nameOf: (id: string) => string,
   providerName: string,
+  quip?: string | null,
 ): string {
   const lines = [`✅ Записано в ${providerName}`];
   lines.push(`🧾 ${draft.title}`);
@@ -50,7 +55,8 @@ export function renderConfirmed(
   lines.push(`👤 Платил: ${payerNames || '—'}`);
   lines.push(`👥 Делим на: ${describeProfiteers(draft.profiteers, nameOf)}`);
   if (draft.notes) lines.push(`📝 ${draft.notes}`);
-  return lines.join('\n');
+  const text = lines.join('\n');
+  return quip?.trim() ? `${text}\n\n${quip.trim()}` : text;
 }
 
 function describeProfiteers(

@@ -35,9 +35,10 @@ added without touching the core.
   View/add/reset with `/trata` (`/trata дошик, на бензин`, `/trata clear`).
 - **Voice transcript to admin**: every transcribed voice note is also DM'd to the admin
   (with the chat + sender), so flaky transcriptions can be spotted at a glance.
-- **Expense quip**: when an expense is detected, a cheap OpenAI model fires a short joke
-  as a **separate** message next to the preview (on by default; carries no expense data,
-  so it can never corrupt amounts/names). Toggle with `ENABLE_EXPENSE_QUIP`.
+- **Expense quip**: after you **confirm** an expense, a cheap OpenAI model appends a short
+  joke to the bottom of the "✅ Записано" message (on by default). It's added after the
+  expense is already written, so it's display-only and can never corrupt amounts/names.
+  Toggle with `ENABLE_EXPENSE_QUIP`.
 - **Lexicon learning**: the bot quietly reads every message and, in batches, learns the
   slang and distorted word-forms the chat uses (e.g. «тип» for «типа», «братик») via a
   cheap model, then picks up that lingo in its own replies. View/reset per chat with
@@ -89,7 +90,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
 | `ENABLE_HUMOR` | no | `false` | Rewrite the **tone** of plain-chat replies via a cheap OpenAI model (facts preserved; factual/tool answers untouched). Needs `OPENAI_API_KEY` |
 | `OPENAI_HUMOR_MODEL` | no | `gpt-5-mini` | Model used for the humorizer pass (and the expense quip) |
-| `ENABLE_EXPENSE_QUIP` | no | `true` | Post a short OpenAI joke as a **separate** message next to each detected expense (no expense data, so it can't corrupt amounts/names). Needs `OPENAI_API_KEY`; reuses `OPENAI_HUMOR_MODEL` |
+| `ENABLE_EXPENSE_QUIP` | no | `true` | Append a short OpenAI joke to the "✅ Записано" confirmation after an expense is confirmed (display-only, added post-write, so it can't corrupt amounts/names). Needs `OPENAI_API_KEY`; reuses `OPENAI_HUMOR_MODEL` |
 | `DEFAULT_CURRENCY` | no | `EUR` | ISO 4217, used when unstated |
 | `DATABASE_PATH` | no | `./data/bot.sqlite` | SQLite file |
 | `LOG_LEVEL` | no | `info` | pino level |

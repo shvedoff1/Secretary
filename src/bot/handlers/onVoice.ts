@@ -6,6 +6,7 @@ import { runAndRespond } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
+import { setTranscript } from '../transcriptCache.js';
 
 // "Writing it down" marker. We react with ✍️ as soon as a voice note arrives, so
 // the chat sees it was heard; the mark stays only if it became an expense and is
@@ -99,6 +100,11 @@ export async function onVoice(ctx: Context): Promise<void> {
     if (addressed) await ctx.reply('Не расслышал — в голосовом не было речи.');
     return;
   }
+
+  // Remember the transcript keyed by this voice note's message id, so if someone
+  // later REPLIES to it («запомни, это трата» / «это была трата») the reply handler
+  // can recover what was said — a voice note carries no text/caption of its own.
+  setTranscript(ctx.chat.id, ctx.message!.message_id, transcript);
 
   // DM the admin what we heard, so they can catch flaky transcriptions even in
   // chats they don't actively watch. Best-effort; skip when the admin themselves

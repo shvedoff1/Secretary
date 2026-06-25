@@ -70,6 +70,29 @@ export interface DateRange {
   toMs: number;
 }
 
+/** One member's net standing in a group (positive = owed money, negative = owes). */
+export interface MemberBalance {
+  memberId: string;
+  netMinor: Minor;
+}
+
+/** A suggested transfer to settle up: `fromId` should pay `toId` `amountMinor`. */
+export interface Settlement {
+  fromId: string;
+  toId: string;
+  amountMinor: Minor;
+}
+
+/**
+ * Who-owes-whom snapshot for a group, in a single currency (the group's default;
+ * the provider converts multi-currency entries when it computes this).
+ */
+export interface BalanceSummary {
+  currency: string;
+  balances: MemberBalance[];
+  settlements: Settlement[];
+}
+
 /**
  * A provider-agnostic view of an already-recorded expense, read back from the
  * provider (e.g. for reports). Money is in integer minor units, like everything

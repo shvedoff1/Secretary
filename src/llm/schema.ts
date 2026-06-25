@@ -89,6 +89,15 @@ export const SurfForecastZ = z.object({
 });
 export type SurfForecastInput = z.infer<typeof SurfForecastZ>;
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const SpendingReportZ = z.object({
+  fromDate: z.string().regex(DATE_RE).nullable(),
+  toDate: z.string().regex(DATE_RE).nullable(),
+  balances: z.boolean(),
+  timezone: z.string().min(1),
+});
+export type SpendingReportInput = z.infer<typeof SpendingReportZ>;
+
 // --- JSON Schemas for the Anthropic tool definitions (strict tool use) ---
 
 export const recordExpenseJsonSchema = {
@@ -286,4 +295,30 @@ export const surfForecastJsonSchema = {
     },
   },
   required: ['spots', 'day', 'timezone'],
+} as const;
+
+export const spendingReportJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    fromDate: {
+      type: ['string', 'null'],
+      description:
+        'Start of the period as a chat-LOCAL date YYYY-MM-DD (inclusive). Compute concrete dates from "Current time (UTC)" + "Chat timezone" in the context block. "за вчера" => yesterday for both from and to; "сегодня" => today for both; "за последние 3 дня" => from = 3 days ago, to = today. null for both from/to means yesterday (a daily summary).',
+    },
+    toDate: {
+      type: ['string', 'null'],
+      description: 'End of the period as a chat-LOCAL date YYYY-MM-DD (inclusive). For a single day, equal to fromDate.',
+    },
+    balances: {
+      type: 'boolean',
+      description:
+        'true to include a who-owes-whom settlement summary ("сколько кто кому должен", "who owes what"). Set true (and you may leave fromDate/toDate null) when the user asks ONLY about balances/debts; set true alongside dates to show both spending and balances.',
+    },
+    timezone: {
+      type: 'string',
+      description: 'IANA timezone for resolving the local dates. Use the chat timezone from the context block.',
+    },
+  },
+  required: ['fromDate', 'toDate', 'balances', 'timezone'],
 } as const;

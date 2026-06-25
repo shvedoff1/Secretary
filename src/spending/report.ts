@@ -1,50 +1,73 @@
-// Pure logic for the daily spending digest: when it's due, how to aggregate a
-// day's expenses, and how to format the message. Kept free of I/O (no DB, no
-// provider, no bot) so it can be unit-tested directly; the orchestration lives
-// in ./daily.ts.
+// Pure logic for the spending skill: resolving a date range, aggregating a
+// period's expenses, and formatting the spending + balances messages. Kept free
+// of I/O (no DB, provider, or bot) so it can be unit-tested directly; the
+// orchestration (provider calls, humorizer, wiring) lives in ./handler.ts.
 
-import type { ExpenseRecord } from '../core/types.js';
+import type {
+  BalanceSummary,
+  DateRange,
+  ExpenseRecord,
+} from '../core/types.js';
 import { formatMoney } from '../util/money.js';
-import { previousDateStr, zonedDayRange, zonedParts } from '../util/day.js';
+import { previousDateStr, startOfZonedDayMs, zonedDayRange, zonedParts } from '../util/day.js';
 
-export interface DailyReportWindow {
-  /** Local calendar date (YYYY-MM-DD) the digest reports on. */
-  reportDate: string;
-  fromMs: number;
-  toMs: number;
+export interface SpendingRangeInput {
+  /** Inclusive start day (YYYY-MM-DD, chat-local), or null. */
+  fromDate: string | null;
+  /** Inclusive end day (YYYY-MM-DD, chat-local), or null. */
+  toDate: string | null;
 }
 
-/** The "yesterday" window to report on at instant `nowMs`, in timezone `tz`. */
-export function yesterdayWindow(nowMs: number, tz: string): DailyReportWindow {
-  const today = zonedParts(nowMs, tz).dateStr;
-  const reportDate = previousDateStr(today);
-  const { fromMs, toMs } = zonedDayRange(reportDate, tz);
-  return { reportDate, fromMs, toMs };
+export interface ResolvedSpending {
+  range: DateRange;
+  fromDate: string;
+  toDate: string;
+  /** Human label for the period header, e.g. "24 июня" or "22–24 июня". */
+  label: string;
 }
 
-export interface DueDecision {
-  send: boolean;
-  window: DailyReportWindow;
+/** Format one local calendar day as "24 июня" in the given timezone. */
+function humanDay(dateStr: string, tz: string): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      timeZone: tz,
+      day: 'numeric',
+      month: 'long',
+    }).format(new Date(startOfZonedDayMs(dateStr, tz)));
+  } catch {
+    return dateStr;
+  }
 }
 
 /**
- * Decide whether the previous day's digest is due to post right now for a chat
- * whose digest is scheduled at `hour:minute` local time and last posted
- * `lastDate`. Fires once the local time has reached the target and that report
- * date hasn't been posted yet (so a bot that was down at the exact minute still
- * catches up later the same day).
+ * Resolve a (possibly partial) date range into a concrete UTC window plus a
+ * human label. Missing dates default to "yesterday" (relative to `nowMs` in
+ * `tz`); a single date means just that day; two dates are an inclusive span.
  */
-export function decideDue(
-  nowMs: number,
+export function resolveSpending(
+  input: SpendingRangeInput,
   tz: string,
-  s: { hour: number; minute: number; lastDate: string | null },
-): DueDecision {
-  const window = yesterdayWindow(nowMs, tz);
-  const now = zonedParts(nowMs, tz);
-  const nowMinutes = now.hour * 60 + now.minute;
-  const targetMinutes = s.hour * 60 + s.minute;
-  const send = nowMinutes >= targetMinutes && s.lastDate !== window.reportDate;
-  return { send, window };
+  nowMs: number,
+): ResolvedSpending {
+  let fromDate = input.fromDate;
+  let toDate = input.toDate;
+  if (!fromDate && !toDate) {
+    const today = zonedParts(nowMs, tz).dateStr;
+    fromDate = toDate = previousDateStr(today);
+  } else {
+    fromDate = fromDate ?? toDate!;
+    toDate = toDate ?? fromDate;
+  }
+  // Normalise reversed inputs so a swapped from/to still yields a valid window.
+  if (fromDate > toDate) [fromDate, toDate] = [toDate, fromDate];
+
+  const fromMs = zonedDayRange(fromDate, tz).fromMs;
+  const toMs = zonedDayRange(toDate, tz).toMs;
+  const label =
+    fromDate === toDate
+      ? humanDay(fromDate, tz)
+      : `${humanDay(fromDate, tz)} — ${humanDay(toDate, tz)}`;
+  return { range: { fromMs, toMs }, fromDate, toDate, label };
 }
 
 export interface PayerTotal {
@@ -53,7 +76,7 @@ export interface PayerTotal {
   totals: Record<string, number>;
 }
 
-export interface DailyAggregate {
+export interface SpendingAggregate {
   count: number;
   /** currency -> total minor units spent. */
   totals: Record<string, number>;
@@ -66,11 +89,11 @@ function sumValues(rec: Record<string, number>): number {
   return Object.values(rec).reduce((a, b) => a + b, 0);
 }
 
-/** Roll a day's expenses up into totals, per-payer totals, and the top expense. */
-export function aggregate(records: ExpenseRecord[]): DailyAggregate {
+/** Roll a period's expenses up into totals, per-payer totals, and the top expense. */
+export function aggregate(records: ExpenseRecord[]): SpendingAggregate {
   const totals: Record<string, number> = {};
   const payerMap = new Map<string, Record<string, number>>();
-  let top: DailyAggregate['top'];
+  let top: SpendingAggregate['top'];
 
   for (const r of records) {
     totals[r.currency] = (totals[r.currency] ?? 0) + r.amountMinor;
@@ -112,21 +135,21 @@ function formatTotals(totals: Record<string, number>): string {
 }
 
 /**
- * Render the digest message (plain text / light Markdown). When the day had no
- * expenses, returns a short "nothing spent" note — the humorizer turns that into
- * a quip. Names map provider member ids to display names.
+ * Render the spending section (plain text / light Markdown). When the period had
+ * no expenses, returns a short "nothing spent" note for the humorizer to riff on.
+ * `names` maps provider member ids to display names.
  */
-export function formatDailyReport(
-  agg: DailyAggregate,
+export function formatSpendingReport(
+  agg: SpendingAggregate,
   names: Map<string, string>,
-  opts: { humanDate: string },
+  opts: { periodLabel: string },
 ): string {
   if (agg.count === 0) {
-    return `За ${opts.humanDate} никто ничего не потратил — кошельки целы.`;
+    return `За ${opts.periodLabel} никто ничего не потратил — кошельки целы.`;
   }
 
   const lines: string[] = [];
-  lines.push(`💸 Траты за ${opts.humanDate}`);
+  lines.push(`💸 Траты за ${opts.periodLabel}`);
   const tratPlural = ruPlural(agg.count, ['трата', 'траты', 'трат']);
   lines.push(`Всего: ${formatTotals(agg.totals)} (${agg.count} ${tratPlural})`);
 
@@ -144,5 +167,23 @@ export function formatDailyReport(
     );
   }
 
+  return lines.join('\n');
+}
+
+/** Render the who-owes-whom section from a provider balance snapshot. */
+export function formatBalances(
+  summary: BalanceSummary,
+  names: Map<string, string>,
+): string {
+  const name = (id: string): string => names.get(id) ?? 'кто-то';
+  if (summary.settlements.length === 0) {
+    return 'Все в расчёте — никто никому не должен 🎉';
+  }
+  const lines = ['💰 Кто кому должен:'];
+  for (const s of summary.settlements) {
+    lines.push(
+      `• ${name(s.fromId)} → ${name(s.toId)}: ${formatMoney(s.amountMinor, summary.currency)}`,
+    );
+  }
   return lines.join('\n');
 }

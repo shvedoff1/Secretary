@@ -6,6 +6,7 @@ import {
   LEARN_EXPENSE_TOOL,
   SCHEDULE_TASK_TOOL,
   ADD_POI_TOOL,
+  SPENDING_REPORT_TOOL,
 } from '../src/llm/tools.js';
 
 function names(tools: ReturnType<typeof buildTools>): string[] {
@@ -89,5 +90,21 @@ describe('buildTools', () => {
       buildTools({ enableWebSearch: true, enableExpense: false, enablePoi: false }),
     );
     expect(scheduled).not.toContain(ADD_POI_TOOL);
+  });
+
+  it('exposes spending_report only when enabled (a Splid group is connected)', () => {
+    expect(
+      names(buildTools({ enableWebSearch: false, enableExpense: false })),
+    ).not.toContain(SPENDING_REPORT_TOOL);
+    const got = names(
+      buildTools({ enableWebSearch: false, enableExpense: true, enableSpending: true }),
+    );
+    expect(got).toContain(SPENDING_REPORT_TOOL);
+    const tool = buildTools({
+      enableWebSearch: false,
+      enableExpense: true,
+      enableSpending: true,
+    }).find((t) => 'name' in t && t.name === SPENDING_REPORT_TOOL);
+    expect('input_schema' in tool!).toBe(true);
   });
 });

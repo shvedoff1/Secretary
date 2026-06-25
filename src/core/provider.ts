@@ -1,4 +1,5 @@
 import type {
+  BalanceSummary,
   DateRange,
   ExpenseDraft,
   ExpenseRecord,
@@ -34,6 +35,12 @@ export interface ExpenseProvider {
     conn: ProviderConnection,
     range: DateRange,
   ): Promise<ExpenseRecord[]>;
+  /**
+   * Current who-owes-whom snapshot for the group: each member's net standing
+   * plus a minimal set of suggested settlement transfers, in the group's default
+   * currency.
+   */
+  getBalances(conn: ProviderConnection): Promise<BalanceSummary>;
 }
 
 export class ProviderError extends Error {

@@ -6,7 +6,6 @@ import { ensureAdmin } from './db/repos/users.repo.js';
 import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
-import { runDailySpendingReports } from './spending/daily.js';
 import { flushStaleLexicons } from './bot/flows/lexicon.js';
 import { isHumorEnabled } from './llm/humorize.js';
 
@@ -44,14 +43,10 @@ async function main(): Promise<void> {
   }, 5 * 60_000);
   sweeper.unref();
 
-  // Fire due reminders / recurring tasks every minute, and post any due daily
-  // spending digests.
+  // Fire due reminders / recurring tasks every minute.
   const scheduler = setInterval(() => {
     void runDueTasks(bot).catch((err) => {
       logger.warn({ err }, 'scheduler tick failed');
-    });
-    void runDailySpendingReports(bot).catch((err) => {
-      logger.warn({ err }, 'daily spending tick failed');
     });
   }, 60_000);
   scheduler.unref();

@@ -11,6 +11,7 @@ import {
   SCHEDULE_TASK_TOOL,
   SURF_FORECAST_TOOL,
   ADD_POI_TOOL,
+  SPENDING_REPORT_TOOL,
 } from './tools.js';
 import {
   RecordExpenseZ,
@@ -19,12 +20,14 @@ import {
   ScheduleTaskZ,
   SurfForecastZ,
   AddPoiZ,
+  SpendingReportZ,
   toParsedExpense,
   type RecordExpenseInput,
   type LearnExpenseInput,
   type ScheduleTaskInput,
   type SurfForecastInput,
   type AddPoiInput,
+  type SpendingReportInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 
@@ -67,6 +70,8 @@ export interface AssistantHandlers {
   surfForecast: (input: SurfForecastInput) => Promise<string>;
   /** Save a point of interest; return a short human confirmation. */
   addPoi: (input: AddPoiInput) => string;
+  /** Build a spending/balances report; return the ready-to-send (humorized) text. */
+  spendingReport: (input: SpendingReportInput) => Promise<string>;
 }
 
 export type AssistantResult =
@@ -99,6 +104,7 @@ export async function runAssistant(
     enableReminders: ctx.allowReminders !== false,
     enableSurf: cfg.ENABLE_SURF,
     enablePoi: ctx.allowPoi !== false,
+    enableSpending: ctx.splidConnected,
   });
 
   const contextBlock = buildContextBlock({
@@ -186,6 +192,27 @@ export async function runAssistant(
         .join('')
         .trim();
       return { kind: 'expense', inputs, preamble: preamble || null };
+    }
+
+    // spending_report short-circuits too: the handler returns ready, exact,
+    // already-humorized text (figures must reach the user verbatim, so we don't
+    // feed it back for the model to re-phrase). humorizable=false keeps the
+    // downstream humorizer off — the handler already ran it.
+    const spendingBlock = res.content.find(
+      (b): b is Anthropic.ToolUseBlock =>
+        b.type === 'tool_use' && b.name === SPENDING_REPORT_TOOL,
+    );
+    if (spendingBlock) {
+      const parsed = SpendingReportZ.safeParse(spendingBlock.input);
+      if (!parsed.success) {
+        logger.warn({ err: parsed.error }, 'spending_report input failed validation');
+        return {
+          kind: 'text',
+          text: 'Не понял период для отчёта — уточни, за какие дни.',
+        };
+      }
+      const text = await handlers.spendingReport(parsed.data);
+      return { kind: 'text', text, humorizable: false };
     }
 
     if (res.stop_reason === 'tool_use') {

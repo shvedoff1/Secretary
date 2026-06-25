@@ -34,7 +34,6 @@ export async function cmdHelp(ctx: Context): Promise<void> {
       '/delpoi <id> — удалить место',
       '/slang — словечки, которые я подхватил из чата (/slang clear — сбросить)',
       '/trata — слова, которые я считаю тратами (ответь «запомни, это трата» на пропущенное сообщение)',
-      '/spending — ежедневный отчёт о тратах за вчера (/spending on [ЧЧ:ММ] · off · now)',
       '/whoami — кто я для бота',
       '/request — запросить доступ',
       ...adminSection,

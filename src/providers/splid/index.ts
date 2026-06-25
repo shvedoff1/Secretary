@@ -4,8 +4,14 @@ import {
   type ExpenseProvider,
   type ProviderConnection,
 } from '../../core/provider.js';
-import type { ExpenseDraft, Member, SubmitResult } from '../../core/types.js';
-import { toSplidExpense } from './map.js';
+import type {
+  DateRange,
+  ExpenseDraft,
+  ExpenseRecord,
+  Member,
+  SubmitResult,
+} from '../../core/types.js';
+import { fromSplidEntry, toSplidExpense } from './map.js';
 
 /**
  * Splid integration via the unofficial `splid-js` client. This is the ONLY file
@@ -49,6 +55,32 @@ export class SplidProvider implements ExpenseProvider {
     } catch (err) {
       throw new ProviderError(
         'Could not load members from Splid',
+        isRetriable(err),
+        err,
+      );
+    }
+  }
+
+  async listExpenses(
+    conn: ProviderConnection,
+    range: DateRange,
+  ): Promise<ExpenseRecord[]> {
+    try {
+      const entries = await this.client.entry.getAllByGroup(conn.groupId);
+      // Splid can return duplicate copies of the same entry; dedupe by id.
+      const unique = SplidClient.dedupeByGlobalId(entries);
+      const records: ExpenseRecord[] = [];
+      for (const entry of unique) {
+        const rec = fromSplidEntry(entry);
+        if (!rec) continue; // deleted or a payment/settlement
+        if (rec.occurredMs >= range.fromMs && rec.occurredMs < range.toMs) {
+          records.push(rec);
+        }
+      }
+      return records;
+    } catch (err) {
+      throw new ProviderError(
+        'Could not load expenses from Splid',
         isRetriable(err),
         err,
       );

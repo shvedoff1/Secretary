@@ -63,3 +63,27 @@ export interface ExpenseDraft {
 export interface SubmitResult {
   externalId: string;
 }
+
+/** A half-open instant range [fromMs, toMs) in unix milliseconds. */
+export interface DateRange {
+  fromMs: number;
+  toMs: number;
+}
+
+/**
+ * A provider-agnostic view of an already-recorded expense, read back from the
+ * provider (e.g. for reports). Money is in integer minor units, like everything
+ * else in the domain; the provider boundary converts from its own format.
+ */
+export interface ExpenseRecord {
+  /** Provider-specific stable id (Splid: Entry.GlobalId). */
+  id: string;
+  title?: string;
+  currency: string; // ISO 4217
+  /** Total amount of the expense (minor units). */
+  amountMinor: Minor;
+  /** How much each payer fronted, keyed by member id (minor units). */
+  payerAmounts: Record<string, Minor>;
+  /** When the expense occurred (purchased-on date if known, else created-at). */
+  occurredMs: number;
+}

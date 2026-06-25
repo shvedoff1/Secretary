@@ -35,6 +35,13 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a
   recurring evening task can post "where to go tomorrow".
+- `src/spending/` — opt-in per-chat "daily spending report": a morning digest of
+  yesterday's expenses read back from the provider (`ExpenseProvider.listExpenses`,
+  Splid-only impl), aggregated (totals per currency, who paid, top expense), then run
+  through the humorizer (the one deliberate exception to "humorizer skips money"). Pure
+  logic (aggregation/formatting/scheduling decision) in `report.ts`; orchestration in
+  `daily.ts`. Toggled with `/spending on|off|now`; settings live in `chat_settings`. The
+  scheduler tick in `index.ts` posts each chat's report once its local target time passes.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

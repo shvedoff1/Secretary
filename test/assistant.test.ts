@@ -194,6 +194,8 @@ describe('runAssistant expense extraction', () => {
         fromDate: '2026-06-24',
         toDate: '2026-06-24',
         balances: false,
+        filterLabel: null,
+        filterKeywords: null,
         timezone: 'UTC',
       }),
     ];
@@ -214,7 +216,7 @@ describe('runAssistant expense extraction', () => {
 
   it('rejects an invalid spending_report period with a text nudge', async () => {
     responses = [
-      toolResponse('spending_report', { fromDate: 'not-a-date', toDate: null, balances: false, timezone: 'UTC' }),
+      toolResponse('spending_report', { fromDate: 'not-a-date', toDate: null, balances: false, filterLabel: null, filterKeywords: null, timezone: 'UTC' }),
     ];
     const { runAssistant } = await import('../src/llm/assistant.js');
     const result = await runAssistant(expenseCtx, handlers);

@@ -102,6 +102,10 @@ export interface ExpenseRecord {
   /** Provider-specific stable id (Splid: Entry.GlobalId). */
   id: string;
   title?: string;
+  /** Human category label as the provider stores it (Splid: category.originalName). */
+  category?: string;
+  /** Stable category key/type for matching (Splid: category.type, e.g. "restaurants"). */
+  categoryKey?: string;
   currency: string; // ISO 4217
   /** Total amount of the expense (minor units). */
   amountMinor: Minor;

@@ -75,6 +75,14 @@ function isoOf(d: SplidJs.Entry['date'] | undefined): string | undefined {
   return undefined;
 }
 
+/** Pull the category name + type out of a Splid entry's category field, if set. */
+function categoryOf(
+  c: SplidJs.Entry['category'] | undefined,
+): { name?: string; key?: string } {
+  if (c && 'type' in c) return { name: c.originalName, key: c.type };
+  return {};
+}
+
 /**
  * Translate a Splid `Entry` read back from the API into a provider-agnostic
  * {@link ExpenseRecord}, or `null` when it isn't a real expense we want to count
@@ -115,9 +123,13 @@ export function fromSplidEntry(entry: SplidJs.Entry): ExpenseRecord | null {
   const iso = isoOf(entry.date) ?? entry.createdAt;
   const occurredMs = iso ? Date.parse(iso) : NaN;
 
+  const { name: category, key: categoryKey } = categoryOf(entry.category);
+
   return {
     id: entry.GlobalId,
     title: entry.title,
+    category,
+    categoryKey,
     currency,
     amountMinor: majorToMinor(totalMajor, currency),
     payerAmounts,

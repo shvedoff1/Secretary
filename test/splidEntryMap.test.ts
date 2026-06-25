@@ -75,6 +75,20 @@ describe('fromSplidEntry', () => {
     expect(rec?.currency).toBe('JPY');
   });
 
+  it('maps the category name and type when present', () => {
+    const rec = fromSplidEntry(
+      entry({ category: { originalName: 'Restaurants', type: 'restaurants' } }),
+    );
+    expect(rec?.category).toBe('Restaurants');
+    expect(rec?.categoryKey).toBe('restaurants');
+  });
+
+  it('leaves category undefined when the entry has none', () => {
+    const rec = fromSplidEntry(entry({}));
+    expect(rec?.category).toBeUndefined();
+    expect(rec?.categoryKey).toBeUndefined();
+  });
+
   it('drops deleted entries', () => {
     expect(fromSplidEntry(entry({ isDeleted: true }))).toBeNull();
   });

@@ -94,6 +94,8 @@ export const SpendingReportZ = z.object({
   fromDate: z.string().regex(DATE_RE).nullable(),
   toDate: z.string().regex(DATE_RE).nullable(),
   balances: z.boolean(),
+  filterLabel: z.string().nullable(),
+  filterKeywords: z.array(z.string()).nullable(),
   timezone: z.string().min(1),
 });
 export type SpendingReportInput = z.infer<typeof SpendingReportZ>;
@@ -315,10 +317,21 @@ export const spendingReportJsonSchema = {
       description:
         'true to include a who-owes-whom settlement summary ("сколько кто кому должен", "who owes what"). Set true (and you may leave fromDate/toDate null) when the user asks ONLY about balances/debts; set true alongside dates to show both spending and balances.',
     },
+    filterLabel: {
+      type: ['string', 'null'],
+      description:
+        'Short human label of the category filter for the header, in the user\'s words (e.g. "еду", "такси", "transport"). null when the user wants ALL spending (no category filter).',
+    },
+    filterKeywords: {
+      type: ['array', 'null'],
+      items: { type: 'string' },
+      description:
+        'Lowercase match terms for an APPROXIMATE category filter (substring-matched against each expense\'s title + category). Expand the user\'s category GENEROUSLY in BOTH languages AND include the relevant Splid category type(s): accommodation, entertainment, groceries, restaurants, transport. E.g. "на еду" => ["еда","ресторан","кафе","продукты","food","restaurant","groceries"]; "на такси/транспорт" => ["такси","транспорт","бензин","taxi","transport","uber"]. null/[] = no filter (all spending).',
+    },
     timezone: {
       type: 'string',
       description: 'IANA timezone for resolving the local dates. Use the chat timezone from the context block.',
     },
   },
-  required: ['fromDate', 'toDate', 'balances', 'timezone'],
+  required: ['fromDate', 'toDate', 'balances', 'filterLabel', 'filterKeywords', 'timezone'],
 } as const;

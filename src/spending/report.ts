@@ -70,6 +70,30 @@ export function resolveSpending(
   return { range: { fromMs, toMs }, fromDate, toDate, label };
 }
 
+function normalizeTerm(s: string): string {
+  return s.toLowerCase().trim();
+}
+
+/**
+ * Approximate category filter: keep expenses whose title or category mentions
+ * any of `keywords` (case-insensitive substring match). The model supplies a
+ * generous keyword set (both languages + provider category names), so "на еду"
+ * catches restaurants, groceries, cafes, etc. An empty keyword list is a no-op.
+ */
+export function filterByKeywords(
+  records: ExpenseRecord[],
+  keywords: string[],
+): ExpenseRecord[] {
+  const terms = keywords.map(normalizeTerm).filter(Boolean);
+  if (terms.length === 0) return records;
+  return records.filter((r) => {
+    const hay = normalizeTerm(
+      `${r.title ?? ''} ${r.category ?? ''} ${r.categoryKey ?? ''}`,
+    );
+    return terms.some((t) => hay.includes(t));
+  });
+}
+
 export interface PayerTotal {
   memberId: string;
   /** currency -> minor units fronted. */

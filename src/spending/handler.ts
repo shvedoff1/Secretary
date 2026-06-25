@@ -7,6 +7,7 @@ import { humorizeOrOriginal } from '../llm/humorize.js';
 import type { SpendingReportInput } from '../llm/schema.js';
 import {
   aggregate,
+  filterByKeywords,
   formatBalances,
   formatSpendingReport,
   resolveSpending,
@@ -48,11 +49,14 @@ export function makeSpendingReportHandler(
 
       if (wantSpending) {
         const resolved = resolveSpending(input, tz, Date.now());
-        const records = await provider.listExpenses(conn, resolved.range);
+        const all = await provider.listExpenses(conn, resolved.range);
+        const records = filterByKeywords(all, input.filterKeywords ?? []);
+        // Append the category to the period header, e.g. "24 июня на «еду»".
+        const periodLabel = input.filterLabel
+          ? `${resolved.label} на «${input.filterLabel}»`
+          : resolved.label;
         sections.push(
-          formatSpendingReport(aggregate(records), names, {
-            periodLabel: resolved.label,
-          }),
+          formatSpendingReport(aggregate(records), names, { periodLabel }),
         );
       }
 

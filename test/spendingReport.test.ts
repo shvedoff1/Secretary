@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { BalanceSummary, ExpenseRecord } from '../src/core/types.js';
 import {
   aggregate,
+  filterByKeywords,
   formatBalances,
   formatSpendingReport,
   resolveSpending,
@@ -46,6 +47,32 @@ describe('aggregate', () => {
     expect(agg.count).toBe(0);
     expect(agg.payers).toEqual([]);
     expect(agg.top).toBeUndefined();
+  });
+});
+
+describe('filterByKeywords', () => {
+  const records = [
+    rec({ id: '1', title: 'Ужин в кафе', categoryKey: 'restaurants' }),
+    rec({ id: '2', title: 'Продукты', category: 'Groceries', categoryKey: 'groceries' }),
+    rec({ id: '3', title: 'Такси до аэропорта', categoryKey: 'transport' }),
+  ];
+
+  it('is a no-op for an empty keyword list', () => {
+    expect(filterByKeywords(records, [])).toHaveLength(3);
+  });
+
+  it('matches on the Splid category type ("restaurants" / "groceries")', () => {
+    const food = filterByKeywords(records, ['еда', 'restaurants', 'groceries']);
+    expect(food.map((r) => r.id).sort()).toEqual(['1', '2']);
+  });
+
+  it('matches on the title when the category does not (substring, case-insensitive)', () => {
+    const taxi = filterByKeywords(records, ['ТАКСИ']);
+    expect(taxi.map((r) => r.id)).toEqual(['3']);
+  });
+
+  it('returns nothing when no keyword matches', () => {
+    expect(filterByKeywords(records, ['жильё', 'accommodation'])).toEqual([]);
   });
 });
 

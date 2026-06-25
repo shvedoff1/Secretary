@@ -3,6 +3,7 @@ import {
   buildTools,
   RECORD_EXPENSE_TOOL,
   REMEMBER_TOOL,
+  LEARN_EXPENSE_TOOL,
   SCHEDULE_TASK_TOOL,
   ADD_POI_TOOL,
 } from '../src/llm/tools.js';
@@ -60,6 +61,24 @@ describe('buildTools', () => {
     expect(got).not.toContain(REMEMBER_TOOL);
     expect(got).not.toContain(SCHEDULE_TASK_TOOL);
     expect(got).toContain('web_search'); // search still allowed when a task fires
+  });
+
+  it('exposes learn_expense_pattern by default (any chat) and omits it for scheduled runs', () => {
+    const got = names(buildTools({ enableWebSearch: false, enableExpense: false }));
+    expect(got).toContain(LEARN_EXPENSE_TOOL);
+    const tool = buildTools({ enableWebSearch: false, enableExpense: false }).find(
+      (t) => 'name' in t && t.name === LEARN_EXPENSE_TOOL,
+    );
+    expect('input_schema' in tool!).toBe(true);
+
+    const scheduled = names(
+      buildTools({
+        enableWebSearch: true,
+        enableExpense: false,
+        enableExpenseLearning: false,
+      }),
+    );
+    expect(scheduled).not.toContain(LEARN_EXPENSE_TOOL);
   });
 
   it('exposes add_poi by default and omits it when disabled', () => {

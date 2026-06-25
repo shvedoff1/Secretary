@@ -40,8 +40,18 @@ export async function onMessage(ctx: Context): Promise<void> {
   }
   if (decision === 'ignore') return;
 
+  // When the user replies to some other message and addresses us (e.g. «запомни,
+  // это трата» pointing at a spend we missed), include that referenced message as
+  // context so the assistant can act on the example — e.g. learn its expense
+  // keywords. Earlier branches already handled replies to our preview/photo.
+  const quoted = replyTo?.text ?? replyTo?.caption;
+  const userContent =
+    decision === 'process' && quoted
+      ? `[В ответ на сообщение: "${quoted}"]\n${text}`
+      : text;
+
   await runAndRespond(ctx, {
-    userContent: text,
+    userContent,
     addressed: decision === 'process',
     source: 'text',
     historyText: text,

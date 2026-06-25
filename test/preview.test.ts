@@ -55,4 +55,16 @@ describe('renderConfirmed', () => {
     const out = renderConfirmed(draft({ payers: [{ memberId: 'zzz' }] }), nameOf, 'splid');
     expect(out).toContain('👤 Платил: (?)');
   });
+
+  it('appends the quip as a trailing block, separated from the data', () => {
+    const out = renderConfirmed(draft(), nameOf, 'splid', '  ну ты и шопоголик 🤙  ');
+    expect(out).toContain('✅ Записано в splid');
+    // Trimmed and on its own block after a blank line.
+    expect(out.endsWith('\n\nну ты и шопоголик 🤙')).toBe(true);
+  });
+
+  it('omits the quip block when it is null/empty', () => {
+    expect(renderConfirmed(draft(), nameOf, 'splid', null)).not.toContain('\n\n');
+    expect(renderConfirmed(draft(), nameOf, 'splid', '   ')).not.toContain('\n\n');
+  });
 });

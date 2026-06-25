@@ -49,6 +49,11 @@ export const RememberZ = z.object({
 });
 export type RememberInput = z.infer<typeof RememberZ>;
 
+export const LearnExpenseZ = z.object({
+  keywords: z.array(z.string().min(1)).min(1).max(20),
+});
+export type LearnExpenseInput = z.infer<typeof LearnExpenseZ>;
+
 export const AddPoiZ = z.object({
   name: z.string().min(1),
   category: z.enum(['cafe', 'sight', 'plan', 'place']),
@@ -157,6 +162,22 @@ export const rememberJsonSchema = {
     },
   },
   required: ['note'],
+} as const;
+
+export const learnExpenseJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    keywords: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 20,
+      items: { type: 'string' },
+      description:
+        'Short, distinctive trigger words or phrases (lower-case, as used in the chat) that should mark a message as a likely expense. Extract them from the example message the user pointed at — e.g. ["дошик", "на бензин", "продукты"]. Keep them generic enough to match future messages but specific enough not to misfire (avoid stop-words like "за"/"на" alone).',
+    },
+  },
+  required: ['keywords'],
 } as const;
 
 export const addPoiJsonSchema = {

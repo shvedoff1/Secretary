@@ -1,4 +1,5 @@
 import type { Context } from 'grammy';
+import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { isAddressed, routeMessage, addressesBotByName } from '../triggers.js';
 import { runAndRespond } from '../flows/assist.js';
@@ -25,6 +26,33 @@ async function clearWriting(ctx: Context): Promise<void> {
     await ctx.react([]);
   } catch {
     /* best-effort */
+  }
+}
+
+/**
+ * Forward a voice transcript to the admin's DM so flaky transcriptions can be
+ * spotted even in chats the admin doesn't actively watch. Best-effort: never
+ * throws, never blocks the main flow. Skipped when the admin sent the note in
+ * their own DM (the transcript is already in front of them).
+ */
+async function dmTranscriptToAdmin(ctx: Context, transcript: string): Promise<void> {
+  try {
+    const adminId = loadConfig().ADMIN_TELEGRAM_ID;
+    if (!ctx.chat || ctx.chat.id === adminId) return;
+    const chatLabel =
+      ctx.chat.type !== 'private' && 'title' in ctx.chat && ctx.chat.title
+        ? ctx.chat.title
+        : 'личка';
+    const from = ctx.from
+      ? [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') ||
+        (ctx.from.username ? `@${ctx.from.username}` : `id ${ctx.from.id}`)
+      : 'кто-то';
+    await ctx.api.sendMessage(
+      adminId,
+      `🎤 Голосовое (${chatLabel}, ${from}) расшифровалось как:\n\n${transcript}`,
+    );
+  } catch (err) {
+    logger.warn({ err }, 'failed to DM voice transcript to admin');
   }
 }
 
@@ -71,6 +99,11 @@ export async function onVoice(ctx: Context): Promise<void> {
     if (addressed) await ctx.reply('Не расслышал — в голосовом не было речи.');
     return;
   }
+
+  // DM the admin what we heard, so they can catch flaky transcriptions even in
+  // chats they don't actively watch. Best-effort; skip when the admin themselves
+  // sent the note in their own DM (they'd just get a duplicate).
+  void dmTranscriptToAdmin(ctx, transcript);
 
   // Learn the chat's slang from the transcript too — every message counts, not
   // just the ones we reply to. Fire-and-forget and best-effort.

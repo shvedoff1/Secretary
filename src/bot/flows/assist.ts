@@ -13,6 +13,7 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
+import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
@@ -35,7 +36,7 @@ import {
   recentTurns,
   pruneOld,
 } from '../../db/repos/conversation.repo.js';
-import { presentDraft, renderDraft, nameMapFromMembers } from './preview.js';
+import { presentDraft, prepareQuip, renderDraft, nameMapFromMembers } from './preview.js';
 import {
   getPending,
   updateDraft,
@@ -168,6 +169,26 @@ export function makeScheduleTaskHandler(
 }
 
 /**
+ * Build the `learn_expense_pattern` handler for a chat: persists the taught
+ * trigger words into the chat's expense dictionary and returns a short human
+ * confirmation. Future messages containing a stored term (with a number) will
+ * auto-route as expenses — no redeploy needed.
+ */
+export function makeLearnExpenseHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: { keywords: string[] }) => string {
+  return (input) => {
+    const added = addExpenseTerms(chatId, input.keywords, tgUserId);
+    if (added.length === 0) {
+      return 'Уже знаю такие слова — ничего нового не добавил.';
+    }
+    const list = added.map((t) => `«${t}»`).join(', ');
+    return `Запомнил: сообщения со словами ${list} теперь считаю тратами. Список: /trata`;
+  };
+}
+
+/**
  * Build the `add_poi` handler for a chat: persists the place and returns a short
  * human confirmation the assistant relays back.
  */
@@ -279,6 +300,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           appendMemory(chatId, note);
           return 'Запомнил.';
         },
+        learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
@@ -357,6 +379,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       source: args.source,
       userText: args.historyText,
       replyText: result.text,
+      chatId,
     });
   const replyText = safeToHumorize
     ? await humorizeWithPreview(result.text, async (original) => {
@@ -451,6 +474,7 @@ async function rewordPendingInner(
     },
     {
       remember: (note) => (appendMemory(chatId, note), 'Запомнил.'),
+      learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
@@ -476,6 +500,9 @@ async function rewordPendingInner(
     aliases: getAliasMap(chatId),
   });
   updateDraft(pendingId, draft);
+  // The reword may have changed the title — refresh the pre-generated joke so the
+  // confirmation still matches what was bought.
+  prepareQuip(pendingId, draft.title);
 
   // Learn the nickname: if the previous draft had exactly one unresolved name
   // and this correction resolved exactly one new member, remember that mapping

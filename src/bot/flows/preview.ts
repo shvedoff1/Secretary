@@ -4,6 +4,24 @@ import { formatMoney } from '../../util/money.js';
 import { createPending, type PendingSource } from '../../db/repos/pending.repo.js';
 import { previewKeyboard } from '../keyboards.js';
 import { setEditTarget } from '../editTargets.js';
+import { setQuip } from '../quipCache.js';
+import { expenseQuip } from '../../llm/expenseQuip.js';
+
+/**
+ * Generate the expense's comic riff in the BACKGROUND and stash it by pendingId,
+ * so the confirmation can render it instantly without an OpenAI call on the button
+ * tap. Fire-and-forget and best-effort: any failure just leaves no cached joke.
+ * Called when a preview is shown (and again after a reword changes the title).
+ */
+export function prepareQuip(pendingId: string, title: string): void {
+  void expenseQuip(title)
+    .then((quip) => {
+      if (quip) setQuip(pendingId, quip);
+    })
+    .catch(() => {
+      /* decorative; never surfaces */
+    });
+}
 
 export function renderDraft(
   draft: ExpenseDraft,
@@ -37,11 +55,16 @@ export function renderDraft(
  * confirmation it keeps the meaningful details (payer, split, notes) so they
  * aren't lost when the preview message is edited in place. Rendered from the
  * draft (not the preview text) so it's correct even on the retry path.
+ *
+ * `quip` is an optional comic riff appended at the very bottom (a separate block,
+ * never mixed with the data lines). It is display-only and added AFTER the
+ * expense is already written, so it can never affect the recorded amounts/names.
  */
 export function renderConfirmed(
   draft: ExpenseDraft,
   nameOf: (id: string) => string,
   providerName: string,
+  quip?: string | null,
 ): string {
   const lines = [`✅ Записано в ${providerName}`];
   lines.push(`🧾 ${draft.title}`);
@@ -50,7 +73,8 @@ export function renderConfirmed(
   lines.push(`👤 Платил: ${payerNames || '—'}`);
   lines.push(`👥 Делим на: ${describeProfiteers(draft.profiteers, nameOf)}`);
   if (draft.notes) lines.push(`📝 ${draft.notes}`);
-  return lines.join('\n');
+  const text = lines.join('\n');
+  return quip?.trim() ? `${text}\n\n${quip.trim()}` : text;
 }
 
 function describeProfiteers(
@@ -102,4 +126,6 @@ export async function presentDraft(
   });
   // Allow rewording by replying to this preview message.
   setEditTarget(args.chatId, sent.message_id, pending.id);
+  // Pre-generate the joke now (in the background) so confirming is instant.
+  prepareQuip(pending.id, args.draft.title);
 }

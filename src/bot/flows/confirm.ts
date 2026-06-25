@@ -12,6 +12,7 @@ import { recordAudit } from '../../db/repos/audit.repo.js';
 import { previewKeyboard } from '../keyboards.js';
 import { renderConfirmed, nameMapFromMembers } from './preview.js';
 import { clearEditTarget } from '../editTargets.js';
+import { takeQuip, clearQuip } from '../quipCache.js';
 import { logger } from '../../logger.js';
 
 /** Handles callback queries with the `e:` prefix (expense preview actions). */
@@ -45,6 +46,7 @@ export async function handleExpenseCallback(ctx: Context): Promise<void> {
 async function cancel(ctx: Context, pendingId: string): Promise<void> {
   const pending = getPending(pendingId);
   if (pending) setStatus(pendingId, 'cancelled');
+  clearQuip(pendingId); // drop the pre-generated joke for an abandoned preview
   await ctx.answerCallbackQuery({ text: 'Отменено' });
   await safeEdit(ctx, '❌ Отменено.');
   if (ctx.chat) clearEditTarget(ctx.chat.id, ctx.callbackQuery!.message!.message_id);
@@ -108,9 +110,14 @@ async function submit(
     } catch (err) {
       logger.warn({ err, pendingId }, 'could not load members for confirmation');
     }
+    // Append the comic riff that was pre-generated in the background when the
+    // preview was shown — read it from the cache (no OpenAI call here, so the
+    // confirmation renders instantly). Display-only and added after the write, so
+    // it can never affect the recorded data; absent → confirmation shown without it.
+    const quip = takeQuip(pendingId) ?? null;
     await safeEdit(
       ctx,
-      renderConfirmed(pending.draft, nameMapFromMembers(members), cfg.provider_name),
+      renderConfirmed(pending.draft, nameMapFromMembers(members), cfg.provider_name, quip),
     );
     if (ctx.chat) clearEditTarget(ctx.chat.id, ctx.callbackQuery!.message!.message_id);
   } catch (err) {

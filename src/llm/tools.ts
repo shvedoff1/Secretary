@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   recordExpenseJsonSchema,
   rememberJsonSchema,
+  learnExpenseJsonSchema,
   scheduleTaskJsonSchema,
   surfForecastJsonSchema,
   addPoiJsonSchema,
@@ -9,6 +10,7 @@ import {
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
 export const REMEMBER_TOOL = 'remember';
+export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
@@ -19,6 +21,8 @@ export interface ToolOptions {
   enableExpense: boolean;
   /** Expose the remember tool. Default true; disabled for scheduled runs. */
   enableRemember?: boolean;
+  /** Expose the learn_expense_pattern tool. Default true; disabled for scheduled runs. */
+  enableExpenseLearning?: boolean;
   /** Expose the schedule_task tool. Default true; disabled for scheduled runs so a
    *  firing reminder can't create more reminders. */
   enableReminders?: boolean;
@@ -50,6 +54,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Save a durable note to long-term memory. ONLY call this when the user EXPLICITLY asks to remember/save something (e.g. "запомни…", "сохрани…", "remember that…"). Never auto-remember expenses, receipts, or casual chatter.',
       input_schema: rememberJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableExpenseLearning !== false) {
+    tools.push({
+      name: LEARN_EXPENSE_TOOL,
+      description:
+        "Teach THIS chat's expense-detection dictionary a new trigger word/phrase, so future messages containing it (with a number) are auto-treated as likely expenses — no redeploy needed. Call this ONLY when the user EXPLICITLY teaches you that a kind of message is an expense, typically by replying to a message the bot missed and saying «запомни, такие сообщения — это траты», «это тоже трата», «такое тоже записывай как трату». Extract the distinctive keyword(s) from the referenced message (shown to you as [В ответ на сообщение: …]). Do NOT call this for a one-off expense to record (use record_expense) or for general notes (use remember).",
+      input_schema: learnExpenseJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

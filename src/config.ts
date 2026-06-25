@@ -42,6 +42,12 @@ const ConfigSchema = z.object({
     .default('info'),
   PENDING_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   CONVERSATION_HISTORY_LIMIT: z.coerce.number().int().positive().default(20),
+  // Drop dialogue history older than this many hours from the assistant context.
+  // Without an age bound the window is count-only, so a long off-topic session
+  // lingers (and the bot keeps re-reading its own replies) until enough NEW
+  // exchanges push it out — in a quiet chat that can be days. The age cutoff lets
+  // yesterday's tangent expire on its own.
+  CONVERSATION_HISTORY_MAX_AGE_HOURS: z.coerce.number().int().positive().default(12),
   ENABLE_WEB_SEARCH: boolish.default(true),
   // surf_forecast tool (Open-Meteo marine API; no key needed).
   ENABLE_SURF: boolish.default(true),

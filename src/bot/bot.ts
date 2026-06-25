@@ -96,7 +96,7 @@ export const BOT_COMMANDS = [
   { command: 'link', description: 'Привязать аккаунт к участнику Splid' },
   { command: 'memory', description: 'Заметки чата' },
   { command: 'remember', description: 'Добавить заметку' },
-  { command: 'forget', description: 'Очистить заметки' },
+  { command: 'forget', description: 'Забыть пункт (/forget N) или очистить всё' },
   { command: 'tasks', description: 'Напоминания и регулярные задачи' },
   { command: 'canceltask', description: 'Отменить задачу по id' },
   { command: 'poi', description: 'Список мест (кафе, достопримечательности, планы)' },

@@ -96,6 +96,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `LOG_LEVEL` | no | `info` | pino level |
 | `PENDING_TTL_MINUTES` | no | `30` | Preview expiry |
 | `CONVERSATION_HISTORY_LIMIT` | no | `20` | Turns kept as context |
+| `CONVERSATION_HISTORY_MAX_AGE_HOURS` | no | `12` | Drop dialogue history older than this so old tangents expire |
 | `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
 | `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own |
 | `ENABLE_LEXICON` | no | `true` | Learn the chat's slang from messages and reuse it |

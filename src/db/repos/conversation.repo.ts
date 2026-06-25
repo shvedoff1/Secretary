@@ -23,17 +23,23 @@ export function addTurn(args: {
     .run(args.chatId, args.role, args.tgUserId, args.content);
 }
 
-/** Most recent `limit` turns, returned in chronological order. */
-export function recentTurns(chatId: number, limit: number): Turn[] {
+/**
+ * Most recent `limit` turns, returned in chronological order. When `maxAgeMs` is
+ * given, turns older than that are excluded — so a long-ago tangent expires out of
+ * the window on its own instead of lingering until enough new exchanges push it out.
+ */
+export function recentTurns(chatId: number, limit: number, maxAgeMs?: number): Turn[] {
+  const cutoff = maxAgeMs !== undefined ? Date.now() - maxAgeMs : null;
   const rows = getDb()
     .prepare(
       `SELECT role, tg_user_id, content, created_at
        FROM conversation_turn
        WHERE chat_id = ?
+         AND (? IS NULL OR created_at >= ?)
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
     )
-    .all(chatId, limit) as {
+    .all(chatId, cutoff, cutoff, limit) as {
     role: TurnRole;
     tg_user_id: number | null;
     content: string;

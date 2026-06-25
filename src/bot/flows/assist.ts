@@ -36,7 +36,7 @@ import {
   recentTurns,
   pruneOld,
 } from '../../db/repos/conversation.repo.js';
-import { presentDraft, renderDraft, nameMapFromMembers } from './preview.js';
+import { presentDraft, prepareQuip, renderDraft, nameMapFromMembers } from './preview.js';
 import {
   getPending,
   updateDraft,
@@ -500,6 +500,9 @@ async function rewordPendingInner(
     aliases: getAliasMap(chatId),
   });
   updateDraft(pendingId, draft);
+  // The reword may have changed the title — refresh the pre-generated joke so the
+  // confirmation still matches what was bought.
+  prepareQuip(pendingId, draft.title);
 
   // Learn the nickname: if the previous draft had exactly one unresolved name
   // and this correction resolved exactly one new member, remember that mapping

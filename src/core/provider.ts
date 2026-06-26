@@ -1,4 +1,11 @@
-import type { ExpenseDraft, Member, SubmitResult } from './types.js';
+import type {
+  BalanceSummary,
+  DateRange,
+  ExpenseDraft,
+  ExpenseRecord,
+  Member,
+  SubmitResult,
+} from './types.js';
 
 /** A resolved handle to a provider's target (e.g. a Splid group). */
 export interface ProviderConnection {
@@ -18,6 +25,22 @@ export interface ExpenseProvider {
     conn: ProviderConnection,
     draft: ExpenseDraft,
   ): Promise<SubmitResult>;
+  /**
+   * Read back expenses that occurred within `range` (real spending only —
+   * settlement/payment entries and deleted entries are excluded). Used by
+   * reporting features; reading from the provider keeps a single source of
+   * truth (expenses added directly in the provider's own app are included).
+   */
+  listExpenses(
+    conn: ProviderConnection,
+    range: DateRange,
+  ): Promise<ExpenseRecord[]>;
+  /**
+   * Current who-owes-whom snapshot for the group: each member's net standing
+   * plus a minimal set of suggested settlement transfers, in the group's default
+   * currency.
+   */
+  getBalances(conn: ProviderConnection): Promise<BalanceSummary>;
 }
 
 export class ProviderError extends Error {

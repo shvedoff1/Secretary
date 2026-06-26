@@ -10,6 +10,7 @@ import { humorizeWithPreview } from '../../llm/humorize.js';
 import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
+import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
@@ -308,6 +309,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
+        spendingReport: makeSpendingReportHandler(chatId),
       },
     );
   } catch (err) {
@@ -482,6 +484,7 @@ async function rewordPendingInner(
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
+      spendingReport: makeSpendingReportHandler(chatId),
     },
   );
 

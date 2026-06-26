@@ -63,3 +63,54 @@ export interface ExpenseDraft {
 export interface SubmitResult {
   externalId: string;
 }
+
+/** A half-open instant range [fromMs, toMs) in unix milliseconds. */
+export interface DateRange {
+  fromMs: number;
+  toMs: number;
+}
+
+/** One member's net standing in a group (positive = owed money, negative = owes). */
+export interface MemberBalance {
+  memberId: string;
+  netMinor: Minor;
+}
+
+/** A suggested transfer to settle up: `fromId` should pay `toId` `amountMinor`. */
+export interface Settlement {
+  fromId: string;
+  toId: string;
+  amountMinor: Minor;
+}
+
+/**
+ * Who-owes-whom snapshot for a group, in a single currency (the group's default;
+ * the provider converts multi-currency entries when it computes this).
+ */
+export interface BalanceSummary {
+  currency: string;
+  balances: MemberBalance[];
+  settlements: Settlement[];
+}
+
+/**
+ * A provider-agnostic view of an already-recorded expense, read back from the
+ * provider (e.g. for reports). Money is in integer minor units, like everything
+ * else in the domain; the provider boundary converts from its own format.
+ */
+export interface ExpenseRecord {
+  /** Provider-specific stable id (Splid: Entry.GlobalId). */
+  id: string;
+  title?: string;
+  /** Human category label as the provider stores it (Splid: category.originalName). */
+  category?: string;
+  /** Stable category key/type for matching (Splid: category.type, e.g. "restaurants"). */
+  categoryKey?: string;
+  currency: string; // ISO 4217
+  /** Total amount of the expense (minor units). */
+  amountMinor: Minor;
+  /** How much each payer fronted, keyed by member id (minor units). */
+  payerAmounts: Record<string, Minor>;
+  /** When the expense occurred (purchased-on date if known, else created-at). */
+  occurredMs: number;
+}

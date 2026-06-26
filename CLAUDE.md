@@ -35,6 +35,19 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a
   recurring evening task can post "where to go tomorrow".
+- `src/spending/` — `spending_report` skill: summarises past spending (optionally
+  filtered by an approximate category — "на еду", "на такси") and/or who-owes-whom for a
+  Splid group, read back from the provider (`ExpenseProvider.listExpenses` +
+  `getBalances`, Splid-only impl — so expenses added directly in the Splid app count too).
+  The model expands the category into generous keywords (RU+EN + Splid category types)
+  and `filterByKeywords` substring-matches them over each expense's title + category.
+  Pure logic (range resolution, filtering, aggregation, formatting) in `report.ts`; the
+  tool handler in `handler.ts`. Like `surf_forecast` it
+  stays live in both the live chat flow and the scheduler, so a recurring task created via
+  `schedule_task` ("сводка трат за вчера в 9 утра") produces the digest with no bespoke
+  scheduling. The handler runs its output through the humorizer (the one deliberate
+  exception to "humorizer skips money") and `assistant.ts` short-circuits the tool so the
+  exact figures reach the user verbatim instead of being re-phrased by the model.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

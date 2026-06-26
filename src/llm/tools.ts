@@ -6,6 +6,7 @@ import {
   scheduleTaskJsonSchema,
   surfForecastJsonSchema,
   addPoiJsonSchema,
+  spendingReportJsonSchema,
 } from './schema.js';
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
@@ -14,6 +15,7 @@ export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
+export const SPENDING_REPORT_TOOL = 'spending_report';
 
 export interface ToolOptions {
   enableWebSearch: boolean;
@@ -31,6 +33,10 @@ export interface ToolOptions {
   enableSurf?: boolean;
   /** Expose the add_poi tool. Default true; disabled for scheduled runs. */
   enablePoi?: boolean;
+  /** Expose the spending_report tool. Only where a Splid group is connected (it
+   *  reads expenses/balances back from the group). Stays on for scheduled runs so
+   *  a recurring "сводка трат в 9 утра" task can produce the digest. */
+  enableSpending?: boolean;
 }
 
 export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
@@ -90,6 +96,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Save a point of interest to this chat\'s list of places — a cafe/restaurant worth remembering, a sight they visited, or a place they plan to go. Call this when the user wants to keep a place ("запиши это кафе", "добавь в места", "хочу сходить сюда", "сохрани это место"). Pick the best category and copy any address or coordinates mentioned so a Google Maps link can be built. View the list with /poi.',
       input_schema: addPoiJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableSpending) {
+    tools.push({
+      name: SPENDING_REPORT_TOOL,
+      description:
+        "Summarise recorded spending and/or who-owes-whom for the chat's Splid group. Call this when the user asks about PAST spending (\"сколько потратили за неделю\", \"траты за вчера\", \"скинь траты за последние 3 дня\", \"how much did we spend\") or about balances/debts (\"сколько кто кому должен\", \"who owes what\", \"мы в расчёте?\"). For the spending summary, pass fromDate/toDate as chat-LOCAL YYYY-MM-DD computed from the context block's current time + timezone (single day => equal dates; null/null => yesterday). Set balances=true for the settlement summary. It returns ready-formatted figures — relay them as-is, don't recompute. This READS the data; it does not record anything (use record_expense for that).",
+      input_schema: spendingReportJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

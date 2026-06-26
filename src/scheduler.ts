@@ -11,6 +11,10 @@ import {
 import { nextRunMs } from './util/schedule.js';
 import { mdToTelegramHtml, stripMarkdown } from './util/telegramHtml.js';
 import { makeSurfForecastHandler } from './surf/index.js';
+import { makeSpendingReportHandler } from './spending/handler.js';
+import { getProvider } from './core/registry.js';
+import { getChatConfig } from './db/repos/chatConfig.repo.js';
+import type { Member } from './core/types.js';
 
 const surfForecast = makeSurfForecastHandler();
 
@@ -26,14 +30,29 @@ async function sendMarkdown(bot: Bot, chatId: number, text: string): Promise<voi
 async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
   const cfg = loadConfig();
   try {
+    // Load the chat's Splid context so a recurring "сводка трат в 9 утра" task can
+    // use the spending_report tool (gated on a connected group). Best-effort: a
+    // plain reminder/surf task works fine without it.
+    const chatCfg = getChatConfig(task.chatId);
+    let members: Member[] = [];
+    if (chatCfg?.provider_group_id) {
+      try {
+        members = await getProvider(chatCfg.provider_name).listMembers({
+          groupId: chatCfg.provider_group_id,
+        });
+      } catch (err) {
+        logger.warn({ err, chatId: task.chatId }, 'could not load members for scheduled task');
+      }
+    }
+
     const result = await runAssistant(
       {
-        defaultCurrency: cfg.DEFAULT_CURRENCY,
-        members: [],
+        defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
+        members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memory: '',
         senderName: 'scheduler',
         timezone: task.timezone,
-        splidConnected: false,
+        splidConnected: !!chatCfg?.provider_group_id,
         // A firing reminder just produces text (optionally via web search). It must
         // NOT be able to create reminders or write memory — otherwise a reminder
         // could spawn more reminders every time it runs.
@@ -52,6 +71,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // forecast and the bot posts the recommendation to the chat.
         surfForecast,
         addPoi: () => 'noop',
+        // Spending report stays live too: a recurring task can post the daily
+        // spending digest (it short-circuits to ready, humorized text).
+        spendingReport: makeSpendingReportHandler(task.chatId),
       },
     );
     if (result.kind === 'text' && result.text.trim()) {

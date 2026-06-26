@@ -4,8 +4,16 @@ import {
   type ExpenseProvider,
   type ProviderConnection,
 } from '../../core/provider.js';
-import type { ExpenseDraft, Member, SubmitResult } from '../../core/types.js';
-import { toSplidExpense } from './map.js';
+import type {
+  BalanceSummary,
+  DateRange,
+  ExpenseDraft,
+  ExpenseRecord,
+  Member,
+  SubmitResult,
+} from '../../core/types.js';
+import { majorToMinor } from '../../util/money.js';
+import { fromSplidEntry, toSplidExpense } from './map.js';
 
 /**
  * Splid integration via the unofficial `splid-js` client. This is the ONLY file
@@ -49,6 +57,74 @@ export class SplidProvider implements ExpenseProvider {
     } catch (err) {
       throw new ProviderError(
         'Could not load members from Splid',
+        isRetriable(err),
+        err,
+      );
+    }
+  }
+
+  async listExpenses(
+    conn: ProviderConnection,
+    range: DateRange,
+  ): Promise<ExpenseRecord[]> {
+    try {
+      const entries = await this.client.entry.getAllByGroup(conn.groupId);
+      // Splid can return duplicate copies of the same entry; dedupe by id.
+      const unique = SplidClient.dedupeByGlobalId(entries);
+      const records: ExpenseRecord[] = [];
+      for (const entry of unique) {
+        const rec = fromSplidEntry(entry);
+        if (!rec) continue; // deleted or a payment/settlement
+        if (rec.occurredMs >= range.fromMs && rec.occurredMs < range.toMs) {
+          records.push(rec);
+        }
+      }
+      return records;
+    } catch (err) {
+      throw new ProviderError(
+        'Could not load expenses from Splid',
+        isRetriable(err),
+        err,
+      );
+    }
+  }
+
+  async getBalances(conn: ProviderConnection): Promise<BalanceSummary> {
+    try {
+      const [people, rawEntries, groupInfo] = await Promise.all([
+        this.client.person.getAllByGroup(conn.groupId),
+        this.client.entry.getAllByGroup(conn.groupId),
+        this.client.groupInfo.getOneByGroup(conn.groupId),
+      ]);
+      const entries = SplidClient.dedupeByGlobalId(rawEntries);
+      const currency = groupInfo.defaultCurrencyCode;
+      // splid-js computes balances/settlements in major units (strings),
+      // converting any foreign-currency entries via the group's stored rates.
+      // (Balance / SuggestedPayment aren't re-exported from the package root, so
+      // annotate the shapes locally.)
+      const balance = SplidClient.getBalance(people, entries, groupInfo) as Record<
+        string,
+        { balance: string }
+      >;
+      const suggested = SplidClient.getSuggestedPayments(balance) as {
+        from: string;
+        to: string;
+        amount: string;
+      }[];
+
+      const balances = Object.entries(balance).map(([memberId, item]) => ({
+        memberId,
+        netMinor: majorToMinor(Number(item.balance), currency),
+      }));
+      const settlements = suggested.map((p) => ({
+        fromId: p.from,
+        toId: p.to,
+        amountMinor: majorToMinor(Number(p.amount), currency),
+      }));
+      return { currency, balances, settlements };
+    } catch (err) {
+      throw new ProviderError(
+        'Could not load balances from Splid',
         isRetriable(err),
         err,
       );

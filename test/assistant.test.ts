@@ -67,6 +67,7 @@ const handlers = {
   scheduleTask: () => 'ok',
   surfForecast: async () => 'forecast',
   addPoi: () => 'added',
+  spendingReport: async () => 'report',
 };
 
 function baseCtx(userContent: string) {
@@ -185,5 +186,42 @@ describe('runAssistant expense extraction', () => {
     const result = await runAssistant(expenseCtx, handlers);
 
     expect(result.kind).toBe('text');
+  });
+
+  it('short-circuits spending_report: returns the handler text verbatim, not humorizable', async () => {
+    responses = [
+      toolResponse('spending_report', {
+        fromDate: '2026-06-24',
+        toDate: '2026-06-24',
+        balances: false,
+        filterLabel: null,
+        filterKeywords: null,
+        timezone: 'UTC',
+      }),
+    ];
+    const spy = vi.fn(async () => '💸 Траты за 24 июня\nВсего: 50.00 EUR');
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const result = await runAssistant(expenseCtx, { ...handlers, spendingReport: spy });
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(result.kind).toBe('text');
+    if (result.kind === 'text') {
+      expect(result.text).toBe('💸 Траты за 24 июня\nВсего: 50.00 EUR');
+      // The handler already humorized; the downstream pass must stay off.
+      expect(result.humorizable).toBe(false);
+    }
+    // No second model round-trip — the tool short-circuits.
+    expect(createMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an invalid spending_report period with a text nudge', async () => {
+    responses = [
+      toolResponse('spending_report', { fromDate: 'not-a-date', toDate: null, balances: false, filterLabel: null, filterKeywords: null, timezone: 'UTC' }),
+    ];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const result = await runAssistant(expenseCtx, handlers);
+
+    expect(result.kind).toBe('text');
+    if (result.kind === 'text') expect(result.text).toContain('период');
   });
 });

@@ -21,14 +21,17 @@ vi.mock('../src/bot/handlers/onPhoto.js', () => ({
 }));
 
 import { onMessage } from '../src/bot/handlers/onMessage.js';
-import { routeMessage, addressesBotByName } from '../src/bot/triggers.js';
+import { routeMessage, addressesBotByName, isAddressed } from '../src/bot/triggers.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
+import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
+const mockAddressed = vi.mocked(isAddressed);
 const mockRun = vi.mocked(runAndRespond);
 const mockLearn = vi.mocked(learnFromMessage);
+const mockPhoto = vi.mocked(handleReceiptPhoto);
 
 function ctx(text: string): Context {
   return {
@@ -41,6 +44,7 @@ function ctx(text: string): Context {
 beforeEach(() => {
   vi.clearAllMocks();
   mockByName.mockReturnValue(false);
+  mockAddressed.mockReturnValue(false);
 });
 
 describe('onMessage by-name addressing', () => {
@@ -122,5 +126,67 @@ describe('onMessage reply context', () => {
 
     const args = mockRun.mock.calls[0]?.[1] as { userContent: string };
     expect(args.userContent).toBe('это была трата');
+  });
+});
+
+describe('onMessage reply to a photo', () => {
+  it('keeps the photo caption when the reply pings the bot («это трата»)', async () => {
+    mockAddressed.mockReturnValue(true);
+    const photo = [{ file_id: 'big' }];
+    const c = {
+      message: {
+        text: '@skyler_white_yo_bot это трата',
+        reply_to_message: { message_id: 42, photo, caption: 'Скай, на меня Ивана и Антона' },
+      },
+      chat: { id: 1, type: 'group' },
+      from: { id: 2 },
+    } as unknown as Context;
+
+    await onMessage(c);
+
+    expect(mockPhoto).toHaveBeenCalledOnce();
+    const [, photos, caption, addressed] = mockPhoto.mock.calls[0]!;
+    expect(photos).toBe(photo);
+    // Both the original instruction and the new ping reach the assistant.
+    expect(caption).toContain('Скай, на меня Ивана и Антона');
+    expect(caption).toContain('@skyler_white_yo_bot это трата');
+    expect(addressed).toBe(true);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('passes just the reply text when the photo had no caption', async () => {
+    mockAddressed.mockReturnValue(true);
+    const photo = [{ file_id: 'big' }];
+    const c = {
+      message: {
+        text: '@skyler_white_yo_bot это трата',
+        reply_to_message: { message_id: 42, photo }, // no caption
+      },
+      chat: { id: 1, type: 'group' },
+      from: { id: 2 },
+    } as unknown as Context;
+
+    await onMessage(c);
+
+    expect(mockPhoto).toHaveBeenCalledOnce();
+    expect(mockPhoto.mock.calls[0]![2]).toBe('@skyler_white_yo_bot это трата');
+  });
+
+  it('does not divert to the photo path when the reply does not address the bot', async () => {
+    mockAddressed.mockReturnValue(false);
+    mockRoute.mockReturnValue('process');
+    const photo = [{ file_id: 'big' }];
+    const c = {
+      message: {
+        text: 'ага',
+        reply_to_message: { message_id: 42, photo, caption: 'на меня Ивана и Антона' },
+      },
+      chat: { id: 1, type: 'group' },
+      from: { id: 2 },
+    } as unknown as Context;
+
+    await onMessage(c);
+
+    expect(mockPhoto).not.toHaveBeenCalled();
   });
 });

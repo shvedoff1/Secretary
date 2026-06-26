@@ -69,6 +69,38 @@ export function addressesBotByName(text: string): boolean {
   return BOT_NAME.test(text) && QUESTION_OR_REQUEST.test(text);
 }
 
+/** Is the bot named anywhere in the text (no question/request marker required)? */
+export function mentionsBotByName(text: string): boolean {
+  return BOT_NAME.test(text);
+}
+
+// Allocation / "split this spend across people" phrasing. Unlike looksLikeExpense
+// this needs NO number — it's meant for PHOTO captions, where the amount lives in
+// the picture (a receipt) and the caption only says who to split it across
+// ("раздели на нас", "за меня и Колю"). Prefix/substring style (no trailing word
+// boundary) so Cyrillic inflections still match, mirroring EXPENSE_KEYWORDS.
+const SHARE_PHRASING =
+  /(раздел[иеёя]|подел[иеёя]|делим|раскин|раскид|скинемся|скинёмся|скидыва|за\s+(меня|нас|всех)|со\s+мной|на\s+(нас|всех|обоих|двоих|троих|четверых|пятерых|каждого)|split\s+(it|this|the|between|among)|on\s+me|for\s+(us|everyone|all))/i;
+
+// "на меня …" only counts as a split when it allocates to a NAMED person or list
+// ("на меня Ивана и Антона", "на меня и Колю", "на меня @vasya") — gated on a
+// following capitalised name / mention so it doesn't fire on "посмотри на меня".
+// Case-sensitive on purpose (the capital is the signal), with a leading boundary
+// so "она меня …" can't masquerade as "на меня …".
+const SHARE_ON_ME = /(?:^|[^а-яёА-ЯЁa-zA-Z])[Нн]а\s+меня\s+(?:и\s+)?[А-ЯЁA-Z@]/;
+
+/**
+ * Does a PHOTO caption look like a shared expense to split, even with no number?
+ * A receipt is usually a photo whose caption just says who to split it across —
+ * allocation phrasing or names attached ("на меня Ивана и Антона", "раздели на
+ * нас"). Used to look at a captioned photo that didn't directly address the bot;
+ * the numeric base/learned heuristic (looksLikeExpenseForChat) is checked too by
+ * the caller, this only adds the number-less "names attached" case.
+ */
+export function captionLooksLikeSharedExpense(text: string): boolean {
+  return SHARE_PHRASING.test(text) || SHARE_ON_ME.test(text);
+}
+
 /** Was the bot directly addressed (DM, @mention, or reply to its message)? */
 export function isAddressed(ctx: Context): boolean {
   if (ctx.chat?.type === 'private') return true;

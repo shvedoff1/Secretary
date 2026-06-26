@@ -5,6 +5,8 @@ import {
   routeMessage,
   addressesBotByName,
   isMoneyContext,
+  captionLooksLikeSharedExpense,
+  mentionsBotByName,
 } from '../src/bot/triggers.js';
 import type { Context } from 'grammy';
 
@@ -106,6 +108,43 @@ describe('addressesBotByName', () => {
     expect(addressesBotByName('сколько стоит работа сантехника?')).toBe(false);
     expect(addressesBotByName('где мои ботинки?')).toBe(false);
     expect(addressesBotByName('какой выбрать оборот речи?')).toBe(false);
+  });
+});
+
+describe('captionLooksLikeSharedExpense', () => {
+  it('catches names/allocation attached to a photo even with no number', () => {
+    // The whole point: a receipt photo whose caption only says who to split it on.
+    expect(captionLooksLikeSharedExpense('на меня Ивана и Антона')).toBe(true);
+    expect(captionLooksLikeSharedExpense('На меня Антона и Ивана')).toBe(true);
+    expect(captionLooksLikeSharedExpense('на меня и Колю')).toBe(true);
+    expect(captionLooksLikeSharedExpense('на меня @vasya')).toBe(true);
+    expect(captionLooksLikeSharedExpense('раздели на нас')).toBe(true);
+    expect(captionLooksLikeSharedExpense('подели на всех')).toBe(true);
+    expect(captionLooksLikeSharedExpense('за меня и Серёгу')).toBe(true);
+    expect(captionLooksLikeSharedExpense('со мной пополам')).toBe(true);
+    expect(captionLooksLikeSharedExpense('скинемся')).toBe(true);
+    expect(captionLooksLikeSharedExpense('split this between us')).toBe(true);
+  });
+
+  it('does not fire on plain captions or selfie-style "на меня"', () => {
+    expect(captionLooksLikeSharedExpense('красивый закат')).toBe(false);
+    expect(captionLooksLikeSharedExpense('посмотри на меня')).toBe(false);
+    expect(captionLooksLikeSharedExpense('на меня напали комары')).toBe(false);
+    expect(captionLooksLikeSharedExpense('она меня обманула')).toBe(false);
+    expect(captionLooksLikeSharedExpense('мои новые кроссовки')).toBe(false);
+  });
+});
+
+describe('mentionsBotByName', () => {
+  it('matches a bare bot-name in a caption (no question needed)', () => {
+    // For a photo, just naming the bot ("Скай, ...") means the user is talking to it.
+    expect(mentionsBotByName('Скай, на меня Ивана и Антона')).toBe(true);
+    expect(mentionsBotByName('скайлер глянь чек')).toBe(true);
+    expect(mentionsBotByName('бот раздели это')).toBe(true);
+  });
+  it('does not fire on words that merely contain the letters', () => {
+    expect(mentionsBotByName('мои новые ботинки')).toBe(false);
+    expect(mentionsBotByName('сколько стоит работа')).toBe(false);
   });
 });
 

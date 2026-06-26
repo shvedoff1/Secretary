@@ -1,7 +1,12 @@
 import type { Context } from 'grammy';
 import type Anthropic from '@anthropic-ai/sdk';
 import { logger } from '../../logger.js';
-import { isAddressed, looksLikeExpense } from '../triggers.js';
+import {
+  isAddressed,
+  looksLikeExpenseForChat,
+  captionLooksLikeSharedExpense,
+  mentionsBotByName,
+} from '../triggers.js';
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
 import { runAndRespond } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
@@ -11,12 +16,23 @@ export async function onPhoto(ctx: Context): Promise<void> {
   if (!photos || photos.length === 0 || !ctx.chat || !ctx.from) return;
 
   const caption = ctx.message?.caption?.trim() ?? '';
-  const addressed = isAddressed(ctx);
-  // Read a photo when the bot is addressed (DM / @mention / reply to the bot)
-  // OR the caption itself looks like an expense ("чек на 1200 за ужин"). A bare
-  // picture with no relevant caption is ignored — we don't OCR every photo.
-  if (!addressed && !(caption && looksLikeExpense(caption))) return;
+  // Addressed = DM / @mention / reply to the bot, OR the caption talks to it by
+  // name ("Скай, на меня Ивана и Антона") — the user is clearly talking to us, so
+  // we both look at the photo and answer.
+  const addressed = isAddressed(ctx) || (!!caption && mentionsBotByName(caption));
+  // Even when NOT addressed, a captioned photo is very likely a receipt to split
+  // when the caption looks like a shared expense — either the usual numeric
+  // heuristic ("чек на 1200 за ужин") or just names/allocation attached with no
+  // number ("на меня Ивана и Антона"), since the amount is in the picture. A bare
+  // picture with no relevant caption is still ignored — we don't OCR every photo.
+  const sharedExpense =
+    !!caption &&
+    (looksLikeExpenseForChat(ctx.chat.id, caption) || captionLooksLikeSharedExpense(caption));
+  if (!addressed && !sharedExpense) return;
 
+  // Not addressed but caption implies a split → look at it, but stay silent unless
+  // it really is an expense (addressed=false ⇒ runAndRespond returns 'silent' on a
+  // non-expense), so a false positive costs only a wasted model call, never noise.
   await handleReceiptPhoto(ctx, photos, caption, addressed);
 }
 

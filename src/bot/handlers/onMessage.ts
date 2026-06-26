@@ -25,9 +25,13 @@ export async function onMessage(ctx: Context): Promise<void> {
       return;
     }
     // Reply to a photo while pinging the bot → look at that photo regardless,
-    // using this message's text as the instruction/context.
+    // using this message's text as the instruction/context. Keep the photo's
+    // ORIGINAL caption too: it usually carries the real instruction (e.g.
+    // «Скай, на меня Ивана и Антона»), and replying «это трата» without it
+    // would drop that and make the bot split the expense among everyone.
     if (replyTo.photo && replyTo.photo.length > 0 && isAddressed(ctx)) {
-      await handleReceiptPhoto(ctx, replyTo.photo, text, true);
+      const photoCaption = replyTo.caption ? `${replyTo.caption}\n\n${text}` : text;
+      await handleReceiptPhoto(ctx, replyTo.photo, photoCaption, true);
       return;
     }
   }

@@ -17,11 +17,10 @@ import {
   deleteMapping,
 } from '../../db/repos/memberMap.repo.js';
 import {
-  getMemory,
-  setMemory,
-  appendMemory,
-  clearMemory,
-} from '../../db/repos/memory.repo.js';
+  insertPinned,
+  clearMemoryItems,
+  listMemoryItemsForDisplay,
+} from '../../db/repos/memoryItem.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 
 /** Gate: supreme admin only, and only in a private chat (other chats' data must
@@ -110,7 +109,12 @@ export async function cmdChat(ctx: Context): Promise<void> {
         .join('\n')
     : '   (нет / группа не подключена)';
 
-  const memory = getMemory(id).trim() || '(пусто)';
+  const memItems = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+  const memory = memItems.length
+    ? memItems
+        .map((it) => `   - ${it.pinned ? '📌 ' : ''}${it.content}${it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : ''}`)
+        .join('\n')
+    : '(пусто)';
 
   await ctx.reply(
     [
@@ -187,7 +191,9 @@ export async function cmdSetMemory(ctx: Context): Promise<void> {
     await ctx.reply('Использование: /setmemory <chatId> <текст> (заменяет память чата)');
     return;
   }
-  setMemory(id, text);
+  // "Replace" the chat's memory: wipe stored items and pin this one note.
+  clearMemoryItems(id);
+  insertPinned(id, text);
   await ctx.reply(`🧠 Память чата ${id} перезаписана.`);
 }
 
@@ -199,7 +205,7 @@ export async function cmdAddMemory(ctx: Context): Promise<void> {
     await ctx.reply('Использование: /addmemory <chatId> <текст>');
     return;
   }
-  appendMemory(id, text);
+  insertPinned(id, text);
   await ctx.reply(`🧠 Добавил в память чата ${id}.`);
 }
 
@@ -210,7 +216,7 @@ export async function cmdClearMemory(ctx: Context): Promise<void> {
     await ctx.reply('Использование: /clearmemory <chatId>');
     return;
   }
-  clearMemory(id);
+  clearMemoryItems(id);
   clearTurns(id);
   await ctx.reply(`🧹 Память и история диалога чата ${id} очищены.`);
 }

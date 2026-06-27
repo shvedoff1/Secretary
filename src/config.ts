@@ -62,6 +62,26 @@ const ConfigSchema = z.object({
   LEXICON_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
   // How many learned terms to feed back into the assistant context.
   LEXICON_MAX_TERMS: z.coerce.number().int().positive().default(40),
+  // Weighted memory: passively extract durable, salient facts from the chat (split
+  // into shared chat facts and per-person facts), decay them over time, reinforce
+  // re-mentioned ones, and inject a tight working set into the assistant context —
+  // so recall behaves like a person's. Mirrors the lexicon batching economics.
+  ENABLE_MEMORY: boolish.default(true),
+  // Cheap model used only for the memory extraction batches (not the main chat).
+  ANTHROPIC_MEMORY_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Fire an extraction batch once this many messages have buffered...
+  MEMORY_BATCH_SIZE: z.coerce.number().int().positive().default(40),
+  // ...or once the oldest buffered message is this old, whichever comes first.
+  MEMORY_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
+  // Days for a passive fact's weight to halve (older events carry less weight).
+  MEMORY_HALFLIFE_DAYS: z.coerce.number().int().positive().default(14),
+  // Hard cap on stored passive facts per chat; lowest-weight overflow is pruned
+  // (pinned facts are exempt). This is the "limited volume" of human-like memory.
+  MEMORY_MAX_ITEMS: z.coerce.number().int().positive().default(200),
+  // How many shared chat facts to inject into the assistant context.
+  MEMORY_CONTEXT_CHAT: z.coerce.number().int().positive().default(8),
+  // How many facts about the current sender to inject into the assistant context.
+  MEMORY_CONTEXT_USER: z.coerce.number().int().positive().default(6),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
 });

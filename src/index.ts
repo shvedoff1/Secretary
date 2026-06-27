@@ -7,6 +7,7 @@ import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
 import { flushStaleLexicons } from './bot/flows/lexicon.js';
+import { flushStaleMemories } from './bot/flows/memory.js';
 import { isHumorEnabled } from './llm/humorize.js';
 
 async function main(): Promise<void> {
@@ -21,6 +22,7 @@ async function main(): Promise<void> {
       model: cfg.ANTHROPIC_MODEL,
       webSearch: cfg.ENABLE_WEB_SEARCH,
       surf: cfg.ENABLE_SURF,
+      memory: cfg.ENABLE_MEMORY,
       humor,
       humorModel: humor ? cfg.OPENAI_HUMOR_MODEL : undefined,
     },
@@ -52,11 +54,14 @@ async function main(): Promise<void> {
   scheduler.unref();
 
   // Catch-up extraction for chats that went quiet before filling a batch, so the
-  // "once a day" lexicon trigger still fires. Best-effort; the per-message path
-  // handles active chats.
+  // "once a day" lexicon/memory triggers still fire. Best-effort; the per-message
+  // path handles active chats.
   const lexiconFlusher = setInterval(() => {
     void flushStaleLexicons().catch((err) => {
       logger.warn({ err }, 'lexicon flush tick failed');
+    });
+    void flushStaleMemories().catch((err) => {
+      logger.warn({ err }, 'memory flush tick failed');
     });
   }, 60 * 60_000);
   lexiconFlusher.unref();

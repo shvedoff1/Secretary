@@ -3,6 +3,10 @@ name: build & deploy
 on:
   push:
     branches: [main]
+    # Diagnostics-only and docs changes shouldn't rebuild/redeploy the bot.
+    paths-ignore:
+      - '.github/workflows/diagnose.yml'
+      - '**.md'
   workflow_dispatch:
 
 concurrency:

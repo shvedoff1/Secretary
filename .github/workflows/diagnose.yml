@@ -36,5 +36,19 @@ jobs:
             docker compose exec -T bot node -e "fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'}}).then(r=>r.text().then(t=>console.log('anthropic status',r.status,'body:',t.slice(0,300)))).catch(e=>console.log('anthropic ERR',e.name,e.message))" || true
             echo "=== Telegram reachability from bot container ==="
             docker compose exec -T bot node -e "fetch('https://api.telegram.org').then(r=>console.log('telegram status',r.status)).catch(e=>console.log('telegram ERR',e.name,e.message))" || true
+            echo "=== Telegram Bot API (getMe / getWebhookInfo) from bot container ==="
+            docker compose exec -T bot node -e "
+              const t=process.env.BOT_TOKEN||'';
+              const base='https://api.telegram.org/bot'+t;
+              const hit=(label,url)=>fetch(url).then(r=>r.text().then(b=>console.log(label,'->',r.status,b.slice(0,400)))).catch(e=>console.log(label,'ERR',e.name,e.message));
+              // Real token across methods, plus a throwaway invalid token: a healthy
+              // Telegram answers the dummy with 401 (path OK → 502 is bot-specific);
+              // a 502 on the dummy too means the host's path to the API is broken.
+              (async()=>{
+                await hit('getMe', base+'/getMe');
+                await hit('getWebhookInfo', base+'/getWebhookInfo');
+                await hit('getMe[dummytoken]', 'https://api.telegram.org/bot123456:AAArandominvalidtokenForProbe/getMe');
+              })();
+            " || true
             echo "=== egress IP ==="
             docker compose exec -T bot node -e "fetch('https://api.ipify.org').then(r=>r.text()).then(t=>console.log('egress',t)).catch(e=>console.log('egress ERR',e.message))" || true

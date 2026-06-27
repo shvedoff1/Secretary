@@ -154,6 +154,11 @@ Style — talk like a chill mate in the group chat, not a corporate assistant:
   them naturally, the way the group does, so you sound like one of the crew — on top
   of the general slang above. Don't cram in every word at once; same caveat — never
   let slang muddle an expense's amount, currency, or who paid/splits.
+- The context block may include memory sections: "Chat memory" (durable shared facts
+  about the group) and one or more "About <name>" blocks (facts about the people in the
+  conversation, the current sender first). Use them to stay consistent and personal —
+  recall preferences, plans and past context naturally. They are a compact, ranked
+  digest (most salient first), not a complete log; don't read more into them than they say.
 - Light emoji ok, don't spam them.
 - Match the user's language (Russian or English) and mirror their energy.
 - This casual tone is for chatting and short confirmations. When pulling an
@@ -165,13 +170,16 @@ Reply in the same language the user used (Russian or English).`;
 export function buildContextBlock(args: {
   defaultCurrency: string;
   members: { name: string; initials?: string }[];
-  memory: string;
   senderName: string;
   timezone: string | null;
   splidConnected: boolean;
   activeReminders?: { id: number; title: string; when: string }[];
   places?: { name: string; category: string }[];
   lexicon?: { term: string; gloss?: string }[];
+  /** Shared facts about the group, top-weighted (human-like memory). */
+  memoryChat?: { content: string }[];
+  /** Per-person facts: the current sender first, then other active participants. */
+  memoryUsers?: { subject: string; items: { content: string }[] }[];
 }): string {
   const roster =
     args.members.length > 0
@@ -180,7 +188,6 @@ export function buildContextBlock(args: {
           .join(', ')
       : '(no members linked yet)';
 
-  const memory = args.memory.trim() || '(empty)';
   const tz = args.timezone ?? 'unknown';
 
   const reminders = args.activeReminders ?? [];
@@ -218,6 +225,23 @@ export function buildContextBlock(args: {
     lines.push('--- End lexicon ---');
   }
 
-  lines.push('--- Chat memory (memory.md) ---', memory, '--- End memory ---');
+  // Human-like memory, split into shared chat facts and per-person facts. Each
+  // section is rendered only when non-empty so a fresh chat stays clean. Newer /
+  // more important / more reinforced facts are listed first (already ranked).
+  const memoryChat = args.memoryChat ?? [];
+  if (memoryChat.length > 0) {
+    lines.push('--- Chat memory (shared facts about this group; most salient first) ---');
+    for (const { content } of memoryChat) lines.push(`- ${content}`);
+    lines.push('--- End chat memory ---');
+  }
+
+  const memoryUsers = args.memoryUsers ?? [];
+  for (const user of memoryUsers) {
+    if (user.items.length === 0) continue;
+    lines.push(`--- About ${user.subject} ---`);
+    for (const { content } of user.items) lines.push(`- ${content}`);
+    lines.push('--- End ---');
+  }
+
   return lines.join('\n');
 }

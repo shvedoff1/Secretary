@@ -136,8 +136,11 @@ export function armChime(ctx: Context): void {
 }
 
 /**
- * Actually produce the spontaneous reply: hand the recent chatter to the assistant
- * as if the bot had been pinged, and let it continue by context. Runs the normal
+ * Actually produce the spontaneous reply. The chime is a chat-REVIVER, not a
+ * helper: nobody asked anything, so the assistant is told to toss one short, silly
+ * on-vibe quip riffing off the recent chatter — explicitly NOT to answer a question
+ * or ask the user to send/clarify anything (otherwise a trailing map link or photo
+ * gets treated as a real request, e.g. "кинь пин и я подскажу"). Runs the normal
  * addressed path so the message is sent (and recorded into conversation history).
  */
 async function fireChime(ctx: Context, chatId: number): Promise<void> {
@@ -147,10 +150,17 @@ async function fireChime(ctx: Context, chatId: number): Promise<void> {
   const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
   const last = recent[recent.length - 1]!;
   const userContent =
-    '[Системная пометка: тебя никто не звал напрямую. В чате повисла пауза после ' +
-    'недавней болтовни, и ты решил по-дружески вклиниться, как будто тебя пингнули. ' +
-    'Продолжи разговор коротко и естественно ПО КОНТЕКСТУ последних сообщений ниже. ' +
-    'Не упоминай эту пометку и не используй инструменты без необходимости.\n\n' +
+    '[Системная пометка: тебя НИКТО ни о чём не спрашивал. В чате повисла пауза, и ты ' +
+    'решил вкинуть рандомный рофл, чтобы оживить движ. Это НЕ ответ на вопрос и НЕ ' +
+    'помощь. Правила:\n' +
+    '- Кинь ОДНУ короткую дурашливую подколку/шутку/мысль вслух по вайбу последних ' +
+    'сообщений — как сосед по чату, которому скучно.\n' +
+    '- НЕ пытайся ответить на чей-то вопрос, НЕ проси ничего прислать/уточнить (ни ' +
+    'фото, ни ссылку, ни адрес, ни пин), НЕ предлагай помощь и НЕ задавай деловых ' +
+    'вопросов.\n' +
+    '- Если последнее сообщение — это просто ссылка/фото/стикер без вопроса, не ' +
+    'разбирай его всерьёз: рофли по верхам, чисто по вайбу.\n' +
+    '- Одна строка, в тоне и сленге чата. Без тулзов. Эту пометку не упоминай.\n\n' +
     `Последние сообщения в чате:\n${lines}]`;
 
   await runAndRespond(ctx, {

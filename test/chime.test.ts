@@ -70,6 +70,19 @@ describe('chime scheduling', () => {
     expect(args.userContent).toContain('Петя: я за');
   });
 
+  it('frames the chime as a silly revive, not an attempt to answer or ask for info', async () => {
+    const chime = await load();
+    chime.recordChatMessage(1, 'Антон', 'https://maps.google.com/?q=шава');
+    chime.armChime(ctx());
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+
+    const { userContent } = runMock.mock.calls[0]![1] as { userContent: string };
+    // It must steer away from Q&A / "send me a pin" behaviour.
+    expect(userContent).toContain('рофл');
+    expect(userContent).toMatch(/НЕ пытайся ответить/);
+    expect(userContent).toMatch(/НЕ проси ничего прислать/);
+  });
+
   it('does not call the LLM at all before the quiet window elapses', async () => {
     const chime = await load();
     chime.recordChatMessage(1, 'Аня', 'привет');

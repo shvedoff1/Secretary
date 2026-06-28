@@ -60,4 +60,4 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `chat_config` row (only Splid-linked ones), so chat-wide settings live in `chat_settings`.
 - LLM cost: the stable prefix (tool schemas + system prompt) is prompt-cached via
   `cache_control` in `assistant.ts`. Keep `SYSTEM_PROMPT` static so the cache holds.
-- Model is configurable via `ANTHROPIC_MODEL` (default `claude-opus-4-8`).
+- Model is configurable via `ANTHROPIC_MODEL` (default `claude-sonnet-4-6`).

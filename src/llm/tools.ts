@@ -111,7 +111,7 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
   if (opts.enableWebSearch) {
     // _20260209 adds dynamic result filtering — Claude filters results before they
     // hit the context window, cutting tokens on search-heavy turns. Supported on
-    // Opus 4.8 (current default) and Sonnet 4.6.
+    // Sonnet 4.6 (current default) and the Opus 4.6+ family.
     tools.push({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
   }
 

@@ -118,7 +118,7 @@ jobs:
             BOT_TOKEN=$BOT_TOKEN
             ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
             ADMIN_TELEGRAM_ID=$ADMIN_TELEGRAM_ID
-            ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-8}
+            ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-6}
             DEFAULT_CURRENCY=${DEFAULT_CURRENCY:-EUR}
             EOF2
             # Optional: voice transcription. Only write the key when present so an

@@ -15,7 +15,7 @@ secretary with memory. It:
   without it;
 - is **admin-gated**: only approved users can use it, so it can't be abused.
 
-Parsing and receipt OCR use **Claude** (`claude-opus-4-8`, vision). Splid is integrated
+Parsing and receipt OCR use **Claude** (`claude-sonnet-4-6`, vision). Splid is integrated
 behind a swappable provider interface, so other targets (Splitwise, Sheets, …) can be
 added without touching the core.
 
@@ -84,7 +84,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `BOT_TOKEN` | yes | — | From @BotFather |
 | `ANTHROPIC_API_KEY` | yes | — | Claude API key |
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
-| `ANTHROPIC_MODEL` | no | `claude-opus-4-8` | Model id |
+| `ANTHROPIC_MODEL` | no | `claude-sonnet-4-6` | Model id |
 | `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |

@@ -96,6 +96,11 @@ const ConfigSchema = z.object({
   CHIME_PROBABILITY: z.coerce.number().min(0).max(1).default(0.1),
   // Seconds of silence to wait before rolling for (and possibly sending) a chime.
   CHIME_QUIET_SECONDS: z.coerce.number().int().positive().default(60),
+  // Second, escalated tier: if the chat stays dead this much longer (default an
+  // hour of silence) AND the first roll already lost, roll again with the higher
+  // CHIME_HOUR_PROBABILITY — a long-dead chat gets a much better chance of a revive.
+  CHIME_HOUR_SECONDS: z.coerce.number().int().positive().default(3600),
+  CHIME_HOUR_PROBABILITY: z.coerce.number().min(0).max(1).default(0.6),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

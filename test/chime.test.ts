@@ -15,9 +15,12 @@ async function load(env: Record<string, string> = {}): Promise<ChimeModule> {
   process.env.ANTHROPIC_API_KEY = 'x';
   process.env.ADMIN_TELEGRAM_ID = '1';
   process.env.DATABASE_PATH = ':memory:';
-  // Default: always arm (prob 1) and a short, deterministic quiet window.
+  // Default: always arm (prob 1) and a short, deterministic quiet window. The hour
+  // tier is set up but with prob 0 so it never interferes unless a test opts in.
   process.env.CHIME_PROBABILITY = '1';
   process.env.CHIME_QUIET_SECONDS = '60';
+  process.env.CHIME_HOUR_SECONDS = '3600';
+  process.env.CHIME_HOUR_PROBABILITY = '0';
   delete process.env.ENABLE_CHIME;
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   vi.resetModules();
@@ -29,6 +32,7 @@ function ctx(chatId = 1): Context {
 }
 
 const QUIET_MS = 60_000;
+const HOUR_MS = 3_600_000;
 
 beforeEach(() => {
   runMock.mockClear();
@@ -38,7 +42,15 @@ afterEach(() => {
   vi.runOnlyPendingTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
-  for (const k of ['CHIME_PROBABILITY', 'CHIME_QUIET_SECONDS', 'ENABLE_CHIME']) delete process.env[k];
+  for (const k of [
+    'CHIME_PROBABILITY',
+    'CHIME_QUIET_SECONDS',
+    'CHIME_HOUR_SECONDS',
+    'CHIME_HOUR_PROBABILITY',
+    'ENABLE_CHIME',
+  ]) {
+    delete process.env[k];
+  }
 });
 
 describe('chime scheduling', () => {
@@ -125,6 +137,52 @@ describe('chime scheduling', () => {
     const chime = await load();
     chime.armChime(ctx(99)); // armed but buffer empty
     await vi.advanceTimersByTimeAsync(QUIET_MS);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('chime hour-tier escalation', () => {
+  it('escalates to the hour tier and fires when the 60s roll lost', async () => {
+    // First tier never wins (0%), hour tier always wins (1%-> use 1).
+    const chime = await load({ CHIME_PROBABILITY: '0', CHIME_HOUR_PROBABILITY: '1' });
+    chime.recordChatMessage(1, 'Аня', 'ау, есть кто живой?');
+    chime.armChime(ctx());
+
+    // 60s passes: first roll loses, nothing sent yet.
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+    expect(runMock).not.toHaveBeenCalled();
+
+    // The chat stays dead until the hour mark: now the 60% tier rolls and fires.
+    await vi.advanceTimersByTimeAsync(HOUR_MS - QUIET_MS);
+    expect(runMock).toHaveBeenCalledOnce();
+    const args = runMock.mock.calls[0]![1] as { addressed: boolean; userContent: string };
+    expect(args.addressed).toBe(true);
+    expect(args.userContent).toContain('Аня: ау, есть кто живой?');
+  });
+
+  it('does not escalate once the first tier already fired', async () => {
+    // First tier always wins → it fires and must NOT roll again at the hour mark.
+    const chime = await load({ CHIME_PROBABILITY: '1', CHIME_HOUR_PROBABILITY: '1' });
+    chime.recordChatMessage(1, 'Аня', 'привет');
+    chime.armChime(ctx());
+
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+    expect(runMock).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(HOUR_MS);
+    expect(runMock).toHaveBeenCalledOnce(); // still once — no double chime
+  });
+
+  it('a new message during the hour wait cancels the escalation', async () => {
+    const chime = await load({ CHIME_PROBABILITY: '0', CHIME_HOUR_PROBABILITY: '1' });
+    chime.recordChatMessage(1, 'Аня', 'кто тут');
+    chime.armChime(ctx());
+
+    await vi.advanceTimersByTimeAsync(QUIET_MS); // first tier loses, hour tier armed
+    await vi.advanceTimersByTimeAsync(HOUR_MS / 2);
+    chime.cancelChime(1); // someone finally spoke
+    await vi.advanceTimersByTimeAsync(HOUR_MS);
+
     expect(runMock).not.toHaveBeenCalled();
   });
 });

@@ -19,7 +19,7 @@ vi.mock('../src/bot/flows/memory.js', () => ({
 }));
 vi.mock('../src/bot/flows/chime.js', () => ({
   recordChatMessage: vi.fn(),
-  maybeScheduleChime: vi.fn(),
+  armChime: vi.fn(),
 }));
 vi.mock('../src/bot/editTargets.js', () => ({
   getEditTarget: vi.fn(() => undefined),
@@ -33,7 +33,7 @@ import { routeMessage, addressesBotByName, isAddressed } from '../src/bot/trigge
 import { runAndRespond } from '../src/bot/flows/assist.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
-import { recordChatMessage, maybeScheduleChime } from '../src/bot/flows/chime.js';
+import { recordChatMessage, armChime } from '../src/bot/flows/chime.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
@@ -42,7 +42,7 @@ const mockRun = vi.mocked(runAndRespond);
 const mockLearn = vi.mocked(learnFromMessage);
 const mockPhoto = vi.mocked(handleReceiptPhoto);
 const mockRecord = vi.mocked(recordChatMessage);
-const mockChime = vi.mocked(maybeScheduleChime);
+const mockChime = vi.mocked(armChime);
 
 function ctx(text: string): Context {
   return {
@@ -76,7 +76,7 @@ describe('onMessage by-name addressing', () => {
     await onMessage(ctx('всем привет'));
 
     expect(mockRun).not.toHaveBeenCalled();
-    // Ignored chatter still records context and rolls for a spontaneous chime.
+    // Ignored chatter still records context and starts the silence countdown.
     expect(mockRecord).toHaveBeenCalledWith(1, 'Tester', 'всем привет');
     expect(mockChime).toHaveBeenCalledOnce();
   });

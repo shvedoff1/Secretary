@@ -4,7 +4,7 @@ import { getEditTarget } from '../editTargets.js';
 import { runAndRespond, rewordPending, senderName } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
 import { learnMemoryFromMessage } from '../flows/memory.js';
-import { recordChatMessage, maybeScheduleChime } from '../flows/chime.js';
+import { recordChatMessage, armChime } from '../flows/chime.js';
 import { getTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
 
@@ -52,9 +52,9 @@ export async function onMessage(ctx: Context): Promise<void> {
     decision = 'process';
   }
   if (decision === 'ignore') {
-    // Not for us — but occasionally arm a delayed chime so the bot can jump into a
-    // lull and keep the conversation going on its own.
-    maybeScheduleChime(ctx);
+    // Not for us — start the silence countdown. If the chat then stays quiet for a
+    // minute, the bot rolls the dice and may chime in to keep the conversation going.
+    armChime(ctx);
     return;
   }
 

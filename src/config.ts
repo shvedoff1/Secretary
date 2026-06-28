@@ -86,14 +86,15 @@ const ConfigSchema = z.object({
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
   // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't
   // addressed in, continuing the conversation by context as if it had been pinged.
-  // To avoid butting into an active back-and-forth (and lagging behind), it doesn't
-  // reply immediately — it waits for a lull (CHIME_QUIET_SECONDS of silence after
-  // the message it rolled on) and only then calls the LLM. Any new message in that
-  // window cancels the pending chime, so it lands only when the chat has gone quiet.
+  // To avoid butting into an active back-and-forth (and lagging behind), it does NOT
+  // roll on the message itself — it waits for a lull (CHIME_QUIET_SECONDS of silence
+  // after the last message) and ONLY THEN rolls CHIME_PROBABILITY; a win calls the
+  // LLM. Any new message resets the silence clock, so the roll only happens once the
+  // chat has gone quiet.
   ENABLE_CHIME: boolish.default(true),
-  // Probability (0..1) that an otherwise-ignored group message arms a chime.
+  // Probability (0..1) the bot chimes in, rolled once the chat has gone quiet.
   CHIME_PROBABILITY: z.coerce.number().min(0).max(1).default(0.1),
-  // Seconds of silence to wait after arming before the bot actually replies.
+  // Seconds of silence to wait before rolling for (and possibly sending) a chime.
   CHIME_QUIET_SECONDS: z.coerce.number().int().positive().default(60),
 });
 

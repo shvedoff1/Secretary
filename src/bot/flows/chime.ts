@@ -8,15 +8,14 @@ import { runAndRespond } from './assist.js';
  * NOT addressed in and keeps the conversation going by context — as if it had been
  * pinged. The catch is timing: replying the instant a message lands would (a) make
  * the bot talk over an active back-and-forth and (b) burn an LLM call on a thread
- * that's still moving. So instead of replying immediately we ARM a chime on a
- * winning roll and wait for a lull — `CHIME_QUIET_SECONDS` of silence after the
- * message we rolled on. Any new message in that window cancels the pending chime
- * (the chat is clearly still active), so the reply only ever lands once things have
- * gone quiet. At that point we feed the recent messages to the assistant and let it
- * continue the conversation naturally.
+ * that's still moving. So we don't roll on the message itself — we wait for a lull
+ * (`CHIME_QUIET_SECONDS` of silence after the last message) and ONLY THEN roll the
+ * `CHIME_PROBABILITY` dice. Any new message resets that silence clock, so the roll
+ * only ever happens once the chat has genuinely gone quiet; a win then feeds the
+ * recent messages to the assistant and continues the conversation naturally.
  *
  * State is in-memory and per chat — a rolling buffer of recent message lines plus
- * the single pending timer. There is at most one armed chime per chat at a time.
+ * the single pending timer. There is at most one armed silence-timer per chat.
  */
 interface ChimeState {
   timer: ReturnType<typeof setTimeout> | null;
@@ -62,17 +61,18 @@ export function cancelChime(chatId: number): void {
 }
 
 /**
- * With `CHIME_PROBABILITY`, arm a delayed chime for an otherwise-ignored group
- * message. The reply doesn't go out now — it's scheduled for after a lull and is
- * cancelled by {@link cancelChime} if anyone speaks again first. Best-effort: a
+ * Arm (or re-arm) the silence timer for an otherwise-ignored group message. Nothing
+ * is rolled yet: we simply (re)start the `CHIME_QUIET_SECONDS` countdown from this
+ * message. Only when it elapses with no new message — i.e. the chat has gone quiet —
+ * do we roll `CHIME_PROBABILITY`, and only a win goes to the LLM. Any new message
+ * resets the clock via {@link cancelChime} + a fresh `armChime`. Best-effort: a
  * failed assistant call is logged, never thrown (it runs detached on a timer).
  */
-export function maybeScheduleChime(ctx: Context): void {
+export function armChime(ctx: Context): void {
   const cfg = loadConfig();
   if (!cfg.ENABLE_CHIME) return;
   const chatId = ctx.chat?.id;
   if (chatId == null) return;
-  if (Math.random() >= cfg.CHIME_PROBABILITY) return;
 
   const s = getState(chatId);
   // A new message arrived since any prior arm; clear it and re-arm on this one so
@@ -80,6 +80,9 @@ export function maybeScheduleChime(ctx: Context): void {
   if (s.timer) clearTimeout(s.timer);
   s.timer = setTimeout(() => {
     s.timer = null;
+    // 60s of silence reached — NOW roll the dice. Most lulls draw a blank; only a
+    // winning roll actually calls the assistant.
+    if (Math.random() >= cfg.CHIME_PROBABILITY) return;
     void fireChime(ctx, chatId).catch((err) => logger.warn({ err }, 'chime failed'));
   }, cfg.CHIME_QUIET_SECONDS * 1000);
   // Don't keep the process alive just for a pending chime.

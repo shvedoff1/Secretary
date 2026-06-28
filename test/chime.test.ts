@@ -42,11 +42,11 @@ afterEach(() => {
 });
 
 describe('chime scheduling', () => {
-  it('fires after the quiet window with the recent chatter as context', async () => {
+  it('rolls only after the quiet window, then fires with recent chatter as context', async () => {
     const chime = await load();
     chime.recordChatMessage(1, 'Аня', 'го серфить завтра');
     chime.recordChatMessage(1, 'Петя', 'я за');
-    chime.maybeScheduleChime(ctx());
+    chime.armChime(ctx());
 
     expect(runMock).not.toHaveBeenCalled(); // not immediate — waits for the lull
     await vi.advanceTimersByTimeAsync(QUIET_MS);
@@ -58,20 +58,31 @@ describe('chime scheduling', () => {
     expect(args.userContent).toContain('Петя: я за');
   });
 
-  it('does not arm when the probability roll loses', async () => {
+  it('does not call the LLM at all before the quiet window elapses', async () => {
+    const chime = await load();
+    chime.recordChatMessage(1, 'Аня', 'привет');
+    chime.armChime(ctx());
+
+    // Almost the whole window has passed but the lull isn't complete yet — no roll,
+    // no LLM call. The point of the inversion: the dice are thrown only after 60s.
+    await vi.advanceTimersByTimeAsync(QUIET_MS - 1);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when the post-silence roll loses', async () => {
     const chime = await load({ CHIME_PROBABILITY: '0.1' });
     chime.recordChatMessage(1, 'Аня', 'привет');
-    vi.spyOn(Math, 'random').mockReturnValue(0.5); // >= 0.1 → skip
-    chime.maybeScheduleChime(ctx());
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // >= 0.1 → roll loses at fire time
+    chime.armChime(ctx());
 
     await vi.advanceTimersByTimeAsync(QUIET_MS);
     expect(runMock).not.toHaveBeenCalled();
   });
 
-  it('cancels a pending chime when a new message arrives within the window', async () => {
+  it('cancels the pending roll when a new message arrives within the window', async () => {
     const chime = await load();
     chime.recordChatMessage(1, 'Аня', 'кто дома?');
-    chime.maybeScheduleChime(ctx());
+    chime.armChime(ctx());
 
     // Someone speaks again before the lull elapses → the chat is still active.
     await vi.advanceTimersByTimeAsync(QUIET_MS / 2);
@@ -84,13 +95,13 @@ describe('chime scheduling', () => {
   it('re-arming resets the silence clock to the latest message', async () => {
     const chime = await load();
     chime.recordChatMessage(1, 'Аня', 'раз');
-    chime.maybeScheduleChime(ctx());
+    chime.armChime(ctx());
 
     await vi.advanceTimersByTimeAsync(QUIET_MS - 1000);
     // A new message lands: cancel (as the middleware does) then re-arm on it.
     chime.cancelChime(1);
     chime.recordChatMessage(1, 'Петя', 'два');
-    chime.maybeScheduleChime(ctx());
+    chime.armChime(ctx());
 
     // The original deadline passes — must NOT fire, the clock restarted.
     await vi.advanceTimersByTimeAsync(2000);
@@ -104,7 +115,7 @@ describe('chime scheduling', () => {
   it('does nothing when chime is disabled', async () => {
     const chime = await load({ ENABLE_CHIME: 'false' });
     chime.recordChatMessage(1, 'Аня', 'привет');
-    chime.maybeScheduleChime(ctx());
+    chime.armChime(ctx());
 
     await vi.advanceTimersByTimeAsync(QUIET_MS);
     expect(runMock).not.toHaveBeenCalled();
@@ -112,7 +123,7 @@ describe('chime scheduling', () => {
 
   it('does not fire if the chat has no recorded chatter', async () => {
     const chime = await load();
-    chime.maybeScheduleChime(ctx(99)); // armed but buffer empty
+    chime.armChime(ctx(99)); // armed but buffer empty
     await vi.advanceTimersByTimeAsync(QUIET_MS);
     expect(runMock).not.toHaveBeenCalled();
   });

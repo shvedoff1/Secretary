@@ -30,6 +30,7 @@ import { onPhoto } from './handlers/onPhoto.js';
 import { onVoice } from './handlers/onVoice.js';
 import { handleExpenseCallback } from './flows/confirm.js';
 import { maybeAutoReact } from './reactions.js';
+import { cancelChime } from './flows/chime.js';
 
 export function buildBot(token: string): Bot {
   const bot = new Bot(token);
@@ -41,6 +42,9 @@ export function buildBot(token: string): Bot {
   // reaction on a message. Runs for any message type that passed the gate, then
   // continues the chain so normal routing (commands, expense/chat) still happens.
   bot.on('message', async (ctx, next) => {
+    // Any new message (of any type) means the chat is active: cancel a pending
+    // spontaneous chime so the bot only ever chimes into a genuine lull.
+    if (ctx.chat?.id != null) cancelChime(ctx.chat.id);
     await maybeAutoReact(ctx);
     await next();
   });

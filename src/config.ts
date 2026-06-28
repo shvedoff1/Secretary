@@ -84,6 +84,17 @@ const ConfigSchema = z.object({
   MEMORY_CONTEXT_USER: z.coerce.number().int().positive().default(6),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
+  // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't
+  // addressed in, continuing the conversation by context as if it had been pinged.
+  // To avoid butting into an active back-and-forth (and lagging behind), it doesn't
+  // reply immediately — it waits for a lull (CHIME_QUIET_SECONDS of silence after
+  // the message it rolled on) and only then calls the LLM. Any new message in that
+  // window cancels the pending chime, so it lands only when the chat has gone quiet.
+  ENABLE_CHIME: boolish.default(true),
+  // Probability (0..1) that an otherwise-ignored group message arms a chime.
+  CHIME_PROBABILITY: z.coerce.number().min(0).max(1).default(0.1),
+  // Seconds of silence to wait after arming before the bot actually replies.
+  CHIME_QUIET_SECONDS: z.coerce.number().int().positive().default(60),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

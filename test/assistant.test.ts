@@ -99,6 +99,16 @@ describe('runAssistant humorizable flag', () => {
     expect(result).toEqual({ kind: 'text', text: 'Привет!', scheduled: false, humorizable: true });
   });
 
+  it('calls Anthropic with the configured default model (Sonnet 4.6)', async () => {
+    responses = [textResponse('Привет!')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(baseCtx('привет'), handlers);
+
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'claude-sonnet-4-6' }),
+    );
+  });
+
   it('does NOT mark a tool-driven answer as humorizable', async () => {
     // Model calls `remember`, then composes a final text reply.
     responses = [

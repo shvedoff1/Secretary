@@ -31,7 +31,7 @@ home) on the box.
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `ADMIN_TELEGRAM_ID` | Your numeric Telegram id |
 
-**Variables (optional):** `ANTHROPIC_MODEL` (default `claude-opus-4-8`),
+**Variables (optional):** `ANTHROPIC_MODEL` (default `claude-sonnet-4-6`),
 `DEFAULT_CURRENCY` (default `EUR`).
 
 `GITHUB_TOKEN` is automatic — used to push to and pull from GHCR (the box logs

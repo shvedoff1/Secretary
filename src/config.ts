@@ -12,7 +12,7 @@ const ConfigSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
 
-  ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
   // Speech-to-text for voice messages. Optional: without a key, voice notes are
   // ignored (we never transcribe). OpenAI's audio API is called over plain HTTP,
   // so no extra npm dependency is needed.

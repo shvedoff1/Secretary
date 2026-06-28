@@ -13,7 +13,7 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
-import { getMemory, appendMemory } from '../../db/repos/memory.repo.js';
+import { getMemoryForContext, insertPinned } from '../../db/repos/memoryItem.repo.js';
 import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
@@ -120,7 +120,7 @@ function learnAliasFromCorrection(
   const alias = oldNames[0]!;
   try {
     setAlias(chatId, alias, member.id, member.name);
-    appendMemory(chatId, `«${alias}» — это ${member.name}`);
+    insertPinned(chatId, `«${alias}» — это ${member.name}`);
     logger.info({ chatId, alias, member: member.name }, 'learned name alias');
   } catch (err) {
     logger.warn({ err }, 'failed to learn name alias');
@@ -270,12 +270,28 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     }
   }
 
-  const memory = getMemory(chatId);
   const history = recentTurns(
     chatId,
     cfg.CONVERSATION_HISTORY_LIMIT,
     cfg.CONVERSATION_HISTORY_MAX_AGE_HOURS * 60 * 60 * 1000,
   );
+
+  // Other people active in the recent conversation, so we can surface a fact or two
+  // about each of them too (not just the current sender).
+  const recentParticipantIds = [
+    ...new Set(
+      history
+        .filter((t) => t.role === 'user' && t.tgUserId !== null)
+        .map((t) => t.tgUserId as number),
+    ),
+  ];
+  const memorySel = getMemoryForContext(chatId, {
+    senderTgUserId: tgUserId,
+    recentParticipantIds,
+    halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
+    chatBudget: cfg.MEMORY_CONTEXT_CHAT,
+    userBudget: cfg.MEMORY_CONTEXT_USER,
+  });
 
   let result: AssistantResult;
   try {
@@ -283,7 +299,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       {
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
-        memory,
+        memoryChat: memorySel.chat.map((i) => ({ content: i.content })),
+        memoryUsers: memorySel.users.map((u) => ({
+          subject: u.subject,
+          items: u.items.map((i) => ({ content: i.content })),
+        })),
         senderName: senderName(ctx),
         timezone: getTimezone(chatId),
         splidConnected: !!chatCfg?.provider_group_id,
@@ -302,7 +322,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       },
       {
         remember: (note) => {
-          appendMemory(chatId, note);
+          insertPinned(chatId, note);
           return 'Запомнил.';
         },
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
@@ -471,7 +491,6 @@ async function rewordPendingInner(
     {
       defaultCurrency: chatCfg.default_currency,
       members: members.map((m) => ({ name: m.name, initials: m.initials })),
-      memory: getMemory(chatId),
       senderName: senderName(ctx),
       timezone: getTimezone(chatId),
       splidConnected: !!chatCfg.provider_group_id,
@@ -479,7 +498,7 @@ async function rewordPendingInner(
       userContent: correctionContent,
     },
     {
-      remember: (note) => (appendMemory(chatId, note), 'Запомнил.'),
+      remember: (note) => (insertPinned(chatId, note), 'Запомнил.'),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),

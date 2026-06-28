@@ -49,7 +49,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       {
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
-        memory: '',
+        // No memory for scheduled runs — they fire in isolation (no chat context).
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: !!chatCfg?.provider_group_id,

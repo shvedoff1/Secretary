@@ -9,9 +9,13 @@ vi.mock('../src/bot/triggers.js', () => ({
 vi.mock('../src/bot/flows/assist.js', () => ({
   runAndRespond: vi.fn(),
   rewordPending: vi.fn(),
+  senderName: () => 'Tester',
 }));
 vi.mock('../src/bot/flows/lexicon.js', () => ({
   learnFromMessage: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('../src/bot/flows/memory.js', () => ({
+  learnMemoryFromMessage: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../src/bot/editTargets.js', () => ({
   getEditTarget: vi.fn(() => undefined),

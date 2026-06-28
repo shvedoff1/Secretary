@@ -1,8 +1,9 @@
 import type { Context } from 'grammy';
 import { routeMessage, isAddressed, addressesBotByName } from '../triggers.js';
 import { getEditTarget } from '../editTargets.js';
-import { runAndRespond, rewordPending } from '../flows/assist.js';
+import { runAndRespond, rewordPending, senderName } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
+import { learnMemoryFromMessage } from '../flows/memory.js';
 import { getTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
 
@@ -15,6 +16,9 @@ export async function onMessage(ctx: Context): Promise<void> {
   // to (that's the point: read the whole room). Fire-and-forget and best-effort, so
   // it never delays or breaks the reply below.
   void learnFromMessage(ctx.chat.id, text);
+  // Likewise build the chat's weighted long-term memory (durable facts about the
+  // group and its people) from every message. Fire-and-forget and best-effort.
+  void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), text);
 
   const replyTo = ctx.message?.reply_to_message;
   if (replyTo) {

@@ -2,8 +2,9 @@ import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { isAddressed, routeMessage, addressesBotByName } from '../triggers.js';
-import { runAndRespond } from '../flows/assist.js';
+import { runAndRespond, senderName } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
+import { learnMemoryFromMessage } from '../flows/memory.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
 import { setTranscript } from '../transcriptCache.js';
@@ -114,6 +115,10 @@ export async function onVoice(ctx: Context): Promise<void> {
   // Learn the chat's slang from the transcript too — every message counts, not
   // just the ones we reply to. Fire-and-forget and best-effort.
   void learnFromMessage(ctx.chat.id, transcript);
+  // Build weighted long-term memory from the transcript too. Best-effort.
+  if (ctx.from) {
+    void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript);
+  }
 
   // Route the transcript exactly like a text message: addressed → process,
   // looks-like-expense → silent auto-expense, otherwise ignore. A voice note

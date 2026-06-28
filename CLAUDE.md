@@ -24,6 +24,18 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `chat_lexicon`, which is fed back into the assistant context so the bot adopts the chat's
   lingo. Managed per chat with `/slang` (`/slang clear`); a background flush in `index.ts`
   covers chats that went quiet before filling a batch.
+  `flows/chime.ts` drives the spontaneous "chime-in": to keep group chatter going on
+  its own without talking over an active thread, it does NOT roll on the message
+  itself. Each otherwise-ignored group message (re)arms a silence timer (`armChime`)
+  and the roll is TIERED by how long the chat stays dead: at `CHIME_QUIET_SECONDS`
+  (default 60s) of silence it rolls `CHIME_PROBABILITY` (default 10%); if that loses
+  and the chat is still dead at `CHIME_HOUR_SECONDS` (default 1h) it rolls the higher
+  `CHIME_HOUR_PROBABILITY` (default 60%) — a long-dead chat gets a much better chance
+  of a revive. A win at any tier calls the assistant to continue the conversation by
+  context as if pinged, and stops escalating. Any new message (any type) resets the
+  silence clock via `cancelChime` in the global `bot.on('message')` middleware. Recent
+  chatter is kept in an in-memory per-chat ring buffer (`recordChatMessage`) and fed in
+  as context. Off via `ENABLE_CHIME=false`.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   schedule_task | surf_forecast | web_search`. Tools in `tools.ts`, Zod + JSON schemas
   in `schema.ts`, system prompt + context block in `prompts.ts`. `humorize.ts` is an

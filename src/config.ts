@@ -84,6 +84,23 @@ const ConfigSchema = z.object({
   MEMORY_CONTEXT_USER: z.coerce.number().int().positive().default(6),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
+  // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't
+  // addressed in, continuing the conversation by context as if it had been pinged.
+  // To avoid butting into an active back-and-forth (and lagging behind), it does NOT
+  // roll on the message itself — it waits for a lull (CHIME_QUIET_SECONDS of silence
+  // after the last message) and ONLY THEN rolls CHIME_PROBABILITY; a win calls the
+  // LLM. Any new message resets the silence clock, so the roll only happens once the
+  // chat has gone quiet.
+  ENABLE_CHIME: boolish.default(true),
+  // Probability (0..1) the bot chimes in, rolled once the chat has gone quiet.
+  CHIME_PROBABILITY: z.coerce.number().min(0).max(1).default(0.1),
+  // Seconds of silence to wait before rolling for (and possibly sending) a chime.
+  CHIME_QUIET_SECONDS: z.coerce.number().int().positive().default(60),
+  // Second, escalated tier: if the chat stays dead this much longer (default an
+  // hour of silence) AND the first roll already lost, roll again with the higher
+  // CHIME_HOUR_PROBABILITY — a long-dead chat gets a much better chance of a revive.
+  CHIME_HOUR_SECONDS: z.coerce.number().int().positive().default(3600),
+  CHIME_HOUR_PROBABILITY: z.coerce.number().min(0).max(1).default(0.6),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

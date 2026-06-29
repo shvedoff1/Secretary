@@ -14,9 +14,46 @@ import { makeSurfForecastHandler } from './surf/index.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
+import { getMemoryForContext } from './db/repos/memoryItem.repo.js';
 import type { Member } from './core/types.js';
+import type { Config } from './config.js';
 
 const surfForecast = makeSurfForecastHandler();
+
+/**
+ * Build the memory working set for a scheduled run. A scheduled task fires with
+ * no chat history, but it should still see the chat's durable memory — shared
+ * group facts plus the task creator's per-person facts — so a recurring task
+ * (e.g. a daily "рофельный прогноз по Бали") can riff on what the bot actually
+ * knows about the group instead of running blind. Returns the context-ready shape
+ * `runAssistant` expects. Exported for testing.
+ */
+export function scheduledMemory(
+  chatId: number,
+  creatorTgUserId: number | null,
+  cfg: Config,
+): {
+  memoryChat: { content: string }[];
+  memoryUsers: { subject: string; items: { content: string }[] }[];
+} {
+  const sel = getMemoryForContext(chatId, {
+    // No recent conversation in a scheduled run, so there are no other
+    // participants to surface; the creator stands in as the "sender" so their
+    // per-person facts come along with the shared chat memory.
+    senderTgUserId: creatorTgUserId ?? 0,
+    recentParticipantIds: [],
+    halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
+    chatBudget: cfg.MEMORY_CONTEXT_CHAT,
+    userBudget: cfg.MEMORY_CONTEXT_USER,
+  });
+  return {
+    memoryChat: sel.chat.map((i) => ({ content: i.content })),
+    memoryUsers: sel.users.map((u) => ({
+      subject: u.subject,
+      items: u.items.map((i) => ({ content: i.content })),
+    })),
+  };
+}
 
 async function sendMarkdown(bot: Bot, chatId: number, text: string): Promise<void> {
   try {
@@ -45,11 +82,17 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       }
     }
 
+    // Scheduled runs fire with no chat history, but they SHOULD still see the
+    // chat's durable memory so a recurring task can use what the bot knows about
+    // the group (e.g. a daily joke forecast riffing on remembered facts).
+    const { memoryChat, memoryUsers } = scheduledMemory(task.chatId, task.tgUserId, cfg);
+
     const result = await runAssistant(
       {
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
-        // No memory for scheduled runs — they fire in isolation (no chat context).
+        memoryChat,
+        memoryUsers,
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: !!chatCfg?.provider_group_id,

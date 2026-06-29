@@ -30,6 +30,32 @@ Keep it real (HARD rules — the bit must NOT break them):
 Length: keep it punchy. You can stretch a little for the joke, but don't turn a one-liner into an essay.`;
 
 /**
+ * Why a plain-chat reply was or wasn't handed to the humorizer (OpenAI). Logged
+ * at the decision point so "почему не поехало в openai" is observable instead of
+ * guessed: `sent` = went to OpenAI; the rest are the three skip reasons.
+ */
+export type HumorDecision = 'sent' | 'humor-disabled' | 'tool-answer' | 'money-context';
+
+/**
+ * Pure classifier for the humorizer gate. Order matters — it reports the FIRST
+ * reason that applies, mirroring the runtime short-circuit:
+ *   1. humour off (flag/key)         → 'humor-disabled'
+ *   2. a tool produced the answer    → 'tool-answer'   (facts must stay verbatim)
+ *   3. the turn is money-context     → 'money-context' (amounts must stay verbatim)
+ *   otherwise                        → 'sent'
+ */
+export function classifyHumorDecision(opts: {
+  enabled: boolean;
+  humorizable: boolean;
+  money: boolean;
+}): HumorDecision {
+  if (!opts.enabled) return 'humor-disabled';
+  if (!opts.humorizable) return 'tool-answer';
+  if (opts.money) return 'money-context';
+  return 'sent';
+}
+
+/**
  * Rewrite an assistant reply in a funnier tone via OpenAI's chat-completions
  * API. Mirrors the transcription module: a plain `fetch` (no SDK) against the
  * configurable OpenAI base URL. Throws if not configured or the request fails —

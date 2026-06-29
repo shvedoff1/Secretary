@@ -6,7 +6,7 @@ import { getProvider } from '../../core/registry.js';
 import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
-import { humorizeWithPreview } from '../../llm/humorize.js';
+import { humorizeWithPreview, isHumorEnabled, classifyHumorDecision } from '../../llm/humorize.js';
 import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
@@ -404,14 +404,25 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // talks money never goes to OpenAI, so amounts/names/splits can't be garbled.
   // When the humorizer runs, the pre-OpenAI original is DM'd to the admin so the
   // before/after can be compared.
-  const safeToHumorize =
-    result.humorizable &&
-    !isMoneyContext({
-      source: args.source,
-      userText: args.historyText,
-      replyText: result.text,
-      chatId,
-    });
+  const money = isMoneyContext({
+    source: args.source,
+    userText: args.historyText,
+    replyText: result.text,
+    chatId,
+  });
+  const decision = classifyHumorDecision({
+    enabled: isHumorEnabled(),
+    humorizable: result.humorizable ?? false,
+    money,
+  });
+  // One line per addressed reply explaining whether it reached OpenAI and why
+  // not — makes "почему не поехало в openai" diagnosable from logs instead of
+  // guessing which gate fired.
+  logger.info(
+    { decision, humorizable: result.humorizable ?? false, money, source: args.source },
+    'humorizer gate',
+  );
+  const safeToHumorize = decision === 'sent';
   const replyText = safeToHumorize
     ? await humorizeWithPreview(result.text, async (original) => {
         await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);

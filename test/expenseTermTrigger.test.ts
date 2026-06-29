@@ -43,6 +43,44 @@ describe('looksLikeExpenseForChat', () => {
     expect(triggers.looksLikeExpenseForChat(2, 'дошик 200')).toBe(false);
   });
 
+  it('isMoneyContext applies the learned dict to the user message, NOT the bot reply', async () => {
+    const { repo, triggers } = await fresh();
+    repo.addExpenseTerms(1, ['таблетки'], null);
+
+    // User message with a learned term + number → money (don't humorize it).
+    expect(
+      triggers.isMoneyContext({
+        source: 'text',
+        userText: 'таблетки 200',
+        replyText: 'ок',
+        chatId: 1,
+      }),
+    ).toBe(true);
+
+    // The exact regression: a long playful reply that merely mentions the learned
+    // word plus stray numbers must NOT be flagged as money — it has to reach the
+    // humorizer. The base heuristic still has no claim on it.
+    expect(
+      triggers.isMoneyContext({
+        source: 'text',
+        userText: 'распиши с вероятностями',
+        replyText: 'Просрётся сегодня — 74%, таблетки могут влиять, держись бро 🤙',
+        chatId: 1,
+      }),
+    ).toBe(false);
+
+    // But a genuine money breakdown in the reply still trips the BASE heuristic
+    // (spend word + amount), so amounts are never sent to OpenAI.
+    expect(
+      triggers.isMoneyContext({
+        source: 'text',
+        userText: 'раскинь',
+        replyText: 'ужин 1500 на всех',
+        chatId: 1,
+      }),
+    ).toBe(true);
+  });
+
   it('routeMessage auto-expenses an unaddressed message with a learned term', async () => {
     const { repo, triggers } = await fresh();
     repo.addExpenseTerms(7, ['дошик'], null);

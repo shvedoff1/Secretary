@@ -44,13 +44,24 @@ export function isMoneyContext(args: {
   source: string;
   userText: string;
   replyText: string;
-  /** When given, also matches the chat's learned expense dictionary. */
+  /** When given, the USER message is also matched against the chat's learned dict. */
   chatId?: number;
 }): boolean {
   if (args.source === 'photo') return true;
-  const looksMoney = (t: string): boolean =>
-    args.chatId != null ? looksLikeExpenseForChat(args.chatId, t) : looksLikeExpense(t);
-  return looksMoney(args.userText) || looksMoney(args.replyText);
+  // The USER message is matched with the chat's learned expense dictionary — that
+  // dictionary was taught on exactly this phrasing, so it belongs here.
+  const userMoney =
+    args.chatId != null
+      ? looksLikeExpenseForChat(args.chatId, args.userText)
+      : looksLikeExpense(args.userText);
+  // The bot's REPLY is matched with the BASE heuristic ONLY (never the learned
+  // dict). The bot adopts the chat's slang via lexicon learning and writes long
+  // free-form prose, so its replies collide with learned terms constantly: a
+  // playful analytical answer that merely mentions a taught word plus any stray
+  // number ("...74%... таблетки... 122400 рупий") would otherwise be misread as
+  // money and silently skip the humorizer. Real in-reply money (an amount with a
+  // spend word — "ужин 1500 на всех") still trips the base heuristic.
+  return userMoney || looksLikeExpense(args.replyText);
 }
 
 // Names/nicknames the bot answers to when addressed by name. Cyrillic isn't a

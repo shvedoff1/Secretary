@@ -177,3 +177,29 @@ describe('humorize', () => {
     });
   });
 });
+
+describe('classifyHumorDecision', () => {
+  it('reports the FIRST gate that fires, in runtime order', async () => {
+    const { classifyHumorDecision } = await import('../src/llm/humorize.js');
+
+    // Humour off wins even if everything else would have allowed it.
+    expect(
+      classifyHumorDecision({ enabled: false, humorizable: true, money: false }),
+    ).toBe('humor-disabled');
+
+    // A tool answer is never humorized (facts must stay verbatim).
+    expect(
+      classifyHumorDecision({ enabled: true, humorizable: false, money: false }),
+    ).toBe('tool-answer');
+
+    // Money context blocks a plain-chat answer.
+    expect(
+      classifyHumorDecision({ enabled: true, humorizable: true, money: true }),
+    ).toBe('money-context');
+
+    // Plain chatter, humour on → goes to OpenAI.
+    expect(
+      classifyHumorDecision({ enabled: true, humorizable: true, money: false }),
+    ).toBe('sent');
+  });
+});

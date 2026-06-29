@@ -28,6 +28,17 @@ describe('looksLikeExpense', () => {
     expect(looksLikeExpense('потратил кучу сил')).toBe(false);
     expect(looksLikeExpense('купил продуктов')).toBe(false); // no number
   });
+  it('does not treat the bare preposition «за» + any number as a spend', () => {
+    // Regression: "за " was matched on its own, so everyday chatter with a number
+    // anywhere was flagged as an expense (and suppressed the humorizer).
+    expect(looksLikeExpense('спасибо за вчера, было топ 5/5')).toBe(false);
+    expect(looksLikeExpense('я приду за тобой в 7')).toBe(false);
+    expect(looksLikeExpense('следи за дорогой, там 90 ограничение')).toBe(false);
+  });
+  it('still catches «за» when it sits next to an amount', () => {
+    expect(looksLikeExpense('300 за пиво скинул')).toBe(true);
+    expect(looksLikeExpense('за 500 взял кофе')).toBe(true);
+  });
 });
 
 describe('isMoneyContext', () => {
@@ -54,6 +65,15 @@ describe('isMoneyContext', () => {
     ).toBe(false);
     expect(
       isMoneyContext({ source: 'voice', userText: 'какая погода', replyText: 'солнечно' }),
+    ).toBe(false);
+  });
+  it('keeps chatter with «за» + a number humorizable (the humorizer regression)', () => {
+    // Before the fix these were all flagged as money and never reached OpenAI.
+    expect(
+      isMoneyContext({ source: 'text', userText: 'спасибо за вчера 5/5', replyText: 'йоу бро' }),
+    ).toBe(false);
+    expect(
+      isMoneyContext({ source: 'voice', userText: 'приду за тобой в 7', replyText: 'изи 🤙' }),
     ).toBe(false);
   });
 });

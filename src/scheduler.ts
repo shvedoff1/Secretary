@@ -10,6 +10,7 @@ import {
 } from './db/repos/scheduledTask.repo.js';
 import { nextRunMs } from './util/schedule.js';
 import { mdToTelegramHtml, stripMarkdown } from './util/telegramHtml.js';
+import { humorizeOrOriginal } from './llm/humorize.js';
 import { makeSurfForecastHandler } from './surf/index.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
@@ -120,8 +121,18 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       },
     );
     if (result.kind === 'text' && result.text.trim()) {
+      // A task can opt into the tone-only humorizer (set when it was created).
+      // Mirror the live chat flow: only a plain-chat answer (no tool used) is
+      // eligible — a tool result (e.g. a surf forecast) carries facts that must
+      // stay verbatim. The spending report self-humorizes inside its handler.
+      // Best-effort: when humour is globally disabled or OpenAI fails, the
+      // original text is returned unchanged.
+      const text =
+        task.humor && result.humorizable
+          ? await humorizeOrOriginal(result.text)
+          : result.text;
       const prefix = task.title ? `⏰ ${task.title}\n` : '';
-      await sendMarkdown(bot, task.chatId, prefix + result.text);
+      await sendMarkdown(bot, task.chatId, prefix + text);
     }
   } catch (err) {
     logger.error({ err, taskId: task.id }, 'scheduled task run failed');

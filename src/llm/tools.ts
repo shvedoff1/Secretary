@@ -76,7 +76,7 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
     tools.push({
       name: SCHEDULE_TASK_TOOL,
       description:
-        'Create a reminder or recurring task. Call this ONLY for a NEW request in the user\'s latest message (e.g. "напомни встать через 3 минуты", "каждое утро ищи прогноз волн и кидай сюда"). Convert the timing into a cron expression. The task `prompt` runs later WITHOUT chat history, so make it self-contained. Never recreate a reminder that already appears in "Active reminders" in the context. Confirm timezone with the user once if it is unknown in the context.',
+        'Create a reminder or recurring task. Call this ONLY for a NEW request in the user\'s latest message (e.g. "напомни встать через 3 минуты", "каждое утро ищи прогноз волн и кидай сюда"). Convert the timing into a cron expression. The task `prompt` runs later WITHOUT chat history, so make it self-contained. Set `humor` to true when the user wants a funny/light tone for this task and false for a plain reminder. Never recreate a reminder that already appears in "Active reminders" in the context. Confirm timezone with the user once if it is unknown in the context.',
       input_schema: scheduleTaskJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }

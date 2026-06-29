@@ -70,6 +70,7 @@ export const ScheduleTaskZ = z.object({
   cron: z.string().min(1),
   timezone: z.string().min(1),
   once: z.boolean(),
+  humor: z.boolean(),
 });
 export type ScheduleTaskInput = z.infer<typeof ScheduleTaskZ>;
 
@@ -254,8 +255,16 @@ export const scheduleTaskJsonSchema = {
       type: 'boolean',
       description: 'true for a one-off reminder (disable after it fires); false for a recurring task.',
     },
+    humor: {
+      type: 'boolean',
+      description:
+        "Whether to run this task's reply through the funny tone-only humorizer when it fires. " +
+        'Set true when the user wants a light/joking tone ("шути", "с приколами", "рофельный прогноз", "make it funny"); ' +
+        'false for a plain, serious reminder/task ("напомни без приколов", a sober reminder). When unsure, default to false. ' +
+        'Only affects plain-chat replies — factual tool answers always stay verbatim.',
+    },
   },
-  required: ['title', 'prompt', 'cron', 'timezone', 'once'],
+  required: ['title', 'prompt', 'cron', 'timezone', 'once', 'humor'],
 } as const;
 
 export const surfForecastJsonSchema = {

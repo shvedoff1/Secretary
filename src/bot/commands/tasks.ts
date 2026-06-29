@@ -13,8 +13,9 @@ export async function cmdTasks(ctx: Context): Promise<void> {
   }
   const lines = tasks.map((t) => {
     const kind = t.once ? '🔔' : '🔁';
+    const humor = t.humor ? ' 😂' : '';
     const when = formatInTimezone(t.nextRunAt, t.timezone);
-    return `${kind} #${t.id} «${t.title}» — следующий запуск ${when} (${t.timezone})`;
+    return `${kind}${humor} #${t.id} «${t.title}» — следующий запуск ${when} (${t.timezone})`;
   });
   await ctx.reply(
     ['⏰ Напоминания и задачи:', ...lines, '', 'Отменить: /canceltask <id>'].join('\n'),

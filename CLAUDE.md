@@ -42,7 +42,10 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   optional tone-only post-pass (OpenAI, off by default via `ENABLE_HUMOR`): it rewrites
   ONLY plain-chat replies (`humorizable` = no tool was used) to be funnier, never factual
   or tool answers, and falls back to the original text on any failure. OpenAI is reached
-  by plain `fetch` (no SDK), mirroring `transcribe.ts`.
+  by plain `fetch` (no SDK), mirroring `transcribe.ts`. Timer tasks opt into this pass
+  per-task: `schedule_task` takes a `humor` flag (stored on `scheduled_task.humor`), and
+  the scheduler humorizes a firing task's plain-chat output only when that flag is set
+  (still subject to the same `humorizable` + `ENABLE_HUMOR` gating).
 - `src/surf/` — `surf_forecast` skill: fetches wave/wind from Open-Meteo (the only place
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a

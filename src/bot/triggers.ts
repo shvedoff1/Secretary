@@ -33,35 +33,32 @@ export function looksLikeExpenseForChat(chatId: number, text: string): boolean {
 }
 
 /**
- * Should a reply be kept AWAY from the tone-only humorizer (OpenAI)? Money is
- * never humorized — the rewrite can drop or distort amounts, names and splits,
- * which is unacceptable for expenses. A turn counts as money-context when it
- * came from a receipt photo, the user's message looked like a spend, or the
- * reply itself talks money (e.g. the model answered a receipt in plain text
- * without calling the expense tool). Better to lose a joke than mangle a number.
+ * Should a reply be kept AWAY from the tone-only humorizer (OpenAI)? The
+ * decision is made from the INPUT — never from the already-generated reply.
+ * Whether a turn is "factual" is known BEFORE the answer exists: a money turn is
+ * a receipt photo or a user message that looks like a spend. Anything the model
+ * handled with a tool (record_expense, spending_report, web_search, surf) is
+ * already excluded upstream via the `humorizable` flag, so a tool's exact
+ * figures never reach OpenAI regardless of this check.
+ *
+ * We deliberately do NOT scan the bot's own reply: it adopts the chat's slang
+ * (lexicon learning) and riffs with stray numbers ("шава за 175к", "96%"), so
+ * post-hoc money-detection on its prose just muzzles the jokes. Real amounts are
+ * protected by the tool flag above and by the humorizer's hard fact-lock (it is
+ * told to keep numbers/names/amounts character-for-character).
  */
 export function isMoneyContext(args: {
   source: string;
   userText: string;
-  replyText: string;
   /** When given, the USER message is also matched against the chat's learned dict. */
   chatId?: number;
 }): boolean {
   if (args.source === 'photo') return true;
   // The USER message is matched with the chat's learned expense dictionary — that
   // dictionary was taught on exactly this phrasing, so it belongs here.
-  const userMoney =
-    args.chatId != null
-      ? looksLikeExpenseForChat(args.chatId, args.userText)
-      : looksLikeExpense(args.userText);
-  // The bot's REPLY is matched with the BASE heuristic ONLY (never the learned
-  // dict). The bot adopts the chat's slang via lexicon learning and writes long
-  // free-form prose, so its replies collide with learned terms constantly: a
-  // playful analytical answer that merely mentions a taught word plus any stray
-  // number ("...74%... таблетки... 122400 рупий") would otherwise be misread as
-  // money and silently skip the humorizer. Real in-reply money (an amount with a
-  // spend word — "ужин 1500 на всех") still trips the base heuristic.
-  return userMoney || looksLikeExpense(args.replyText);
+  return args.chatId != null
+    ? looksLikeExpenseForChat(args.chatId, args.userText)
+    : looksLikeExpense(args.userText);
 }
 
 // Names/nicknames the bot answers to when addressed by name. Cyrillic isn't a

@@ -398,16 +398,16 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
 
   // For a plain-chat answer (no tool used), optionally run the tone-only
   // humorizer. It's best-effort: disabled or failed → original text unchanged,
-  // so accuracy and delivery are never at risk. Factual/tool answers are left
-  // untouched (humorizable is false for them). Money is ALSO left untouched even
-  // when no tool ran — a receipt photo, a spend-like message, or a reply that
-  // talks money never goes to OpenAI, so amounts/names/splits can't be garbled.
+  // so accuracy and delivery are never at risk. The "is this safe to humorize"
+  // decision is made from the INPUT, never the generated reply: tool/factual
+  // answers are excluded by `humorizable` (the model already chose a tool), and
+  // money is judged from the user's message + receipt photos. We don't re-scan
+  // the bot's own prose — it riffs with stray numbers and would muzzle its jokes.
   // When the humorizer runs, the pre-OpenAI original is DM'd to the admin so the
   // before/after can be compared.
   const money = isMoneyContext({
     source: args.source,
     userText: args.historyText,
-    replyText: result.text,
     chatId,
   });
   const decision = classifyHumorDecision({

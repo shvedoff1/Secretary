@@ -43,38 +43,28 @@ describe('looksLikeExpense', () => {
 
 describe('isMoneyContext', () => {
   it('treats every receipt photo as money — never humorized', () => {
-    expect(isMoneyContext({ source: 'photo', userText: '', replyText: 'хаха' })).toBe(true);
+    expect(isMoneyContext({ source: 'photo', userText: '' })).toBe(true);
   });
   it('flags a spend-like incoming message', () => {
-    expect(
-      isMoneyContext({ source: 'text', userText: 'потратил 500 за такси', replyText: 'ок' }),
-    ).toBe(true);
+    expect(isMoneyContext({ source: 'text', userText: 'потратил 500 за такси' })).toBe(true);
   });
-  it('flags a reply that itself talks money (model answered a receipt in text)', () => {
+  it('judges from the INPUT only — never the bot reply', () => {
+    // The decision is made before the answer exists. A harmless user message stays
+    // humorizable no matter what the bot's prose riffs about (it adopts the chat's
+    // slang and drops stray numbers/amounts into jokes — "шава за 175к", "96%").
+    // Tool/factual answers are excluded upstream by the `humorizable` flag, and
+    // amounts are kept verbatim by the humorizer's fact-lock, so this is safe.
     expect(
-      isMoneyContext({
-        source: 'text',
-        userText: 'раскинь чек',
-        replyText: 'Доширак 200 на Ивана, ужин 1500 на всех',
-      }),
-    ).toBe(true);
+      isMoneyContext({ source: 'text', userText: 'выдай юмореску над шведом' }),
+    ).toBe(false);
   });
   it('leaves plain chatter humorizable', () => {
-    expect(
-      isMoneyContext({ source: 'text', userText: 'как дела', replyText: 'всё чилл, бро' }),
-    ).toBe(false);
-    expect(
-      isMoneyContext({ source: 'voice', userText: 'какая погода', replyText: 'солнечно' }),
-    ).toBe(false);
+    expect(isMoneyContext({ source: 'text', userText: 'как дела' })).toBe(false);
+    expect(isMoneyContext({ source: 'voice', userText: 'какая погода' })).toBe(false);
   });
-  it('keeps chatter with «за» + a number humorizable (the humorizer regression)', () => {
-    // Before the fix these were all flagged as money and never reached OpenAI.
-    expect(
-      isMoneyContext({ source: 'text', userText: 'спасибо за вчера 5/5', replyText: 'йоу бро' }),
-    ).toBe(false);
-    expect(
-      isMoneyContext({ source: 'voice', userText: 'приду за тобой в 7', replyText: 'изи 🤙' }),
-    ).toBe(false);
+  it('keeps user chatter with «за» + a number humorizable (the humorizer regression)', () => {
+    expect(isMoneyContext({ source: 'text', userText: 'спасибо за вчера 5/5' })).toBe(false);
+    expect(isMoneyContext({ source: 'voice', userText: 'приду за тобой в 7' })).toBe(false);
   });
 });
 

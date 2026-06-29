@@ -162,11 +162,13 @@ export function makeScheduleTaskHandler(
       cron: input.cron,
       timezone: tz,
       once: input.once,
+      humor: input.humor,
       nextRunAt: next,
     });
     const when = formatInTimezone(next, tz);
     const kind = input.once ? 'Напоминание' : 'Регулярная задача';
-    return `${kind} #${id} «${input.title}» создана. Первый запуск: ${when} (${tz}). Список: /tasks`;
+    const humorNote = input.humor ? ' 😂 с юмором' : '';
+    return `${kind} #${id} «${input.title}»${humorNote} создана. Первый запуск: ${when} (${tz}). Список: /tasks`;
   };
 }
 

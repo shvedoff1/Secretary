@@ -9,6 +9,8 @@ export interface ScheduledTask {
   cron: string;
   timezone: string;
   once: boolean;
+  /** Run the firing task's plain-chat output through the OpenAI humorizer. */
+  humor: boolean;
   enabled: boolean;
   nextRunAt: number;
   lastRunAt: number | null;
@@ -24,6 +26,7 @@ interface ScheduledTaskRow {
   cron: string;
   timezone: string;
   once: number;
+  humor: number;
   enabled: number;
   next_run_at: number;
   last_run_at: number | null;
@@ -40,6 +43,7 @@ function toTask(r: ScheduledTaskRow): ScheduledTask {
     cron: r.cron,
     timezone: r.timezone,
     once: r.once === 1,
+    humor: r.humor === 1,
     enabled: r.enabled === 1,
     nextRunAt: r.next_run_at,
     lastRunAt: r.last_run_at,
@@ -76,13 +80,14 @@ export function createTask(args: {
   cron: string;
   timezone: string;
   once: boolean;
+  humor: boolean;
   nextRunAt: number;
 }): number {
   const info = getDb()
     .prepare(
       `INSERT INTO scheduled_task
-         (chat_id, tg_user_id, title, prompt, cron, timezone, once, enabled, next_run_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, unixepoch() * 1000)`,
+         (chat_id, tg_user_id, title, prompt, cron, timezone, once, humor, enabled, next_run_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, unixepoch() * 1000)`,
     )
     .run(
       args.chatId,
@@ -92,6 +97,7 @@ export function createTask(args: {
       args.cron,
       args.timezone,
       args.once ? 1 : 0,
+      args.humor ? 1 : 0,
       args.nextRunAt,
     );
   return Number(info.lastInsertRowid);
@@ -146,5 +152,19 @@ export function deleteTask(id: number, chatId: number): boolean {
   const info = getDb()
     .prepare('DELETE FROM scheduled_task WHERE id = ? AND chat_id = ?')
     .run(id, chatId);
+  return info.changes > 0;
+}
+
+/**
+ * Toggle the humorizer for an existing task, scoped to its chat (users can only
+ * change their own chat's tasks). Returns false when no such task exists in the
+ * chat. Only enabled tasks are eligible — a cancelled task can't be re-tuned.
+ */
+export function setTaskHumor(id: number, chatId: number, humor: boolean): boolean {
+  const info = getDb()
+    .prepare(
+      'UPDATE scheduled_task SET humor = ? WHERE id = ? AND chat_id = ? AND enabled = 1',
+    )
+    .run(humor ? 1 : 0, id, chatId);
   return info.changes > 0;
 }

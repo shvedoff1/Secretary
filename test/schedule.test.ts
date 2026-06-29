@@ -50,8 +50,21 @@ describe('ScheduleTaskZ', () => {
       cron: '0 8 * * *',
       timezone: 'Europe/Lisbon',
       once: false,
+      humor: true,
     });
     expect(res.success).toBe(true);
+    if (res.success) expect(res.data.humor).toBe(true);
+  });
+
+  it('requires the humor flag', () => {
+    const res = ScheduleTaskZ.safeParse({
+      title: 'Кофе',
+      prompt: 'Напомни выпить кофе',
+      cron: '0 9 * * *',
+      timezone: 'Europe/Lisbon',
+      once: true,
+    });
+    expect(res.success).toBe(false);
   });
 
   it('rejects missing fields', () => {

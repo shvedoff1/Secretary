@@ -17,7 +17,9 @@ describe('migration 010 memory backfill', () => {
     const { getDb, closeDb } = await import('../src/db/client.js');
     const db = getDb();
 
-    // Pre-010 state: only the legacy table exists, with a blob, recorded at v9.
+    // Pre-010 state: the legacy table exists with a blob, recorded at v9. We also
+    // create scheduled_task (present since migration 004) so later migrations that
+    // alter it (e.g. 011's humor column) can run against this synthetic v9 DB.
     db.exec('CREATE TABLE schema_version (version INTEGER NOT NULL)');
     db.prepare('INSERT INTO schema_version (version) VALUES (9)').run();
     db.exec(
@@ -25,6 +27,22 @@ describe('migration 010 memory backfill', () => {
          chat_id INTEGER PRIMARY KEY,
          content TEXT NOT NULL DEFAULT '',
          updated_at INTEGER NOT NULL
+       )`,
+    );
+    db.exec(
+      `CREATE TABLE scheduled_task (
+         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+         chat_id     INTEGER NOT NULL,
+         tg_user_id  INTEGER,
+         title       TEXT NOT NULL,
+         prompt      TEXT NOT NULL,
+         cron        TEXT NOT NULL,
+         timezone    TEXT NOT NULL,
+         once        INTEGER NOT NULL DEFAULT 0,
+         enabled     INTEGER NOT NULL DEFAULT 1,
+         next_run_at INTEGER NOT NULL,
+         last_run_at INTEGER,
+         created_at  INTEGER NOT NULL
        )`,
     );
     db.prepare('INSERT INTO chat_memory (chat_id, content, updated_at) VALUES (?, ?, ?)').run(

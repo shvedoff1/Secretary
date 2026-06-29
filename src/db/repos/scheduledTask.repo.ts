@@ -154,3 +154,17 @@ export function deleteTask(id: number, chatId: number): boolean {
     .run(id, chatId);
   return info.changes > 0;
 }
+
+/**
+ * Toggle the humorizer for an existing task, scoped to its chat (users can only
+ * change their own chat's tasks). Returns false when no such task exists in the
+ * chat. Only enabled tasks are eligible — a cancelled task can't be re-tuned.
+ */
+export function setTaskHumor(id: number, chatId: number, humor: boolean): boolean {
+  const info = getDb()
+    .prepare(
+      'UPDATE scheduled_task SET humor = ? WHERE id = ? AND chat_id = ? AND enabled = 1',
+    )
+    .run(humor ? 1 : 0, id, chatId);
+  return info.changes > 0;
+}

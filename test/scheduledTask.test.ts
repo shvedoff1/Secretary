@@ -99,4 +99,30 @@ describe('createTask + read-back (humor flag)', () => {
     repo.createTask(baseArgs({ humor: false }));
     expect(repo.listTasks(100)[0]!.humor).toBe(false);
   });
+
+  it('setTaskHumor toggles an existing task in the same chat', async () => {
+    const { repo, closeDb } = await freshRepo();
+    close = closeDb;
+    const id = repo.createTask(baseArgs({ humor: false }));
+
+    expect(repo.setTaskHumor(id, 100, true)).toBe(true);
+    expect(repo.listTasks(100)[0]!.humor).toBe(true);
+
+    expect(repo.setTaskHumor(id, 100, false)).toBe(true);
+    expect(repo.listTasks(100)[0]!.humor).toBe(false);
+  });
+
+  it('setTaskHumor refuses a task from another chat', async () => {
+    const { repo, closeDb } = await freshRepo();
+    close = closeDb;
+    const id = repo.createTask(baseArgs({ humor: false }));
+    expect(repo.setTaskHumor(id, 999, true)).toBe(false);
+    expect(repo.listTasks(100)[0]!.humor).toBe(false);
+  });
+
+  it('setTaskHumor returns false for an unknown task', async () => {
+    const { repo, closeDb } = await freshRepo();
+    close = closeDb;
+    expect(repo.setTaskHumor(424242, 100, true)).toBe(false);
+  });
 });

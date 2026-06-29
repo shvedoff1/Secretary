@@ -1,5 +1,5 @@
 import type { Context } from 'grammy';
-import { listTasks, deleteTask } from '../../db/repos/scheduledTask.repo.js';
+import { listTasks, deleteTask, setTaskHumor } from '../../db/repos/scheduledTask.repo.js';
 import { formatInTimezone } from '../../util/schedule.js';
 
 export async function cmdTasks(ctx: Context): Promise<void> {
@@ -18,7 +18,35 @@ export async function cmdTasks(ctx: Context): Promise<void> {
     return `${kind}${humor} #${t.id} «${t.title}» — следующий запуск ${when} (${t.timezone})`;
   });
   await ctx.reply(
-    ['⏰ Напоминания и задачи:', ...lines, '', 'Отменить: /canceltask <id>'].join('\n'),
+    [
+      '⏰ Напоминания и задачи:',
+      ...lines,
+      '',
+      'Отменить: /canceltask <id>',
+      'Юмор: /taskhumor <id> on|off',
+    ].join('\n'),
+  );
+}
+
+export async function cmdTaskHumor(ctx: Context): Promise<void> {
+  if (!ctx.chat) return;
+  const arg = ((ctx.match as string | undefined) ?? '').trim();
+  const [idArg, modeArg] = arg.split(/\s+/);
+  const id = Number(idArg);
+  const mode = (modeArg ?? '').toLowerCase();
+  const on = ['on', 'вкл', 'да', 'true', '1'].includes(mode);
+  const off = ['off', 'выкл', 'нет', 'false', '0'].includes(mode);
+  if (!idArg || !Number.isInteger(id) || (!on && !off)) {
+    await ctx.reply('Использование: /taskhumor <id> on|off (id смотри в /tasks)');
+    return;
+  }
+  const ok = setTaskHumor(id, ctx.chat.id, on);
+  if (!ok) {
+    await ctx.reply(`Не нашёл активную задачу #${id} в этом чате.`);
+    return;
+  }
+  await ctx.reply(
+    on ? `😂 Юмор включён для задачи #${id}.` : `Юмор выключен для задачи #${id}.`,
   );
 }
 

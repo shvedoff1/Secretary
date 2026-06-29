@@ -1,8 +1,14 @@
 import type { Context } from 'grammy';
 import { getExpenseTerms } from '../db/repos/expenseTerm.repo.js';
 
+// NOTE on the «за» token: the bare preposition "за " is one of the most common
+// words in Russian ("за тобой", "спасибо за вчера", "приду за тобой в 7"), so
+// matching it on its own — combined with the loose "a digit anywhere" rule —
+// flagged huge swathes of normal chatter as money and suppressed the humorizer
+// (only ~1 in 5 replies reached OpenAI). "за" only signals a spend when it sits
+// next to an amount ("за 500", "300 за пиво"), so require an adjacent number.
 const EXPENSE_KEYWORDS =
-  /(потрат|заплат|оплат|скинул|должен|долж|купил|чек|счет|счёт|за\s|spent|paid|bought|cost|bill|check|lunch|dinner|breakfast|taxi|такси|обед|ужин|завтрак|груш|product|groсer|store|shop|кафе|cafe|restaurant|рестора)/i;
+  /(потрат|заплат|оплат|скинул|должен|долж|купил|чек|счет|счёт|за\s+\d|\d\s+за\s|spent|paid|bought|cost|bill|check|lunch|dinner|breakfast|taxi|такси|обед|ужин|завтрак|груш|product|grocer|store|shop|кафе|cafe|restaurant|рестора)/i;
 
 /** Heuristic: does this text look like it reports a spend? Requires a number. */
 export function looksLikeExpense(text: string): boolean {

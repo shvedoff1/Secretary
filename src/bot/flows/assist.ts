@@ -38,6 +38,7 @@ import {
   pruneOld,
 } from '../../db/repos/conversation.repo.js';
 import { presentDraft, prepareQuip, renderDraft, nameMapFromMembers } from './preview.js';
+import { startTyping } from './typing.js';
 import {
   getPending,
   updateDraft,
@@ -241,9 +242,13 @@ interface RunArgs {
 export async function runAndRespond(ctx: Context, args: RunArgs): Promise<RespondOutcome> {
   const manageReaction = args.manageReaction ?? true;
   if (manageReaction) await setThinking(ctx);
+  // Show "печатает…" while we generate, but only when we'll actually reply
+  // (addressed). A silent auto-expense scan must stay invisible — no typing there.
+  const typing = args.addressed ? startTyping(ctx) : null;
   try {
     return await runAndRespondInner(ctx, args);
   } finally {
+    typing?.stop();
     if (manageReaction) await clearThinking(ctx);
   }
 }
@@ -438,9 +443,11 @@ export async function rewordPending(
   correctionText: string,
 ): Promise<void> {
   await setThinking(ctx);
+  const typing = startTyping(ctx);
   try {
     await rewordPendingInner(ctx, pendingId, previewMessageId, correctionText);
   } finally {
+    typing.stop();
     await clearThinking(ctx);
   }
 }

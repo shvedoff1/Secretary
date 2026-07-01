@@ -96,6 +96,25 @@ export async function humorize(text: string, lexicon?: HumorLexiconTerm[]): Prom
     throw new Error('humor not configured (OPENAI_API_KEY unset)');
   }
 
+  const system = buildHumorSystemPrompt(lexicon);
+
+  // Observability: log EXACTLY which slang was appended to the OpenAI system
+  // prompt, so "какой сленг ушёл в openai" is visible in the logs / diagnose dump
+  // instead of guessed. Only when there's slang to send (a fresh chat stays
+  // quiet). Rendered the same way it appears in the prompt (term — gloss).
+  const terms = (lexicon ?? []).filter((t) => t.term.trim());
+  if (terms.length > 0) {
+    logger.info(
+      {
+        count: terms.length,
+        slang: terms.map((t) =>
+          t.gloss && t.gloss.trim() ? `${t.term} — ${t.gloss.trim()}` : t.term,
+        ),
+      },
+      'humorizer slang → openai',
+    );
+  }
+
   const res = await fetch(`${cfg.OPENAI_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -107,7 +126,7 @@ export async function humorize(text: string, lexicon?: HumorLexiconTerm[]): Prom
     body: JSON.stringify({
       model: cfg.OPENAI_HUMOR_MODEL,
       messages: [
-        { role: 'system', content: buildHumorSystemPrompt(lexicon) },
+        { role: 'system', content: system },
         { role: 'user', content: text },
       ],
     }),

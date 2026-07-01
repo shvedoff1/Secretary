@@ -93,6 +93,25 @@ describe('humorize', () => {
     expect(system).not.toContain('«братик» —');
   });
 
+  it('logs exactly which slang was sent to openai (and stays quiet with none)', async () => {
+    setEnv({ OPENAI_API_KEY: 'sk-test' });
+    vi.stubGlobal('fetch', vi.fn(async () => completion('yo')));
+    const { logger } = await import('../src/logger.js');
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+    const { humorize } = await import('../src/llm/humorize.js');
+
+    await humorize('hi', [{ term: 'пихалыч', gloss: 'рот' }, { term: 'иншала' }]);
+    expect(info).toHaveBeenCalledWith(
+      { count: 2, slang: ['пихалыч — рот', 'иншала'] },
+      'humorizer slang → openai',
+    );
+
+    // No lexicon → no slang log line at all.
+    info.mockClear();
+    await humorize('hi');
+    expect(info).not.toHaveBeenCalledWith(expect.anything(), 'humorizer slang → openai');
+  });
+
   it('leaves the system prompt untouched when no lexicon is given', async () => {
     setEnv({ OPENAI_API_KEY: 'sk-test' });
     const fetchMock = vi.fn(async () => completion('yo'));

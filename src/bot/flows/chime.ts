@@ -2,6 +2,12 @@ import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { runAndRespond } from './assist.js';
+import { getRecentChat, clearRecentChat } from '../recentChat.js';
+
+// The rolling buffer of recent chatter lives in `recentChat.ts` so the scheduler
+// can read it too; re-exported here so existing importers (onMessage, tests)
+// keep using `flows/chime.js`.
+export { recordChatMessage } from '../recentChat.js';
 
 /**
  * Spontaneous "chime-in": every so often the bot jumps into group chatter it was
@@ -26,32 +32,17 @@ import { runAndRespond } from './assist.js';
  */
 interface ChimeState {
   timer: ReturnType<typeof setTimeout> | null;
-  recent: { name: string; text: string }[];
 }
-
-// How many recent lines of chatter to keep per chat as context for a chime.
-const RECENT_MAX = 12;
 
 const states = new Map<number, ChimeState>();
 
 function getState(chatId: number): ChimeState {
   let s = states.get(chatId);
   if (!s) {
-    s = { timer: null, recent: [] };
+    s = { timer: null };
     states.set(chatId, s);
   }
   return s;
-}
-
-/**
- * Record a chat message into the rolling context buffer (newest last, capped at
- * `RECENT_MAX`). Called for every text message so a chime — whenever it fires — has
- * the latest chatter to continue from. Does NOT touch the timer.
- */
-export function recordChatMessage(chatId: number, name: string, text: string): void {
-  const s = getState(chatId);
-  s.recent.push({ name, text });
-  if (s.recent.length > RECENT_MAX) s.recent.splice(0, s.recent.length - RECENT_MAX);
 }
 
 /**
@@ -144,7 +135,7 @@ export function armChime(ctx: Context): void {
  * addressed path so the message is sent (and recorded into conversation history).
  */
 async function fireChime(ctx: Context, chatId: number): Promise<void> {
-  const recent = states.get(chatId)?.recent ?? [];
+  const recent = getRecentChat(chatId);
   if (recent.length === 0) return;
 
   const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
@@ -173,10 +164,11 @@ async function fireChime(ctx: Context, chatId: number): Promise<void> {
   });
 }
 
-/** Test helper: drop all in-memory chime state. */
+/** Test helper: drop all in-memory chime state (timers + recent chatter). */
 export function clearChimeState(): void {
   for (const s of states.values()) {
     if (s.timer) clearTimeout(s.timer);
   }
   states.clear();
+  clearRecentChat();
 }

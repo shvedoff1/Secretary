@@ -34,8 +34,9 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   of a revive. A win at any tier calls the assistant to continue the conversation by
   context as if pinged, and stops escalating. Any new message (any type) resets the
   silence clock via `cancelChime` in the global `bot.on('message')` middleware. Recent
-  chatter is kept in an in-memory per-chat ring buffer (`recordChatMessage`) and fed in
-  as context. Off via `ENABLE_CHIME=false`.
+  chatter is kept in an in-memory per-chat ring buffer (`src/bot/recentChat.ts` —
+  `recordChatMessage`/`getRecentChat`, shared with the scheduler so a humour task can
+  riff on it too) and fed in as context. Off via `ENABLE_CHIME=false`.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   schedule_task | surf_forecast | web_search`. Tools in `tools.ts`, Zod + JSON schemas
   in `schema.ts`, system prompt + context block in `prompts.ts`. `humorize.ts` is an
@@ -43,9 +44,13 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   ONLY plain-chat replies (`humorizable` = no tool was used) to be funnier, never factual
   or tool answers, and falls back to the original text on any failure. OpenAI is reached
   by plain `fetch` (no SDK), mirroring `transcribe.ts`. Timer tasks opt into this pass
-  per-task: `schedule_task` takes a `humor` flag (stored on `scheduled_task.humor`), and
-  the scheduler humorizes a firing task's plain-chat output only when that flag is set
-  (still subject to the same `humorizable` + `ENABLE_HUMOR` gating).
+  per-task: `schedule_task` takes a `humor` flag (stored on `scheduled_task.humor`,
+  toggled later with `/taskhumor <id> on|off`), and the scheduler humorizes a firing
+  task's plain-chat output only when that flag is set (still subject to the same
+  `humorizable` + `ENABLE_HUMOR` gating), DMing the admin the pre-OpenAI "before" via
+  `humorizeWithPreview` just like the live flow. A humour task also runs with the chat's
+  lexicon and recent chatter injected (see `scheduler.ts`) so its voice matches the
+  chat; plain/factual tasks stay context-clean.
 - `src/surf/` — `surf_forecast` skill: fetches wave/wind from Open-Meteo (the only place
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a

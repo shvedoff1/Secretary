@@ -10,7 +10,9 @@ import {
 } from './db/repos/scheduledTask.repo.js';
 import { nextRunMs } from './util/schedule.js';
 import { mdToTelegramHtml, stripMarkdown } from './util/telegramHtml.js';
-import { humorizeOrOriginal } from './llm/humorize.js';
+import { humorizeWithPreview } from './llm/humorize.js';
+import { getLexicon } from './db/repos/lexicon.repo.js';
+import { getRecentChat } from './bot/recentChat.js';
 import { makeSurfForecastHandler } from './surf/index.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
@@ -88,12 +90,33 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
     // the group (e.g. a daily joke forecast riffing on remembered facts).
     const { memoryChat, memoryUsers } = scheduledMemory(task.chatId, task.tgUserId, cfg);
 
+    // A humour task is a "vibe" post, not a plain reminder: give it the chat's
+    // recent chatter so it can riff on what was just said (the same in-memory
+    // buffer the chime uses). Factual tasks (surf/spending reminders) stay
+    // context-clean so recent banter can't distract them from their job.
+    let userContent = task.prompt;
+    if (task.humor) {
+      const recent = getRecentChat(task.chatId);
+      if (recent.length > 0) {
+        const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
+        userContent =
+          `${task.prompt}\n\n[Свежий контекст чата (последние сообщения) — можешь ` +
+          `опираться на него и обыграть, но это не обязательно:\n${lines}]`;
+      }
+    }
+
     const result = await runAssistant(
       {
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,
         memoryUsers,
+        // Feed the chat's learned slang so a scheduled post speaks in the chat's
+        // voice, exactly like the live flow — otherwise its tone reads flat.
+        lexicon: getLexicon(task.chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
+          term: e.term,
+          gloss: e.gloss,
+        })),
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: !!chatCfg?.provider_group_id,
@@ -105,7 +128,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         allowReminders: false,
         allowPoi: false,
         history: [],
-        userContent: task.prompt,
+        userContent,
       },
       {
         remember: () => 'noop',
@@ -126,10 +149,16 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       // eligible — a tool result (e.g. a surf forecast) carries facts that must
       // stay verbatim. The spending report self-humorizes inside its handler.
       // Best-effort: when humour is globally disabled or OpenAI fails, the
-      // original text is returned unchanged.
+      // original text is returned unchanged. Like the live flow, the pre-OpenAI
+      // original is DM'd to the admin so the before/after can be compared.
       const text =
         task.humor && result.humorizable
-          ? await humorizeOrOriginal(result.text)
+          ? await humorizeWithPreview(result.text, async (original) => {
+              await bot.api.sendMessage(
+                cfg.ADMIN_TELEGRAM_ID,
+                `🔬 До OpenAI (⏰ ${task.title}):\n\n${original}`,
+              );
+            })
           : result.text;
       const prefix = task.title ? `⏰ ${task.title}\n` : '';
       await sendMarkdown(bot, task.chatId, prefix + text);

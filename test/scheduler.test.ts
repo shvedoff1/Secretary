@@ -99,17 +99,18 @@ describe('scheduledMemory', () => {
 describe('runDueTasks humor toggle', () => {
   afterEach(() => {
     responses = [];
+    createMock.mockClear();
     vi.unstubAllGlobals();
     delete process.env.ENABLE_HUMOR;
     delete process.env.OPENAI_API_KEY;
   });
 
-  // A fake bot that records the text passed to sendMessage.
-  function fakeBot(sent: string[]) {
+  // A fake bot that records every (chatId, text) passed to sendMessage.
+  function fakeBot(sent: { chatId: number; text: string }[]) {
     return {
       api: {
-        sendMessage: async (_chatId: number, text: string) => {
-          sent.push(text);
+        sendMessage: async (chatId: number, text: string) => {
+          sent.push({ chatId, text });
         },
       },
     } as never;
@@ -147,31 +148,95 @@ describe('runDueTasks humor toggle', () => {
     return scheduler;
   }
 
-  it('humorizes a plain-chat reply when the task opted in', async () => {
+  it('humorizes a plain-chat reply when the task opted in, and DMs the admin the "before"', async () => {
     const scheduler = await seedDueTask(true);
     stubHumorizer();
     responses = [textResponse('Привет!')];
 
-    const sent: string[] = [];
+    const sent: { chatId: number; text: string }[] = [];
     await scheduler.runDueTasks(fakeBot(sent));
 
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain('РОФЛ-вариант');
-    expect(sent[0]).not.toContain('Привет!');
+    // The chat (100) gets the humorized text; the admin (1) gets the pre-OpenAI original.
+    const chatMsg = sent.find((m) => m.chatId === 100);
+    const adminDm = sent.find((m) => m.chatId === 1);
+    expect(chatMsg?.text).toContain('РОФЛ-вариант');
+    expect(chatMsg?.text).not.toContain('Привет!');
+    expect(adminDm?.text).toContain('До OpenAI');
+    expect(adminDm?.text).toContain('Привет!');
   });
 
-  it('leaves the reply verbatim when the task did not opt in', async () => {
+  it('leaves the reply verbatim (and sends no admin preview) when the task did not opt in', async () => {
     const scheduler = await seedDueTask(false);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     responses = [textResponse('Привет!')];
 
-    const sent: string[] = [];
+    const sent: { chatId: number; text: string }[] = [];
     await scheduler.runDueTasks(fakeBot(sent));
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain('Привет!');
-    // Humour off for this task => OpenAI is never called.
+    expect(sent[0]!.chatId).toBe(100);
+    expect(sent[0]!.text).toContain('Привет!');
+    // Humour off for this task => OpenAI is never called and no admin DM.
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('feeds recent chatter into a humour task so it can riff on context', async () => {
+    process.env.ENABLE_HUMOR = 'false'; // not exercising the humorizer here
+    const { scheduler } = await freshModules();
+    const repo = await import('../src/db/repos/scheduledTask.repo.js');
+    const recentChat = await import('../src/bot/recentChat.js');
+    recentChat.recordChatMessage(100, 'Миша', 'антоха взял два чокопая');
+
+    repo.createTask({
+      chatId: 100,
+      tgUserId: 1,
+      title: 'Прогноз',
+      prompt: 'Дай прогноз',
+      cron: '0 9 * * *',
+      timezone: 'Europe/Lisbon',
+      once: true,
+      humor: true,
+      nextRunAt: 1,
+    });
+    responses = [textResponse('ok')];
+
+    await scheduler.runDueTasks(fakeBot([]));
+
+    // The recent line reaches the model as part of the user content.
+    const firstCall = createMock.mock.calls[0]![0] as {
+      messages: { role: string; content: unknown }[];
+    };
+    const lastUser = firstCall.messages[firstCall.messages.length - 1]!;
+    expect(JSON.stringify(lastUser.content)).toContain('антоха взял два чокопая');
+  });
+
+  it('does NOT feed recent chatter into a non-humour task', async () => {
+    process.env.ENABLE_HUMOR = 'false';
+    const { scheduler } = await freshModules();
+    const repo = await import('../src/db/repos/scheduledTask.repo.js');
+    const recentChat = await import('../src/bot/recentChat.js');
+    recentChat.recordChatMessage(100, 'Миша', 'секретная болтовня');
+
+    repo.createTask({
+      chatId: 100,
+      tgUserId: 1,
+      title: 'Напоминание',
+      prompt: 'Напомни',
+      cron: '0 9 * * *',
+      timezone: 'Europe/Lisbon',
+      once: true,
+      humor: false,
+      nextRunAt: 1,
+    });
+    responses = [textResponse('ok')];
+
+    await scheduler.runDueTasks(fakeBot([]));
+
+    const firstCall = createMock.mock.calls[0]![0] as {
+      messages: { role: string; content: unknown }[];
+    };
+    const lastUser = firstCall.messages[firstCall.messages.length - 1]!;
+    expect(JSON.stringify(lastUser.content)).not.toContain('секретная болтовня');
   });
 });

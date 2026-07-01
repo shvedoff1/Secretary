@@ -1,6 +1,7 @@
 import type { Context } from 'grammy';
 import { getLexicon, clearLexicon } from '../../db/repos/lexicon.repo.js';
 import { isAdmin } from '../../db/repos/users.repo.js';
+import { replyLong } from '../../util/telegramText.js';
 
 const CLEAR_ARGS = new Set(['clear', 'reset', 'очистить', 'сброс', 'забудь']);
 
@@ -66,5 +67,7 @@ export async function cmdSlang(ctx: Context): Promise<void> {
   );
   const header = forOther ? `🗣️ Словечки чата ${targetId}:` : '🗣️ Словечки чата:';
   const footer = forOther ? `Сброс: /slang ${targetId} clear` : 'Сброс: /slang clear';
-  await ctx.reply(`${header}\n${lines.join('\n')}\n\n${footer}`);
+  // The lexicon is unbounded, so this list can outgrow Telegram's 4096-char cap
+  // in a chatty group — chunk it instead of letting the send silently 400.
+  await replyLong(ctx, `${header}\n${lines.join('\n')}\n\n${footer}`);
 }

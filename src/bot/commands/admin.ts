@@ -23,6 +23,7 @@ import {
 } from '../../db/repos/memoryItem.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
+import { replyLong } from '../../util/telegramText.js';
 
 /** Gate: supreme admin only, and only in a private chat (other chats' data must
  * not leak into a group). Returns false (and replies) if not allowed. */
@@ -123,7 +124,10 @@ export async function cmdChat(ctx: Context): Promise<void> {
     ? `${cfg.provider_name} (group ${cfg.provider_group_id ?? '—'})`
     : 'не настроен (не подключён к Splid)';
 
-  await ctx.reply(
+  // Memory/roster are open-ended, so chunk to stay under Telegram's 4096 cap —
+  // a large chat would otherwise 400 and look like the command did nothing.
+  await replyLong(
+    ctx,
     [
       `Чат: ${cfg?.title ?? '(без названия)'}`,
       `id: ${id}`,

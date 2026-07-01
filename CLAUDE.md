@@ -55,7 +55,8 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   ONLY plain-chat replies (`humorizable` = no tool was used) to be funnier, never factual
   or tool answers, and falls back to the original text on any failure. It also carries the
   chat's learned slang (the `lexicon` arg → `buildHumorSystemPrompt`) so the rewrite speaks
-  the group's lingo. OpenAI is reached
+  the group's lingo, and logs the exact slang it appended at INFO (`humorizer slang → openai`)
+  so what reached OpenAI is visible in the diagnose dump. OpenAI is reached
   by plain `fetch` (no SDK), mirroring `transcribe.ts`. Timer tasks opt into this pass
   per-task: `schedule_task` takes a `humor` flag (stored on `scheduled_task.humor`,
   toggled later with `/taskhumor <id> on|off`), and the scheduler humorizes a firing

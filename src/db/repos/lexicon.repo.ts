@@ -104,6 +104,50 @@ export function getLexicon(chatId: number, limit?: number): LexiconEntry[] {
   return rows.map((r) => ({ term: r.term, gloss: r.gloss, frequency: r.frequency }));
 }
 
+/**
+ * Correct the stored meaning (gloss) of an existing lexicon term — the
+ * "поменяй значение у X на Y" flow. Matches the term case-insensitively; if
+ * there's no exact match, falls back to a UNIQUE containment match (so «типа»
+ * finds a stored «тип» and vice-versa) to be forgiving about the exact form the
+ * user typed. Returns whether a row was updated and the actual stored term that
+ * matched (so the caller can confirm using the chat's own spelling). Never
+ * creates a new term — this edits meanings, it doesn't teach new words.
+ */
+export function setGloss(
+  chatId: number,
+  term: string,
+  gloss: string,
+): { updated: boolean; term: string } {
+  const t = term.trim().toLowerCase();
+  const g = gloss.trim();
+  if (!t) return { updated: false, term };
+
+  const db = getDb();
+  const apply = (stored: string): { updated: boolean; term: string } => {
+    db.prepare(
+      `UPDATE chat_lexicon SET gloss = ?, last_seen = unixepoch() * 1000
+       WHERE chat_id = ? AND term = ?`,
+    ).run(g, chatId, stored);
+    return { updated: true, term: stored };
+  };
+
+  const exact = db
+    .prepare(`SELECT term FROM chat_lexicon WHERE chat_id = ? AND term = ?`)
+    .get(chatId, t) as { term: string } | undefined;
+  if (exact) return apply(exact.term);
+
+  // Forgiving fallback: a single term where one contains the other.
+  const near = db
+    .prepare(
+      `SELECT term FROM chat_lexicon
+       WHERE chat_id = ? AND (instr(term, ?) > 0 OR instr(?, term) > 0)`,
+    )
+    .all(chatId, t, t) as { term: string }[];
+  if (near.length === 1) return apply(near[0]!.term);
+
+  return { updated: false, term: t };
+}
+
 /** Wipe a chat's learned lexicon and any buffered samples. */
 export function clearLexicon(chatId: number): void {
   const db = getDb();

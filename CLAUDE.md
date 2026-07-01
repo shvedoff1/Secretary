@@ -27,7 +27,9 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   Consequence: slang only surfaces when `ENABLE_HUMOR` is on and the reply is humorizable
   (plain chat, no tool, not money). Managed per chat with `/slang` (`/slang clear`); admins
   can inspect/reset another chat from the DM with `/slang <chatId>` / `/slang <chatId> clear`,
-  and `/chat <chatId>` shows a chat's slang count even for non-Splid chats. A background
+  and `/chat <chatId>` shows a chat's slang count even for non-Splid chats. The MEANING
+  of a learned word can be corrected by just telling the bot ("поменяй значение у X на Y")
+  — the `edit_lexicon` tool (see `src/llm/`). A background
   flush in `index.ts` covers chats that went quiet before filling a batch.
   `flows/chime.ts` drives the spontaneous "chime-in": to keep group chatter going on
   its own without talking over an active thread, it does NOT roll on the message
@@ -43,8 +45,12 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `recordChatMessage`/`getRecentChat`, shared with the scheduler so a humour task can
   riff on it too) and fed in as context. Off via `ENABLE_CHIME=false`.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
-  schedule_task | surf_forecast | web_search`. Tools in `tools.ts`, Zod + JSON schemas
-  in `schema.ts`, system prompt + context block in `prompts.ts`. `humorize.ts` is an
+  learn_expense_pattern | edit_lexicon | schedule_task | surf_forecast | add_poi |
+  spending_report | web_search`. Tools in `tools.ts`, Zod + JSON schemas
+  in `schema.ts`, system prompt + context block in `prompts.ts`. `edit_lexicon`
+  corrects the stored MEANING of a learned slang word (the "поменяй значение у X на Y"
+  flow → `lexicon.repo.ts` `setGloss`, exact-then-unique-containment match; never
+  creates a new word). Off for scheduled runs. `humorize.ts` is an
   optional tone-only post-pass (OpenAI, off by default via `ENABLE_HUMOR`): it rewrites
   ONLY plain-chat replies (`humorizable` = no tool was used) to be funnier, never factual
   or tool answers, and falls back to the original text on any failure. It also carries the

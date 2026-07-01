@@ -4,6 +4,7 @@ import {
   RECORD_EXPENSE_TOOL,
   REMEMBER_TOOL,
   LEARN_EXPENSE_TOOL,
+  EDIT_LEXICON_TOOL,
   SCHEDULE_TASK_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
@@ -90,6 +91,21 @@ describe('buildTools', () => {
       buildTools({ enableWebSearch: true, enableExpense: false, enablePoi: false }),
     );
     expect(scheduled).not.toContain(ADD_POI_TOOL);
+  });
+
+  it('exposes edit_lexicon by default and omits it for scheduled runs', () => {
+    expect(names(buildTools({ enableWebSearch: false, enableExpense: false }))).toContain(
+      EDIT_LEXICON_TOOL,
+    );
+    const tool = buildTools({ enableWebSearch: false, enableExpense: false }).find(
+      (t) => 'name' in t && t.name === EDIT_LEXICON_TOOL,
+    );
+    expect('input_schema' in tool!).toBe(true);
+
+    const scheduled = names(
+      buildTools({ enableWebSearch: true, enableExpense: false, enableLexiconEdit: false }),
+    );
+    expect(scheduled).not.toContain(EDIT_LEXICON_TOOL);
   });
 
   it('exposes spending_report only when enabled (a Splid group is connected)', () => {

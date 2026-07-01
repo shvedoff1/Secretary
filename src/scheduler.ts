@@ -119,6 +119,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // could spawn more reminders every time it runs.
         allowRemember: false,
         allowExpenseLearning: false,
+        allowLexiconEdit: false,
         allowReminders: false,
         allowPoi: false,
         history: [],
@@ -127,6 +128,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       {
         remember: () => 'noop',
         learnExpense: () => 'noop',
+        editLexicon: () => 'noop',
         scheduleTask: () => 'noop',
         // Surf forecast stays live: a recurring evening task asks for tomorrow's
         // forecast and the bot posts the recommendation to the chat.

@@ -54,6 +54,12 @@ export const LearnExpenseZ = z.object({
 });
 export type LearnExpenseInput = z.infer<typeof LearnExpenseZ>;
 
+export const EditLexiconZ = z.object({
+  term: z.string().min(1),
+  gloss: z.string().min(1),
+});
+export type EditLexiconInput = z.infer<typeof EditLexiconZ>;
+
 export const AddPoiZ = z.object({
   name: z.string().min(1),
   category: z.enum(['cafe', 'sight', 'plan', 'place']),
@@ -190,6 +196,24 @@ export const learnExpenseJsonSchema = {
     },
   },
   required: ['keywords'],
+} as const;
+
+export const editLexiconJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    term: {
+      type: 'string',
+      description:
+        "The slang word/phrase whose meaning to change, as it appears in this chat's learned slang (lower-case), e.g. «пихалыч», «тип». Take it from the user's message.",
+    },
+    gloss: {
+      type: 'string',
+      description:
+        'The new short meaning/definition to store for that word, in Russian, e.g. «рот, пасть», «типа». This replaces whatever meaning was learned before.',
+    },
+  },
+  required: ['term', 'gloss'],
 } as const;
 
 export const addPoiJsonSchema = {

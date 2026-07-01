@@ -103,6 +103,46 @@ describe('lexicon repo: terms', () => {
     expect(repo.getLexicon(1, 1)).toHaveLength(1);
   });
 
+  it('setGloss changes the meaning of an existing term (case-insensitive), returns the stored form', async () => {
+    const repo = await freshRepo();
+    repo.recordTerms(1, [{ term: 'пихалыч', gloss: 'непонятно' }]);
+
+    const res = repo.setGloss(1, 'ПихалыЧ', 'рот, пасть');
+    expect(res).toEqual({ updated: true, term: 'пихалыч' });
+    expect(repo.getLexicon(1)[0]?.gloss).toBe('рот, пасть');
+  });
+
+  it('setGloss finds a term by unique containment (типа ↔ тип)', async () => {
+    const repo = await freshRepo();
+    repo.recordTerms(1, [{ term: 'тип', gloss: 'типа' }]);
+    // User typed the fuller form; still resolves to the stored «тип».
+    const res = repo.setGloss(1, 'типа', 'вроде');
+    expect(res).toEqual({ updated: true, term: 'тип' });
+    expect(repo.getLexicon(1)[0]?.gloss).toBe('вроде');
+  });
+
+  it('setGloss does not update when there is no match or the match is ambiguous', async () => {
+    const repo = await freshRepo();
+    repo.recordTerms(1, [
+      { term: 'кек', gloss: 'смешно' },
+      { term: 'кекич', gloss: 'смешно2' },
+    ]);
+    // No such word at all.
+    expect(repo.setGloss(1, 'бугага', 'x').updated).toBe(false);
+    // «кеки» is contained in «кекич» and contains «кек» → matches BOTH stored terms,
+    // so it's ambiguous and nothing is changed (no exact «кеки» to disambiguate).
+    const res = repo.setGloss(1, 'кеки', 'y');
+    expect(res.updated).toBe(false);
+    expect(repo.getLexicon(1).every((e) => e.gloss.startsWith('смешно'))).toBe(true);
+  });
+
+  it('setGloss never creates a new term, and rejects a blank term', async () => {
+    const repo = await freshRepo();
+    expect(repo.setGloss(1, 'newword', 'meaning').updated).toBe(false);
+    expect(repo.getLexicon(1)).toEqual([]);
+    expect(repo.setGloss(1, '   ', 'meaning').updated).toBe(false);
+  });
+
   it('clearLexicon wipes terms and buffered samples for the chat only', async () => {
     const repo = await freshRepo();
     repo.recordTerms(1, [{ term: 'a', gloss: '' }]);

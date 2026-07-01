@@ -15,7 +15,7 @@ import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import { getMemoryForContext, insertPinned } from '../../db/repos/memoryItem.repo.js';
 import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
-import { getLexicon } from '../../db/repos/lexicon.repo.js';
+import { getLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
 import { getTimezone, setTimezone } from '../../db/repos/chatSettings.repo.js';
@@ -30,7 +30,7 @@ import {
   isValidTimezone,
   formatInTimezone,
 } from '../../util/schedule.js';
-import type { ScheduleTaskInput, AddPoiInput } from '../../llm/schema.js';
+import type { ScheduleTaskInput, AddPoiInput, EditLexiconInput } from '../../llm/schema.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -193,6 +193,22 @@ export function makeLearnExpenseHandler(
 }
 
 /**
+ * Build the `edit_lexicon` handler for a chat: corrects the meaning of a learned
+ * slang word (the "поменяй значение у X на Y" flow) and returns a short
+ * confirmation. Never creates a new word — only fixes an existing one's meaning.
+ */
+export function makeEditLexiconHandler(
+  chatId: number,
+): (input: EditLexiconInput) => string {
+  return ({ term, gloss }) => {
+    const res = setGloss(chatId, term, gloss);
+    return res.updated
+      ? `Готово — «${res.term}» теперь значит «${gloss.trim()}». 🤙`
+      : `Не нашёл «${term.trim()}» в словечках чата. Глянь /slang — там точные формы.`;
+  };
+}
+
+/**
  * Build the `add_poi` handler for a chat: persists the place and returns a short
  * human confirmation the assistant relays back.
  */
@@ -329,6 +345,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           return 'Запомнил.';
         },
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
+        editLexicon: makeEditLexiconHandler(chatId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
@@ -523,6 +540,7 @@ async function rewordPendingInner(
     {
       remember: (note) => (insertPinned(chatId, note), 'Запомнил.'),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
+      editLexicon: makeEditLexiconHandler(chatId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),

@@ -3,6 +3,7 @@ import {
   recordExpenseJsonSchema,
   rememberJsonSchema,
   learnExpenseJsonSchema,
+  editLexiconJsonSchema,
   scheduleTaskJsonSchema,
   surfForecastJsonSchema,
   addPoiJsonSchema,
@@ -12,6 +13,7 @@ import {
 export const RECORD_EXPENSE_TOOL = 'record_expense';
 export const REMEMBER_TOOL = 'remember';
 export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
+export const EDIT_LEXICON_TOOL = 'edit_lexicon';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
@@ -25,6 +27,9 @@ export interface ToolOptions {
   enableRemember?: boolean;
   /** Expose the learn_expense_pattern tool. Default true; disabled for scheduled runs. */
   enableExpenseLearning?: boolean;
+  /** Expose the edit_lexicon tool (correct a slang word's meaning). Default true;
+   *  disabled for scheduled runs (a firing task shouldn't rewrite the lexicon). */
+  enableLexiconEdit?: boolean;
   /** Expose the schedule_task tool. Default true; disabled for scheduled runs so a
    *  firing reminder can't create more reminders. */
   enableReminders?: boolean;
@@ -69,6 +74,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         "Teach THIS chat's expense-detection dictionary a new trigger word/phrase, so future messages containing it (with a number) are auto-treated as likely expenses — no redeploy needed. Call this ONLY when the user EXPLICITLY teaches you that a kind of message is an expense, typically by replying to a message the bot missed and saying «запомни, такие сообщения — это траты», «это тоже трата», «такое тоже записывай как трату». Extract the distinctive keyword(s) from the referenced message (shown to you as [В ответ на сообщение: …]). Do NOT call this for a one-off expense to record (use record_expense) or for general notes (use remember).",
       input_schema: learnExpenseJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableLexiconEdit !== false) {
+    tools.push({
+      name: EDIT_LEXICON_TOOL,
+      description:
+        "Change the stored MEANING of a word in THIS chat's learned slang. Call this ONLY when the user explicitly asks to fix/change what a slang word means — e.g. «поменяй значение у пихалыч на рот», «у братик поставь значение …», «слово X значит Y, исправь». Pass `term` = the slang word (as used in the chat) and `gloss` = the new short meaning. This edits an EXISTING learned word's meaning; it does not add brand-new words (use nothing for that — the bot learns words on its own) and is not for general notes (use remember) or expense keywords (use learn_expense_pattern).",
+      input_schema: editLexiconJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

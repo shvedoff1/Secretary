@@ -320,10 +320,6 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           when: (t.once ? 'разово ' : '') + formatInTimezone(t.nextRunAt, t.timezone),
         })),
         places: listPois(chatId).map((p) => ({ name: p.name, category: p.category })),
-        lexicon: getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
-          term: e.term,
-          gloss: e.gloss,
-        })),
         history,
         userContent: args.userContent,
       },
@@ -425,10 +421,17 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     'humorizer gate',
   );
   const safeToHumorize = decision === 'sent';
+  // The chat's learned slang now rides ONLY on the humorizer (OpenAI) — Claude
+  // saw clean history/context. So the chat's voice is applied here, at the tone
+  // pass, not in the factual answer.
   const replyText = safeToHumorize
-    ? await humorizeWithPreview(result.text, async (original) => {
-        await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
-      })
+    ? await humorizeWithPreview(
+        result.text,
+        async (original) => {
+          await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
+        },
+        getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({ term: e.term, gloss: e.gloss })),
+      )
     : result.text;
 
   await replyMarkdown(ctx, replyText, {

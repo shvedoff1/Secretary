@@ -21,9 +21,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `flows/lexicon.ts` drives passive "lexicon learning": every incoming message is buffered
   (`chat_lexicon_sample`), and in batches (N messages or once a day, whichever first) a
   cheap model (`src/llm/lexicon.ts`, Haiku) extracts the chat's slang/distorted words into
-  `chat_lexicon`, which is fed back into the assistant context so the bot adopts the chat's
-  lingo. Managed per chat with `/slang` (`/slang clear`); a background flush in `index.ts`
-  covers chats that went quiet before filling a batch.
+  `chat_lexicon`. The learned slang is fed to the OpenAI **humorizer** (NOT Claude): the
+  tone-pass adopts the chat's lingo while Claude sees only clean history/context (slang is
+  a voice concern, not a factual one — see `src/llm/humorize.ts` `buildHumorSystemPrompt`).
+  Consequence: slang only surfaces when `ENABLE_HUMOR` is on and the reply is humorizable
+  (plain chat, no tool, not money). Managed per chat with `/slang` (`/slang clear`); admins
+  can inspect/reset another chat from the DM with `/slang <chatId>` / `/slang <chatId> clear`,
+  and `/chat <chatId>` shows a chat's slang count even for non-Splid chats. A background
+  flush in `index.ts` covers chats that went quiet before filling a batch.
   `flows/chime.ts` drives the spontaneous "chime-in": to keep group chatter going on
   its own without talking over an active thread, it does NOT roll on the message
   itself. Each otherwise-ignored group message (re)arms a silence timer (`armChime`)
@@ -42,15 +47,17 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   in `schema.ts`, system prompt + context block in `prompts.ts`. `humorize.ts` is an
   optional tone-only post-pass (OpenAI, off by default via `ENABLE_HUMOR`): it rewrites
   ONLY plain-chat replies (`humorizable` = no tool was used) to be funnier, never factual
-  or tool answers, and falls back to the original text on any failure. OpenAI is reached
+  or tool answers, and falls back to the original text on any failure. It also carries the
+  chat's learned slang (the `lexicon` arg → `buildHumorSystemPrompt`) so the rewrite speaks
+  the group's lingo. OpenAI is reached
   by plain `fetch` (no SDK), mirroring `transcribe.ts`. Timer tasks opt into this pass
   per-task: `schedule_task` takes a `humor` flag (stored on `scheduled_task.humor`,
   toggled later with `/taskhumor <id> on|off`), and the scheduler humorizes a firing
   task's plain-chat output only when that flag is set (still subject to the same
   `humorizable` + `ENABLE_HUMOR` gating), DMing the admin the pre-OpenAI "before" via
-  `humorizeWithPreview` just like the live flow. A humour task also runs with the chat's
-  lexicon and recent chatter injected (see `scheduler.ts`) so its voice matches the
-  chat; plain/factual tasks stay context-clean.
+  `humorizeWithPreview` just like the live flow — passing the chat's lexicon to that call
+  so its voice matches the chat. Recent chatter is still injected into a humour task's
+  Claude context (see `scheduler.ts`); plain/factual tasks stay context-clean.
 - `src/surf/` — `surf_forecast` skill: fetches wave/wind from Open-Meteo (the only place
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a

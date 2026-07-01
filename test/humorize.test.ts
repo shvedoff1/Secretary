@@ -76,6 +76,38 @@ describe('humorize', () => {
     expect(body.temperature).toBeUndefined();
   });
 
+  it('injects the chat lexicon into the system prompt when provided', async () => {
+    setEnv({ OPENAI_API_KEY: 'sk-test' });
+    const fetchMock = vi.fn(async () => completion('yo'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { humorize } = await import('../src/llm/humorize.js');
+    await humorize('hi', [{ term: 'тип', gloss: 'типа' }, { term: 'братик' }]);
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    const system = body.messages[0].content as string;
+    expect(system).toContain('Chat lexicon');
+    expect(system).toContain('«тип» — типа');
+    expect(system).toContain('«братик»');
+    // A glossless term shows no dangling dash.
+    expect(system).not.toContain('«братик» —');
+  });
+
+  it('leaves the system prompt untouched when no lexicon is given', async () => {
+    setEnv({ OPENAI_API_KEY: 'sk-test' });
+    const fetchMock = vi.fn(async () => completion('yo'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { humorize } = await import('../src/llm/humorize.js');
+    await humorize('hi');
+    await humorize('hi', []);
+
+    for (const call of fetchMock.mock.calls) {
+      const body = JSON.parse((call[1] as RequestInit).body as string);
+      expect(body.messages[0].content).not.toContain('Chat lexicon');
+    }
+  });
+
   it('honors a custom OPENAI_BASE_URL', async () => {
     setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_BASE_URL: 'https://proxy.example.com/v1' });
     const fetchMock = vi.fn(async () => completion('lol'));
@@ -175,6 +207,34 @@ describe('humorize', () => {
 
       expect(out).toBe('after');
     });
+  });
+});
+
+describe('buildHumorSystemPrompt', () => {
+  it('returns the base prompt unchanged for an empty/absent lexicon', async () => {
+    setEnv({});
+    const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');
+    const base = buildHumorSystemPrompt();
+    expect(base).not.toContain('Chat lexicon');
+    expect(buildHumorSystemPrompt([])).toBe(base);
+    // A term that is only whitespace is dropped, leaving the base prompt.
+    expect(buildHumorSystemPrompt([{ term: '   ' }])).toBe(base);
+  });
+
+  it('appends the slang list, respecting glosses', async () => {
+    setEnv({});
+    const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');
+    const out = buildHumorSystemPrompt([
+      { term: 'тип', gloss: 'типа' },
+      { term: 'братик' },
+      { term: 'изи', gloss: '  ' },
+    ]);
+    expect(out).toContain('Chat lexicon');
+    expect(out).toContain('«тип» — типа');
+    expect(out).toContain('«братик»');
+    // A blank gloss is treated as no gloss (no dangling dash).
+    expect(out).toContain('«изи»');
+    expect(out).not.toContain('«изи» —');
   });
 });
 

@@ -29,6 +29,35 @@ Keep it real (HARD rules — the bit must NOT break them):
 
 Length: keep it punchy. You can stretch a little for the joke, but don't turn a one-liner into an essay.`;
 
+/** A slang/distorted word this chat uses, as fed to the humorizer. */
+export interface HumorLexiconTerm {
+  term: string;
+  gloss?: string;
+}
+
+/**
+ * Build the humorizer system prompt, optionally appending the chat's learned
+ * slang so the rewrite speaks in the group's own lingo. This is the ONLY place
+ * the lexicon reaches a model now — Claude sees clean history/context, and the
+ * OpenAI tone-pass is where the chat's voice gets applied. Empty/absent lexicon
+ * → the plain prompt unchanged, so nothing shows up for a fresh chat.
+ */
+export function buildHumorSystemPrompt(lexicon?: HumorLexiconTerm[]): string {
+  const terms = (lexicon ?? []).filter((t) => t.term.trim());
+  if (terms.length === 0) return HUMOR_SYSTEM_PROMPT;
+  const lines = terms.map(({ term, gloss }) =>
+    gloss && gloss.trim() ? `- «${term}» — ${gloss}` : `- «${term}»`,
+  );
+  return (
+    HUMOR_SYSTEM_PROMPT +
+    `\n\nChat lexicon — slang and distorted word-forms THIS group actually uses. ` +
+    `Weave them in naturally where they fit (don't cram in every one), so the bit ` +
+    `sounds like one of the crew. Still obey every HARD rule above — the lexicon ` +
+    `changes only the VOICE, never a fact:\n` +
+    lines.join('\n')
+  );
+}
+
 /**
  * Why a plain-chat reply was or wasn't handed to the humorizer (OpenAI). Logged
  * at the decision point so "почему не поехало в openai" is observable instead of
@@ -61,7 +90,7 @@ export function classifyHumorDecision(opts: {
  * configurable OpenAI base URL. Throws if not configured or the request fails —
  * callers that want a safe fallback should use {@link humorizeOrOriginal}.
  */
-export async function humorize(text: string): Promise<string> {
+export async function humorize(text: string, lexicon?: HumorLexiconTerm[]): Promise<string> {
   const cfg = loadConfig();
   if (!cfg.OPENAI_API_KEY) {
     throw new Error('humor not configured (OPENAI_API_KEY unset)');
@@ -78,7 +107,7 @@ export async function humorize(text: string): Promise<string> {
     body: JSON.stringify({
       model: cfg.OPENAI_HUMOR_MODEL,
       messages: [
-        { role: 'system', content: HUMOR_SYSTEM_PROMPT },
+        { role: 'system', content: buildHumorSystemPrompt(lexicon) },
         { role: 'user', content: text },
       ],
     }),
@@ -104,10 +133,13 @@ export async function humorize(text: string): Promise<string> {
  * text unchanged when the feature is disabled or anything goes wrong. The
  * humour pass must never block or break a reply, so failures are swallowed.
  */
-export async function humorizeOrOriginal(text: string): Promise<string> {
+export async function humorizeOrOriginal(
+  text: string,
+  lexicon?: HumorLexiconTerm[],
+): Promise<string> {
   if (!isHumorEnabled()) return text;
   try {
-    return await humorize(text);
+    return await humorize(text, lexicon);
   } catch (err) {
     logger.warn({ err }, 'humorize failed, using original text');
     return text;
@@ -123,6 +155,7 @@ export async function humorizeOrOriginal(text: string): Promise<string> {
 export async function humorizeWithPreview(
   text: string,
   sendOriginal: (original: string) => Promise<void>,
+  lexicon?: HumorLexiconTerm[],
 ): Promise<string> {
   if (!isHumorEnabled()) return text;
   try {
@@ -130,5 +163,5 @@ export async function humorizeWithPreview(
   } catch (err) {
     logger.warn({ err }, 'failed to send humor preview');
   }
-  return humorizeOrOriginal(text);
+  return humorizeOrOriginal(text, lexicon);
 }

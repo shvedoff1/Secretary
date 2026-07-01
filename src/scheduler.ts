@@ -111,12 +111,6 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,
         memoryUsers,
-        // Feed the chat's learned slang so a scheduled post speaks in the chat's
-        // voice, exactly like the live flow — otherwise its tone reads flat.
-        lexicon: getLexicon(task.chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
-          term: e.term,
-          gloss: e.gloss,
-        })),
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: !!chatCfg?.provider_group_id,
@@ -153,12 +147,22 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       // original is DM'd to the admin so the before/after can be compared.
       const text =
         task.humor && result.humorizable
-          ? await humorizeWithPreview(result.text, async (original) => {
-              await bot.api.sendMessage(
-                cfg.ADMIN_TELEGRAM_ID,
-                `🔬 До OpenAI (⏰ ${task.title}):\n\n${original}`,
-              );
-            })
+          ? await humorizeWithPreview(
+              result.text,
+              async (original) => {
+                await bot.api.sendMessage(
+                  cfg.ADMIN_TELEGRAM_ID,
+                  `🔬 До OpenAI (⏰ ${task.title}):\n\n${original}`,
+                );
+              },
+              // Slang now lives on the humorizer (not Claude), so a humour task
+              // gets the chat's voice here — its plain-chat output speaks the
+              // group's lingo, exactly like the live flow.
+              getLexicon(task.chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
+                term: e.term,
+                gloss: e.gloss,
+              })),
+            )
           : result.text;
       const prefix = task.title ? `⏰ ${task.title}\n` : '';
       await sendMarkdown(bot, task.chatId, prefix + text);

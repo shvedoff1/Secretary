@@ -12,9 +12,12 @@ describe('SYSTEM_PROMPT web-search guidance', () => {
   });
 });
 
-describe('SYSTEM_PROMPT lexicon guidance', () => {
-  it('tells the model to adopt the chat lexicon', () => {
-    expect(SYSTEM_PROMPT).toContain('Chat lexicon');
+// Slang now rides ONLY on the OpenAI humorizer, not Claude — Claude gets clean
+// history/context. Guard that the lexicon block is gone from the model's prompt
+// so it can't silently creep back in.
+describe('SYSTEM_PROMPT no longer carries the chat lexicon', () => {
+  it('does not reference a "Chat lexicon" block (slang moved to the humorizer)', () => {
+    expect(SYSTEM_PROMPT).not.toContain('Chat lexicon');
   });
 });
 
@@ -39,33 +42,19 @@ describe('SYSTEM_PROMPT receipt-splitting guidance', () => {
   });
 });
 
-describe('buildContextBlock lexicon section', () => {
+describe('buildContextBlock never carries slang', () => {
   const base = {
     defaultCurrency: 'EUR',
     members: [],
-    memory: '',
     senderName: 'Sky',
     timezone: null,
     splidConnected: false,
   };
 
-  it('renders learned slang with and without a gloss when present', () => {
-    const out = buildContextBlock({
-      ...base,
-      lexicon: [
-        { term: 'тип', gloss: 'типа' },
-        { term: 'братик' },
-      ],
-    });
-    expect(out).toContain('Chat lexicon');
-    expect(out).toContain('«тип» — типа');
-    expect(out).toContain('«братик»');
-    expect(out).not.toContain('«братик» —');
-  });
-
-  it('omits the section entirely when there is no learned slang', () => {
-    expect(buildContextBlock(base)).not.toContain('Chat lexicon');
-    expect(buildContextBlock({ ...base, lexicon: [] })).not.toContain('Chat lexicon');
+  it('renders no lexicon section (slang lives on the humorizer now)', () => {
+    const out = buildContextBlock(base);
+    expect(out).not.toContain('Chat lexicon');
+    expect(out).not.toContain('lexicon');
   });
 });
 

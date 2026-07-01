@@ -51,8 +51,6 @@ export interface AssistantContext {
   allowPoi?: boolean;
   /** Saved places in this chat, shown so the model can recall them and not duplicate. */
   places?: { name: string; category: string }[];
-  /** Learned slang/distorted words this chat uses, fed back so the bot talks like them. */
-  lexicon?: { term: string; gloss?: string }[];
   /** Top shared facts about the group (human-like weighted memory). */
   memoryChat?: { content: string }[];
   /** Per-person facts: the current sender first, then other recently-active participants. */
@@ -118,7 +116,6 @@ export async function runAssistant(
     splidConnected: ctx.splidConnected,
     activeReminders: ctx.activeReminders ?? [],
     places: ctx.places ?? [],
-    lexicon: ctx.lexicon ?? [],
     memoryChat: ctx.memoryChat ?? [],
     memoryUsers: ctx.memoryUsers ?? [],
   });

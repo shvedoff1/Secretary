@@ -21,6 +21,7 @@ import {
   clearMemoryItems,
   listMemoryItemsForDisplay,
 } from '../../db/repos/memoryItem.repo.js';
+import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 
 /** Gate: supreme admin only, and only in a private chat (other chats' data must
@@ -87,17 +88,16 @@ export async function cmdChat(ctx: Context): Promise<void> {
     await ctx.reply('Использование: /chat <chatId>');
     return;
   }
+  // A chat_config row exists only for Splid-linked chats, but the bot learns
+  // memory/slang in EVERY chat (keyed by chat_id). So don't bail when there's no
+  // config — show whatever data we do hold for the chat; just note Splid is off.
   const cfg = getChatConfig(id);
-  if (!cfg) {
-    await ctx.reply(`Чат ${id} не настроен.`);
-    return;
-  }
 
   const mappings = listMappings(id);
   const linkedBy = new Map<string, number>();
   for (const m of mappings) linkedBy.set(m.provider_member_id, m.tg_user_id);
 
-  const members = cfg.provider_group_id
+  const members = cfg?.provider_group_id
     ? await membersOf(cfg.provider_name, cfg.provider_group_id)
     : [];
   const roster = members.length
@@ -116,16 +116,24 @@ export async function cmdChat(ctx: Context): Promise<void> {
         .join('\n')
     : '(пусто)';
 
+  const slangCount = getLexicon(id).length;
+  const slangLine = slangCount ? `сленг: ${slangCount} словечек (/slang ${id})` : 'сленг: (пусто)';
+
+  const provider = cfg
+    ? `${cfg.provider_name} (group ${cfg.provider_group_id ?? '—'})`
+    : 'не настроен (не подключён к Splid)';
+
   await ctx.reply(
     [
-      `Чат: ${cfg.title ?? '(без названия)'}`,
-      `id: ${cfg.chat_id}`,
-      `провайдер: ${cfg.provider_name} (group ${cfg.provider_group_id ?? '—'})`,
-      `валюта: ${cfg.default_currency}`,
+      `Чат: ${cfg?.title ?? '(без названия)'}`,
+      `id: ${id}`,
+      `провайдер: ${provider}`,
+      `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
       roster,
       `память:`,
       memory,
+      slangLine,
       ``,
       `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
     ].join('\n'),

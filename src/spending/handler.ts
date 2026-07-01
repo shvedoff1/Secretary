@@ -3,6 +3,7 @@ import { logger } from '../logger.js';
 import { getProvider } from '../core/registry.js';
 import { getChatConfig } from '../db/repos/chatConfig.repo.js';
 import { getTimezone } from '../db/repos/chatSettings.repo.js';
+import { getLexicon } from '../db/repos/lexicon.repo.js';
 import { humorizeOrOriginal } from '../llm/humorize.js';
 import type { SpendingReportInput } from '../llm/schema.js';
 import {
@@ -65,7 +66,14 @@ export function makeSpendingReportHandler(
         sections.push(formatBalances(summary, names));
       }
 
-      return humorizeOrOriginal(sections.join('\n\n'));
+      // Money digests are the one place we deliberately humorize; give the pass
+      // the chat's slang too so the tone matches (facts stay locked by the
+      // humorizer's hard rules).
+      const lexicon = getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
+        term: e.term,
+        gloss: e.gloss,
+      }));
+      return humorizeOrOriginal(sections.join('\n\n'), lexicon);
     } catch (err) {
       logger.error({ err, chatId }, 'spending_report failed');
       return 'Не удалось собрать отчёт — Splid не ответил. Попробуйте чуть позже.';

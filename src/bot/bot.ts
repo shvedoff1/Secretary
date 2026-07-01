@@ -87,8 +87,20 @@ export function buildBot(token: string): Bot {
   bot.on('message:voice', onVoice);
   bot.on('message:text', onMessage);
 
-  bot.catch((err) => {
+  bot.catch(async (err) => {
     logger.error({ err: err.error, update: err.ctx.update.update_id }, 'bot error');
+    // A handler that throws mid-way (e.g. a reply Telegram rejects) would
+    // otherwise leave the user staring at silence. For an explicit command,
+    // surface that something broke so it's never a silent no-op. Best-effort:
+    // if even this reply fails, just swallow it.
+    const wasCommand = (err.ctx.message?.text ?? '').startsWith('/');
+    if (wasCommand) {
+      try {
+        await err.ctx.reply('⚠️ Не смог выполнить команду — что-то пошло не так.');
+      } catch {
+        /* nothing more we can do */
+      }
+    }
   });
 
   return bot;

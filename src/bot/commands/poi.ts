@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 import { listPois, deletePoi } from '../../db/repos/poi.repo.js';
 import { renderPoiList } from '../../util/poi.js';
-import { mdToTelegramHtml, stripMarkdown } from '../../util/telegramHtml.js';
+import { sendRichMarkdown } from '../../util/richMessage.js';
 
 export async function cmdPoi(ctx: Context): Promise<void> {
   if (!ctx.chat) return;
@@ -14,14 +14,7 @@ export async function cmdPoi(ctx: Context): Promise<void> {
     return;
   }
   const md = renderPoiList(pois);
-  try {
-    await ctx.reply(mdToTelegramHtml(md), {
-      parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-    });
-  } catch {
-    await ctx.reply(stripMarkdown(md));
-  }
+  await sendRichMarkdown(ctx.api, ctx.chat.id, md, { disableLinkPreview: true });
 }
 
 export async function cmdDelPoi(ctx: Context): Promise<void> {

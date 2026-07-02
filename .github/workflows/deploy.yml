@@ -89,7 +89,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS
           script: |
             set -euo pipefail
 
@@ -135,6 +135,14 @@ jobs:
             if [ -n "${OPENAI_HUMOR_MODEL:-}" ]; then
               echo "OPENAI_HUMOR_MODEL=$OPENAI_HUMOR_MODEL" >> .env
             fi
+            # Latency knobs for the humorizer/quip pass. Only write when set so an
+            # empty value can't shadow the in-app defaults (minimal / 20000ms).
+            if [ -n "${OPENAI_REASONING_EFFORT:-}" ]; then
+              echo "OPENAI_REASONING_EFFORT=$OPENAI_REASONING_EFFORT" >> .env
+            fi
+            if [ -n "${OPENAI_HUMOR_TIMEOUT_MS:-}" ]; then
+              echo "OPENAI_HUMOR_TIMEOUT_MS=$OPENAI_HUMOR_TIMEOUT_MS" >> .env
+            fi
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export BOT_IMAGE="$DEPLOY_IMAGE"
@@ -166,3 +174,5 @@ jobs:
           # flags also fit Variables — take whichever is set (|| = first non-empty).
           ENABLE_HUMOR: ${{ secrets.ENABLE_HUMOR || vars.ENABLE_HUMOR }}
           OPENAI_HUMOR_MODEL: ${{ secrets.OPENAI_HUMOR_MODEL || vars.OPENAI_HUMOR_MODEL }}
+          OPENAI_REASONING_EFFORT: ${{ secrets.OPENAI_REASONING_EFFORT || vars.OPENAI_REASONING_EFFORT }}
+          OPENAI_HUMOR_TIMEOUT_MS: ${{ secrets.OPENAI_HUMOR_TIMEOUT_MS || vars.OPENAI_HUMOR_TIMEOUT_MS }}

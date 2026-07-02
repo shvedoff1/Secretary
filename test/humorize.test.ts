@@ -11,6 +11,7 @@ function setEnv(extra: Record<string, string | undefined>): void {
   delete process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_BASE_URL;
   delete process.env.OPENAI_HUMOR_MODEL;
+  delete process.env.OPENAI_REASONING_EFFORT;
   delete process.env.ENABLE_HUMOR;
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...extra })) {
     if (v === undefined) delete process.env[k];
@@ -74,6 +75,28 @@ describe('humorize', () => {
     expect(body.messages[1]).toEqual({ role: 'user', content: 'Вот твой кофе.' });
     // Minimal payload — no custom temperature (newer mini models reject it).
     expect(body.temperature).toBeUndefined();
+    // reasoning_effort defaults to 'minimal' so gpt-5-mini doesn't slow-reason.
+    expect(body.reasoning_effort).toBe('minimal');
+  });
+
+  it('honors OPENAI_REASONING_EFFORT and omits the field when none', async () => {
+    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_REASONING_EFFORT: 'low' });
+    const fetchMock = vi.fn(async () => completion('ok'));
+    vi.stubGlobal('fetch', fetchMock);
+    let mod = await import('../src/llm/humorize.js');
+    await mod.humorize('hi');
+    let body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.reasoning_effort).toBe('low');
+
+    // 'none' → the field is omitted entirely (for non-reasoning models).
+    vi.resetModules();
+    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_REASONING_EFFORT: 'none' });
+    const fetchMock2 = vi.fn(async () => completion('ok'));
+    vi.stubGlobal('fetch', fetchMock2);
+    mod = await import('../src/llm/humorize.js');
+    await mod.humorize('hi');
+    body = JSON.parse((fetchMock2.mock.calls[0][1] as RequestInit).body as string);
+    expect('reasoning_effort' in body).toBe(false);
   });
 
   it('injects the chat lexicon into the system prompt when provided', async () => {

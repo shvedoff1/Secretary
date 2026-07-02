@@ -1,4 +1,5 @@
 import { Bot } from 'grammy';
+import { sequentialize } from '@grammyjs/runner';
 import { logger } from '../logger.js';
 import { authGate } from './middleware/auth.js';
 import { cmdStart } from './commands/start.js';
@@ -34,6 +35,15 @@ import { cancelChime } from './flows/chime.js';
 
 export function buildBot(token: string): Bot {
   const bot = new Bot(token);
+
+  // Concurrency ordering: updates are processed concurrently (via @grammyjs/runner
+  // in index.ts) so one slow LLM turn no longer blocks every other chat. But within
+  // a SINGLE chat order still matters — pending expense previews, edit-target maps,
+  // the chime silence timer and the lexicon/memory buffers are all per-chat mutable
+  // state, and a correction must not overtake the message it corrects. sequentialize
+  // keyed by chat id keeps each chat strictly in order while letting different chats
+  // run in parallel. Must be the FIRST middleware so the whole chain is ordered.
+  bot.use(sequentialize((ctx) => ctx.chat?.id.toString()));
 
   // Default-deny gate (lets /start, /help, /request through for everyone).
   bot.use(authGate);

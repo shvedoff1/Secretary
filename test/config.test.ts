@@ -30,3 +30,39 @@ describe('config ANTHROPIC_MODEL', () => {
     expect(loadConfig().ANTHROPIC_MODEL).toBe('claude-opus-4-8');
   });
 });
+
+describe('config OpenAI humorizer latency knobs', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    for (const [k, v] of Object.entries(REQUIRED_ENV)) process.env[k] = v;
+    delete process.env.OPENAI_REASONING_EFFORT;
+    delete process.env.OPENAI_HUMOR_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    delete process.env.OPENAI_REASONING_EFFORT;
+    delete process.env.OPENAI_HUMOR_TIMEOUT_MS;
+  });
+
+  it('defaults reasoning effort to minimal and timeout to 20s', async () => {
+    const { loadConfig } = await import('../src/config.js');
+    const cfg = loadConfig();
+    expect(cfg.OPENAI_REASONING_EFFORT).toBe('minimal');
+    expect(cfg.OPENAI_HUMOR_TIMEOUT_MS).toBe(20_000);
+  });
+
+  it('honours explicit overrides', async () => {
+    process.env.OPENAI_REASONING_EFFORT = 'none';
+    process.env.OPENAI_HUMOR_TIMEOUT_MS = '5000';
+    const { loadConfig } = await import('../src/config.js');
+    const cfg = loadConfig();
+    expect(cfg.OPENAI_REASONING_EFFORT).toBe('none');
+    expect(cfg.OPENAI_HUMOR_TIMEOUT_MS).toBe(5000);
+  });
+
+  it('rejects an invalid reasoning effort', async () => {
+    process.env.OPENAI_REASONING_EFFORT = 'ultra';
+    const { loadConfig } = await import('../src/config.js');
+    expect(() => loadConfig()).toThrow(/OPENAI_REASONING_EFFORT/);
+  });
+});

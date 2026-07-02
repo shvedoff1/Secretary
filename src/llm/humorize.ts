@@ -1,5 +1,6 @@
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
+import { reasoningField, humorTimeoutSignal } from './openaiOptions.js';
 
 /**
  * Is the humorizer pass configured? It needs both the feature flag and an
@@ -122,14 +123,19 @@ export async function humorize(text: string, lexicon?: HumorLexiconTerm[]): Prom
       Authorization: `Bearer ${cfg.OPENAI_API_KEY}`,
     },
     // Keep the payload minimal (model + messages) so it stays compatible across
-    // OpenAI model families — newer "mini" models reject custom temperature.
+    // OpenAI model families — newer "mini" models reject custom temperature. The
+    // one extra we DO send is reasoning_effort: gpt-5-mini reasons before answering
+    // by default (the reason this pass felt far slower than Claude); 'minimal' keeps
+    // this trivial tone rewrite fast. Omitted for non-reasoning models via config.
     body: JSON.stringify({
       model: cfg.OPENAI_HUMOR_MODEL,
+      ...reasoningField(),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: text },
       ],
     }),
+    signal: humorTimeoutSignal(),
   });
 
   if (!res.ok) {

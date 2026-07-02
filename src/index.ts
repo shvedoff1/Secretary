@@ -1,3 +1,4 @@
+import { run } from '@grammyjs/runner';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
 import { migrate } from './db/migrate.js';
@@ -66,28 +67,33 @@ async function main(): Promise<void> {
   }, 60 * 60_000);
   lexiconFlusher.unref();
 
+  // Concurrent long polling: the runner processes updates concurrently instead of
+  // one-at-a-time, so a slow LLM turn in one chat no longer blocks every other chat.
+  // Per-chat ordering is preserved by the `sequentialize` middleware (see bot.ts).
+  const runner = run(bot);
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
     clearInterval(sweeper);
     clearInterval(scheduler);
     clearInterval(lexiconFlusher);
-    await bot.stop();
+    if (runner.isRunning()) await runner.stop();
     closeDb();
     process.exit(0);
   };
   process.once('SIGINT', () => void shutdown('SIGINT'));
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
 
-  await bot.start({
-    onStart: async (info) => {
-      logger.info({ username: info.username }, 'bot started (long polling)');
-      try {
-        await bot.api.setMyCommands(BOT_COMMANDS);
-      } catch (err) {
-        logger.warn({ err }, 'could not set command menu');
-      }
-    },
-  });
+  try {
+    const me = await bot.api.getMe();
+    logger.info({ username: me.username }, 'bot started (concurrent long polling)');
+    await bot.api.setMyCommands(BOT_COMMANDS);
+  } catch (err) {
+    logger.warn({ err }, 'could not set command menu');
+  }
+
+  // Keep the process alive until the runner stops (SIGINT/SIGTERM → shutdown()).
+  await runner.task();
 }
 
 main().catch((err) => {

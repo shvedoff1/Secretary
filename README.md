@@ -90,6 +90,8 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
 | `ENABLE_HUMOR` | no | `false` | Rewrite the **tone** of plain-chat replies via a cheap OpenAI model (facts preserved; factual/tool answers untouched). Needs `OPENAI_API_KEY` |
 | `OPENAI_HUMOR_MODEL` | no | `gpt-5-mini` | Model used for the humorizer pass (and the expense quip) |
+| `OPENAI_REASONING_EFFORT` | no | `minimal` | Reasoning effort sent to the humorizer/quip model. gpt-5-family models reason before answering by default (the reason the pass felt far slower than Claude); `minimal` keeps these trivial tone rewrites fast. Use `none` to omit the field for non-reasoning models (e.g. gpt-4o-mini). One of `none\|minimal\|low\|medium\|high` |
+| `OPENAI_HUMOR_TIMEOUT_MS` | no | `20000` | Hard cap (ms) on a single humorizer/quip OpenAI call; on timeout the humorizer falls back to the original text and the quip is skipped |
 | `ENABLE_EXPENSE_QUIP` | no | `true` | Append a short OpenAI joke to the "✅ Записано" confirmation after an expense is confirmed (display-only, added post-write, so it can't corrupt amounts/names). Needs `OPENAI_API_KEY`; reuses `OPENAI_HUMOR_MODEL` |
 | `DEFAULT_CURRENCY` | no | `EUR` | ISO 4217, used when unstated |
 | `DATABASE_PATH` | no | `./data/bot.sqlite` | SQLite file |

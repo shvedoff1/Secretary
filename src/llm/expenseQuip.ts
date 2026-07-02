@@ -1,5 +1,6 @@
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
+import { reasoningField, humorTimeoutSignal } from './openaiOptions.js';
 
 /**
  * Is the expense-quip pass configured? Needs the feature flag and an OpenAI key
@@ -44,14 +45,17 @@ export async function expenseQuip(summary: string): Promise<string | null> {
         Authorization: `Bearer ${cfg.OPENAI_API_KEY}`,
       },
       // Minimal payload (model + messages) for cross-model compatibility, mirroring
-      // humorize.ts — newer "mini" models reject a custom temperature.
+      // humorize.ts — newer "mini" models reject a custom temperature. reasoning_effort
+      // is the one extra: it keeps gpt-5-mini from slow-reasoning over a one-line joke.
       body: JSON.stringify({
         model: cfg.OPENAI_HUMOR_MODEL,
+        ...reasoningField(),
         messages: [
           { role: 'system', content: QUIP_SYSTEM_PROMPT },
           { role: 'user', content: `Куплено: ${trimmed}` },
         ],
       }),
+      signal: humorTimeoutSignal(),
     });
 
     if (!res.ok) {

@@ -10,6 +10,7 @@ function setEnv(extra: Record<string, string | undefined>): void {
   delete process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_BASE_URL;
   delete process.env.OPENAI_HUMOR_MODEL;
+  delete process.env.OPENAI_REASONING_EFFORT;
   delete process.env.ENABLE_EXPENSE_QUIP;
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...extra })) {
     if (v === undefined) delete process.env[k];
@@ -81,6 +82,18 @@ describe('expenseQuip', () => {
     expect(body.model).toBe('gpt-5-mini');
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[1].content).toContain('Такси, Ужин');
+    // reasoning_effort defaults to 'minimal' so the one-line joke isn't slow-reasoned.
+    expect(body.reasoning_effort).toBe('minimal');
+  });
+
+  it('omits reasoning_effort when OPENAI_REASONING_EFFORT=none', async () => {
+    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_REASONING_EFFORT: 'none' });
+    const fetchMock = vi.fn(async () => completion('joke'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { expenseQuip } = await import('../src/llm/expenseQuip.js');
+    await expenseQuip('Кофе');
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect('reasoning_effort' in body).toBe(false);
   });
 
   it('returns null (never throws) on a non-ok response', async () => {

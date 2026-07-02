@@ -89,11 +89,13 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   single chat updates still run in order (pending previews, edit-target maps, the chime
   timer and lexicon/memory buffers are per-chat mutable state, and a correction must not
   overtake the message it corrects), while different chats run in parallel.
-- OpenAI post-passes (humorizer + expense quip) send `reasoning_effort` (config
-  `OPENAI_REASONING_EFFORT`, default `minimal`) so the gpt-5-family default model doesn't
-  slow-reason over a trivial tone rewrite — the main cause of "openai в разы дольше Клода".
-  `none` omits the field for non-reasoning models. Both calls are also bounded by
-  `OPENAI_HUMOR_TIMEOUT_MS` (default 20s); the shared knobs live in `src/llm/openaiOptions.ts`.
+- OpenAI post-passes (humorizer + expense quip) run on `OPENAI_HUMOR_MODEL` (default
+  `gpt-5.5`) and send `reasoning_effort` (config `OPENAI_REASONING_EFFORT`, default `low`)
+  so the gpt-5-family model doesn't slow-reason over a trivial tone rewrite — the main
+  cause of "openai в разы дольше Клода". `low` (not `minimal`) is the default because pure
+  `minimal` made the rewrite lazy (near-verbatim echoes); `none` omits the field for
+  non-reasoning models. Both calls are also bounded by `OPENAI_HUMOR_TIMEOUT_MS` (default
+  20s); the shared knobs live in `src/llm/openaiOptions.ts`.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

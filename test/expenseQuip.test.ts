@@ -82,8 +82,8 @@ describe('expenseQuip', () => {
     expect(body.model).toBe('gpt-5-mini');
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[1].content).toContain('Такси, Ужин');
-    // reasoning_effort defaults to 'minimal' so the one-line joke isn't slow-reasoned.
-    expect(body.reasoning_effort).toBe('minimal');
+    // reasoning_effort defaults to 'low' so the one-line joke isn't slow-reasoned.
+    expect(body.reasoning_effort).toBe('low');
   });
 
   it('omits reasoning_effort when OPENAI_REASONING_EFFORT=none', async () => {

@@ -42,13 +42,19 @@ describe('config OpenAI humorizer latency knobs', () => {
   afterEach(() => {
     delete process.env.OPENAI_REASONING_EFFORT;
     delete process.env.OPENAI_HUMOR_TIMEOUT_MS;
+    delete process.env.OPENAI_HUMOR_MODEL;
   });
 
-  it('defaults reasoning effort to minimal and timeout to 20s', async () => {
+  it('defaults reasoning effort to low and timeout to 20s', async () => {
     const { loadConfig } = await import('../src/config.js');
     const cfg = loadConfig();
-    expect(cfg.OPENAI_REASONING_EFFORT).toBe('minimal');
+    expect(cfg.OPENAI_REASONING_EFFORT).toBe('low');
     expect(cfg.OPENAI_HUMOR_TIMEOUT_MS).toBe(20_000);
+  });
+
+  it('defaults the humorizer model to gpt-5.5', async () => {
+    const { loadConfig } = await import('../src/config.js');
+    expect(loadConfig().OPENAI_HUMOR_MODEL).toBe('gpt-5.5');
   });
 
   it('honours explicit overrides', async () => {

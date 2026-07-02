@@ -24,16 +24,18 @@ const ConfigSchema = z.object({
   // Off by default and needs OPENAI_API_KEY; it never runs on factual/tool
   // answers (expenses, surf, web search, reminders) so accuracy is preserved.
   ENABLE_HUMOR: boolish.default(false),
-  OPENAI_HUMOR_MODEL: z.string().default('gpt-5-mini'),
+  OPENAI_HUMOR_MODEL: z.string().default('gpt-5.5'),
   // GPT-5-family models are REASONING models: left to their defaults they burn
   // time on hidden reasoning tokens before answering, which makes the humorizer /
   // expense-quip pass feel far slower than Claude even though the task is a trivial
-  // tone rewrite. 'minimal' (the default) tells them to essentially skip reasoning
-  // — the big latency win for these cheap post-passes. Use 'none' to omit the field
-  // entirely for non-reasoning models (e.g. gpt-4o-mini) that reject it.
+  // tone rewrite. This knob dials that down. 'low' (the default) keeps the pass
+  // quick while still giving the model enough headroom to do a real rewrite — pure
+  // 'minimal' turned out to make the tone rewrite lazy (near-verbatim echoes). Use
+  // 'none' to omit the field entirely for non-reasoning models (e.g. gpt-4o-mini)
+  // that reject it.
   OPENAI_REASONING_EFFORT: z
     .enum(['none', 'minimal', 'low', 'medium', 'high'])
-    .default('minimal'),
+    .default('low'),
   // Hard cap (ms) on a single humorizer / expense-quip OpenAI call so a slow tone
   // pass can never hold a reply hostage. On timeout the humorizer falls back to the
   // original text and the quip is skipped — both are best-effort by design.

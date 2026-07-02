@@ -75,8 +75,8 @@ describe('humorize', () => {
     expect(body.messages[1]).toEqual({ role: 'user', content: 'Вот твой кофе.' });
     // Minimal payload — no custom temperature (newer mini models reject it).
     expect(body.temperature).toBeUndefined();
-    // reasoning_effort defaults to 'minimal' so gpt-5-mini doesn't slow-reason.
-    expect(body.reasoning_effort).toBe('minimal');
+    // reasoning_effort defaults to 'low' so the model doesn't slow-reason a rewrite.
+    expect(body.reasoning_effort).toBe('low');
   });
 
   it('honors OPENAI_REASONING_EFFORT and omits the field when none', async () => {

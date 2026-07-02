@@ -42,6 +42,25 @@ describe('SYSTEM_PROMPT receipt-splitting guidance', () => {
   });
 });
 
+// The bot used to instantly agree with any pushback. It should now defend its own
+// take 1-2 times before conceding — but ONLY for opinions/banter, never for facts
+// or task data (reminder times, expense amounts, who splits). Guard both halves so
+// the resistance can't creep into factual corrections or get silently dropped.
+describe('SYSTEM_PROMPT argument-resistance guidance', () => {
+  it('tells the model to hold its position for 1-2 rounds before conceding', () => {
+    expect(SYSTEM_PROMPT).toContain('Standing your ground');
+    expect(SYSTEM_PROMPT).toMatch(/1-2 rounds/);
+    expect(SYSTEM_PROMPT).toMatch(/do NOT\s+instantly cave/);
+  });
+
+  it('scopes resistance to opinions only — never facts or task data', () => {
+    expect(SYSTEM_PROMPT).toMatch(/ONLY for opinions/);
+    expect(SYSTEM_PROMPT).toMatch(/NEVER argue about task data/);
+    // A corrected fact must be accepted, not argued.
+    expect(SYSTEM_PROMPT).toMatch(/corrects a FACT/);
+  });
+});
+
 describe('buildContextBlock never carries slang', () => {
   const base = {
     defaultCurrency: 'EUR',

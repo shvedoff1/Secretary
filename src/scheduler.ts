@@ -9,7 +9,7 @@ import {
   type ScheduledTask,
 } from './db/repos/scheduledTask.repo.js';
 import { nextRunMs } from './util/schedule.js';
-import { mdToTelegramHtml, stripMarkdown } from './util/telegramHtml.js';
+import { sendRichMarkdown } from './util/richMessage.js';
 import { humorizeWithPreview } from './llm/humorize.js';
 import { getLexicon } from './db/repos/lexicon.repo.js';
 import { getRecentChat } from './bot/recentChat.js';
@@ -59,12 +59,7 @@ export function scheduledMemory(
 }
 
 async function sendMarkdown(bot: Bot, chatId: number, text: string): Promise<void> {
-  try {
-    await bot.api.sendMessage(chatId, mdToTelegramHtml(text), { parse_mode: 'HTML' });
-  } catch (err) {
-    logger.warn({ err, chatId }, 'scheduled HTML send failed, falling back to plain');
-    await bot.api.sendMessage(chatId, stripMarkdown(text));
-  }
+  await sendRichMarkdown(bot.api, chatId, text);
 }
 
 async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {

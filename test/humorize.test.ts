@@ -75,8 +75,8 @@ describe('humorize', () => {
     expect(body.messages[1]).toEqual({ role: 'user', content: 'Вот твой кофе.' });
     // Minimal payload — no custom temperature (newer mini models reject it).
     expect(body.temperature).toBeUndefined();
-    // reasoning_effort defaults to 'minimal' so gpt-5-mini doesn't slow-reason.
-    expect(body.reasoning_effort).toBe('minimal');
+    // reasoning_effort defaults to 'low' so the model doesn't slow-reason a rewrite.
+    expect(body.reasoning_effort).toBe('low');
   });
 
   it('honors OPENAI_REASONING_EFFORT and omits the field when none', async () => {
@@ -261,6 +261,20 @@ describe('buildHumorSystemPrompt', () => {
     expect(buildHumorSystemPrompt([])).toBe(base);
     // A term that is only whitespace is dropped, leaving the base prompt.
     expect(buildHumorSystemPrompt([{ term: '   ' }])).toBe(base);
+  });
+
+  it('pushes hard for a real rewrite (not a timid touch-up)', async () => {
+    setEnv({});
+    const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');
+    const base = buildHumorSystemPrompt();
+    // The prompt must demand a transformation and forbid echoing the input verbatim.
+    expect(base).toContain('REWRITE');
+    expect(base).toContain('verbatim');
+    expect(base).toContain('clearly DIFFERENT');
+    // And it carries a worked example whose only surviving fact is the time.
+    expect(base).toContain('18:00');
+    // Facts stay locked regardless of how hard we push the tone.
+    expect(base).toContain('character-for-character');
   });
 
   it('appends the slang list, respecting glosses', async () => {

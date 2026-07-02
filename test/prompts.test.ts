@@ -50,14 +50,23 @@ describe('SYSTEM_PROMPT argument-resistance guidance', () => {
   it('tells the model to hold its position for 1-2 rounds before conceding', () => {
     expect(SYSTEM_PROMPT).toContain('Standing your ground');
     expect(SYSTEM_PROMPT).toMatch(/1-2 rounds/);
-    expect(SYSTEM_PROMPT).toMatch(/do NOT\s+instantly cave/);
+    expect(SYSTEM_PROMPT).toMatch(/do NOT fold on the first push/);
   });
 
-  it('scopes resistance to opinions only — never facts or task data', () => {
-    expect(SYSTEM_PROMPT).toMatch(/ONLY for opinions/);
-    expect(SYSTEM_PROMPT).toMatch(/NEVER argue about task data/);
-    // A corrected fact must be accepted, not argued.
-    expect(SYSTEM_PROMPT).toMatch(/corrects a FACT/);
+  // The first version caved on «я не пробиваемый» because the model read a boast
+  // as a "fact to accept". Guard that banter/boasts/denials are explicitly framed
+  // as an invitation to spar, NOT a correction to accept.
+  it('treats a boast/denial as banter to spar with, not a fact to accept', () => {
+    expect(SYSTEM_PROMPT).toMatch(/INVITATION to spar/);
+    expect(SYSTEM_PROMPT).toContain('неуязвим');
+    expect(SYSTEM_PROMPT).toMatch(/Do NOT treat it as a\s+correction/);
+  });
+
+  // Resistance must never leak into real corrections or task data.
+  it('still accepts objective-fact corrections and task data immediately', () => {
+    expect(SYSTEM_PROMPT).toMatch(/OBJECTIVE fact you got wrong/);
+    expect(SYSTEM_PROMPT).toMatch(/Task data & instructions/);
+    expect(SYSTEM_PROMPT).toContain('дели на троих');
   });
 });
 

@@ -263,6 +263,20 @@ describe('buildHumorSystemPrompt', () => {
     expect(buildHumorSystemPrompt([{ term: '   ' }])).toBe(base);
   });
 
+  it('pushes hard for a real rewrite (not a timid touch-up)', async () => {
+    setEnv({});
+    const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');
+    const base = buildHumorSystemPrompt();
+    // The prompt must demand a transformation and forbid echoing the input verbatim.
+    expect(base).toContain('REWRITE');
+    expect(base).toContain('verbatim');
+    expect(base).toContain('clearly DIFFERENT');
+    // And it carries a worked example whose only surviving fact is the time.
+    expect(base).toContain('18:00');
+    // Facts stay locked regardless of how hard we push the tone.
+    expect(base).toContain('character-for-character');
+  });
+
   it('appends the slang list, respecting glosses', async () => {
     setEnv({});
     const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');

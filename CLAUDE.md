@@ -108,4 +108,9 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `chat_config` row (only Splid-linked ones), so chat-wide settings live in `chat_settings`.
 - LLM cost: the stable prefix (tool schemas + system prompt) is prompt-cached via
   `cache_control` in `assistant.ts`. Keep `SYSTEM_PROMPT` static so the cache holds.
-- Model is configurable via `ANTHROPIC_MODEL` (default `claude-sonnet-4-6`).
+- Model is configurable via `ANTHROPIC_MODEL` (default `claude-sonnet-5`). The assistant
+  call sends `thinking: {type: 'disabled'}` explicitly: on Sonnet 5 adaptive thinking turns
+  ON by default when `thinking` is omitted, which would add latency to every tool-routing
+  turn and eat into the 2048-token `max_tokens` budget (thinking counts against it). Disabling
+  keeps the snappy Sonnet-4.6 behaviour; flip it to `{type:'adaptive'}` + a bigger `max_tokens`
+  if you ever want reasoning.

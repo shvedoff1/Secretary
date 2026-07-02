@@ -19,9 +19,9 @@ describe('config ANTHROPIC_MODEL', () => {
     delete process.env.ANTHROPIC_MODEL;
   });
 
-  it('defaults to claude-sonnet-4-6 when unset', async () => {
+  it('defaults to claude-sonnet-5 when unset', async () => {
     const { loadConfig } = await import('../src/config.js');
-    expect(loadConfig().ANTHROPIC_MODEL).toBe('claude-sonnet-4-6');
+    expect(loadConfig().ANTHROPIC_MODEL).toBe('claude-sonnet-5');
   });
 
   it('honours an explicit override', async () => {

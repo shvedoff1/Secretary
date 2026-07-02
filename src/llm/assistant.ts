@@ -152,6 +152,13 @@ export async function runAssistant(
     const res = await anthropic.messages.create({
       model: cfg.ANTHROPIC_MODEL,
       max_tokens: 2048,
+      // Keep thinking OFF explicitly. On Sonnet 5 (the default model) adaptive
+      // thinking turns ON whenever `thinking` is omitted — that would add latency
+      // to every tool-routing turn AND eat into the 2048-token budget (thinking
+      // counts against max_tokens), risking a truncated answer / tool-call JSON.
+      // Disabling keeps the snappy, budget-safe behaviour we had on Sonnet 4.6;
+      // it's a no-op on models where thinking was already off.
+      thinking: { type: 'disabled' },
       // Cache the stable prefix (tools render before system, so one breakpoint on
       // the system block caches both tool schemas + system prompt). Re-reads cost
       // ~0.1x: this is the main lever against per-call token cost.

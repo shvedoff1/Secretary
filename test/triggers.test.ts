@@ -39,6 +39,13 @@ describe('looksLikeExpense', () => {
     expect(looksLikeExpense('300 за пиво скинул')).toBe(true);
     expect(looksLikeExpense('за 500 взял кофе')).toBe(true);
   });
+  it('catches a spoken «запиши трату …» even without «потратил»', () => {
+    // Regression: EXPENSE_KEYWORDS only had «потрат», so «трату/трата» slipped
+    // through and a voice "запиши трату 10 тысяч …" was ignored.
+    expect(looksLikeExpense('запиши трату 10 тысяч за душ')).toBe(true);
+    expect(looksLikeExpense('это трата 500')).toBe(true);
+    expect(looksLikeExpense('трата какая-то')).toBe(false); // no number → not a spend
+  });
 });
 
 describe('isMoneyContext', () => {
@@ -106,6 +113,14 @@ describe('addressesBotByName', () => {
     expect(addressesBotByName('ботик, расскажи анекдот')).toBe(true);
     expect(addressesBotByName('Sky, what is the weather?')).toBe(true);
     expect(addressesBotByName('Mrs White, when is the meeting?')).toBe(true);
+  });
+
+  it('answers to «секретарь» and to imperative asks (not just questions)', () => {
+    // The user calls it «Господин секретарь» and gives imperative orders by voice.
+    expect(addressesBotByName('Господин секретарь, запишите трату 10 тысяч')).toBe(true);
+    expect(addressesBotByName('секретарь, добавь это в траты')).toBe(true);
+    expect(addressesBotByName('Бот, это трата запомни')).toBe(true);
+    expect(addressesBotByName('скай, запиши расход')).toBe(true);
   });
 
   it('requires both a name and a question/request marker', () => {

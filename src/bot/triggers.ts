@@ -7,8 +7,10 @@ import { getExpenseTerms } from '../db/repos/expenseTerm.repo.js';
 // flagged huge swathes of normal chatter as money and suppressed the humorizer
 // (only ~1 in 5 replies reached OpenAI). "за" only signals a spend when it sits
 // next to an amount ("за 500", "300 за пиво"), so require an adjacent number.
+// `трат` covers «трата / трату / траты / потратил» (a spoken «запиши трату 500»
+// is one of the most common voice phrasings), and superset the old `потрат`.
 const EXPENSE_KEYWORDS =
-  /(потрат|заплат|оплат|скинул|должен|долж|купил|чек|счет|счёт|за\s+\d|\d\s+за\s|spent|paid|bought|cost|bill|check|lunch|dinner|breakfast|taxi|такси|обед|ужин|завтрак|груш|product|grocer|store|shop|кафе|cafe|restaurant|рестора)/i;
+  /(трат|заплат|оплат|скинул|должен|долж|купил|чек|счет|счёт|за\s+\d|\d\s+за\s|spent|paid|bought|cost|bill|check|lunch|dinner|breakfast|taxi|такси|обед|ужин|завтрак|груш|product|grocer|store|shop|кафе|cafe|restaurant|рестора)/i;
 
 /** Heuristic: does this text look like it reports a spend? Requires a number. */
 export function looksLikeExpense(text: string): boolean {
@@ -64,13 +66,18 @@ export function isMoneyContext(args: {
 // Names/nicknames the bot answers to when addressed by name. Cyrillic isn't a
 // JS \w char, so \b boundaries don't work here — use letter lookarounds instead.
 // "бот" forms are listed explicitly (nominative/vocative) to avoid matching
-// inside words like "работа"/"ботинки".
+// inside words like "работа"/"ботинки". "секретар…" (the project's persona — the
+// user calls it «Господин секретарь») covers the common inflections
+// секретарь/секретаря/секретарю/секретарём/секретаре.
 const BOT_NAME =
-  /(?<![а-яёa-z])(скай(лер[а-яё]{0,2})?|sky(ler)?|мисс(ис)?\.?\s+вайт|(miss|mrs?)\.?\s+white|ботик[ауе]?|ботяр[ауые]?|бот|bot)(?![а-яёa-z])/i;
+  /(?<![а-яёa-z])(скай(лер[а-яё]{0,2})?|sky(ler)?|мисс(ис)?\.?\s+вайт|(miss|mrs?)\.?\s+white|секретар[ьяюеё]?м?|ботик[ауе]?|ботяр[ауые]?|бот|bot)(?![а-яёa-z])/i;
 
 // Question / direct-request markers, paired with a bot-name mention below.
+// Besides questions, imperative asks the bot actually gets by voice/text —
+// «запиши/запомни трату», «добавь», «удали», «отметь», bare «трата/трату» — count
+// as a direct request so "Бот, это трата запомни" isn't dropped as chatter.
 const QUESTION_OR_REQUEST =
-  /[?？]|(?<![а-яёa-z])(что|чё|как|почему|зачем|когда|где|куда|откуда|сколько|какой|какая|какое|какие|кто|можешь|можно|подскажи|подскажешь|расскажи|расскажешь|напомни|посчитай|скажи|покажи|what|how|why|when|where|who|which|can|could|would|tell|does)(?![а-яёa-z])/i;
+  /[?？]|(?<![а-яёa-z])(что|чё|как|почему|зачем|когда|где|куда|откуда|сколько|какой|какая|какое|какие|кто|можешь|можно|подскажи|подскажешь|расскажи|расскажешь|напомни|запомни|запомните|запиши|запишите|добавь|добавьте|удали|удалите|отметь|отметьте|учти|учтите|трата|трату|траты|посчитай|скажи|покажи|what|how|why|when|where|who|which|can|could|would|tell|does)(?![а-яёa-z])/i;
 
 /**
  * Does this text address the bot by name with a question or direct request?

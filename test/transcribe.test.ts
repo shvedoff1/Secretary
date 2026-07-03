@@ -10,6 +10,7 @@ const BASE_ENV: Record<string, string> = {
 function setEnv(extra: Record<string, string | undefined>): void {
   delete process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_TRANSCRIBE_MODEL;
+  delete process.env.OPENAI_TRANSCRIBE_PROMPT;
   delete process.env.OPENAI_BASE_URL;
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...extra })) {
     if (v === undefined) delete process.env[k];
@@ -59,6 +60,25 @@ describe('transcribe', () => {
     const body = init.body as FormData;
     expect(body.get('model')).toBe('whisper-1');
     expect(body.get('file')).toBeInstanceOf(Blob);
+    // Domain-priming prompt is sent by default to bias spelling toward expenses.
+    expect(body.get('prompt')).toMatch(/трат/);
+  });
+
+  it('sends a custom priming prompt and omits it when blank', async () => {
+    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_TRANSCRIBE_PROMPT: 'кофе латте раф' });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ text: 'ok' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    let { transcribeAudio } = await import('../src/llm/transcribe.js');
+    await transcribeAudio(Buffer.from('x'), 'voice.ogg', 'audio/ogg');
+    expect((fetchMock.mock.calls[0][1]!.body as FormData).get('prompt')).toBe('кофе латте раф');
+
+    vi.resetModules();
+    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_TRANSCRIBE_PROMPT: '' });
+    const fetchMock2 = vi.fn(async () => new Response(JSON.stringify({ text: 'ok' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock2);
+    ({ transcribeAudio } = await import('../src/llm/transcribe.js'));
+    await transcribeAudio(Buffer.from('x'), 'voice.ogg', 'audio/ogg');
+    expect((fetchMock2.mock.calls[0][1]!.body as FormData).get('prompt')).toBeNull();
   });
 
   it('honors a custom OPENAI_BASE_URL', async () => {

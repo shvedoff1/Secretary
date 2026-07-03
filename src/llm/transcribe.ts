@@ -28,6 +28,11 @@ export async function transcribeAudio(
   form.append('file', new Blob([new Uint8Array(audio)], { type: mimeType }), filename);
   form.append('model', cfg.OPENAI_TRANSCRIBE_MODEL);
   form.append('response_format', 'json');
+  // Domain priming: bias spelling/vocabulary toward expenses, amounts and names
+  // so short spoken spends transcribe cleaner. Best-effort — skip when unset.
+  if (cfg.OPENAI_TRANSCRIBE_PROMPT) {
+    form.append('prompt', cfg.OPENAI_TRANSCRIBE_PROMPT);
+  }
 
   const res = await fetch(`${cfg.OPENAI_BASE_URL}/audio/transcriptions`, {
     method: 'POST',

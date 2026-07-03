@@ -18,6 +18,15 @@ const ConfigSchema = z.object({
   // so no extra npm dependency is needed.
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_TRANSCRIBE_MODEL: z.string().default('whisper-1'),
+  // Priming text sent to the transcription API as `prompt`. Whisper uses it to
+  // bias spelling/vocabulary — nudging it toward this bot's domain (expenses,
+  // amounts, currencies, Russian names) so a spoken «запиши трату 10 тысяч …»
+  // comes back cleaner instead of garbled. Set empty to disable.
+  OPENAI_TRANSCRIBE_PROMPT: z
+    .string()
+    .default(
+      'Голосовое сообщение боту-секретарю про траты и расходы: суммы, рубли, доллары, рупии, имена людей, кто за кого платил и на кого делить.',
+    ),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   // Optional "humorizer" pass: after Anthropic produces an accurate answer, a
   // cheap OpenAI model rewrites the TONE of plain-chat replies to be funnier.

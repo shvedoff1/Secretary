@@ -32,3 +32,20 @@ export function formatMoney(amountMinor: number, currency: string): string {
   const major = minorToMajor(amountMinor, currency);
   return `${major.toFixed(d)} ${currency.toUpperCase()}`;
 }
+
+// Expense-intent stems (RU) and words (EN). Paired with a number, they mark a line
+// as a spend record — the kind of thing that belongs in the expense provider (Splid),
+// not the chat's long-term memory. Kept deliberately conservative: it keys on an
+// explicit spend verb, so an FX rate or a phone number (digits, but no spend intent)
+// is NOT mistaken for an expense.
+const EXPENSE_INTENT =
+  /(расход|трат|заплат|оплат|платил|плачу|делит|делен|скинул|скидыв|должен|должн|split|paid|spent|owe|receipt)/iu;
+
+/**
+ * Heuristic: does this free-text note read like a recorded shared expense
+ * ("Расход на кофе 260 тыс, платил Антон, делится…")? Requires BOTH a number and an
+ * explicit spend-intent word, so plain facts that merely mention money survive.
+ */
+export function looksLikeExpense(text: string): boolean {
+  return /\d/.test(text) && EXPENSE_INTENT.test(text);
+}

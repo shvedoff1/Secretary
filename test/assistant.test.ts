@@ -64,6 +64,7 @@ function expenseResponse(
 
 const handlers = {
   remember: () => 'Запомнил.',
+  editMemory: () => 'Поправил.',
   scheduleTask: () => 'ok',
   surfForecast: async () => 'forecast',
   addPoi: () => 'added',

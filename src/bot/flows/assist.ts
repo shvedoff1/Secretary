@@ -13,7 +13,13 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
-import { getMemoryForContext, insertPinned } from '../../db/repos/memoryItem.repo.js';
+import {
+  getMemoryForContext,
+  insertPinned,
+  findMemoryItemByText,
+  editMemoryItemContent,
+  removeMemoryItem,
+} from '../../db/repos/memoryItem.repo.js';
 import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
@@ -30,7 +36,12 @@ import {
   isValidTimezone,
   formatInTimezone,
 } from '../../util/schedule.js';
-import type { ScheduleTaskInput, AddPoiInput, EditLexiconInput } from '../../llm/schema.js';
+import type {
+  ScheduleTaskInput,
+  AddPoiInput,
+  EditLexiconInput,
+  EditMemoryInput,
+} from '../../llm/schema.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -46,6 +57,62 @@ import {
 } from '../../db/repos/pending.repo.js';
 import { previewKeyboard } from '../keyboards.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
+import { looksLikeExpense } from '../../util/money.js';
+
+/**
+ * Handle the `remember` tool / explicit "запомни …": pin the note, but keep recorded
+ * expenses out of memory — those belong in Splid. When `replaces` is given (a
+ * correction/contradiction), the superseded facts are removed first so the new note
+ * overrides them instead of coexisting. The "push back once before overriding" is the
+ * model's job (prompt-driven); by the time this runs the override is already confirmed.
+ */
+export function rememberNote(chatId: number, note: string, replaces?: string[]): string {
+  if (looksLikeExpense(note)) {
+    return 'Это похоже на трату — такое в память не пишу, для трат есть Splid. Если это правда трата — просто скажи её как трату, я оформлю. 🤙';
+  }
+  // Resolve EVERY superseded fact against the current (unmutated) state first, then
+  // remove — otherwise an earlier removal could turn a later `replaces` entry that was
+  // safely ambiguous into a unique match and nuke an unrelated fact.
+  const requested = replaces ?? [];
+  const ids = new Set<number>();
+  let unresolved = 0;
+  for (const text of requested) {
+    const match = findMemoryItemByText(chatId, text);
+    if (match) ids.add(match.id);
+    else unresolved++;
+  }
+  const removed: string[] = [];
+  for (const id of ids) {
+    const content = removeMemoryItem(chatId, id);
+    if (content !== null) removed.push(content);
+  }
+  insertPinned(chatId, note);
+
+  if (requested.length === 0) return 'Запомнил.';
+  if (removed.length === 0) {
+    // The override was asked for but nothing matched — say so, so a stale contradicting
+    // fact doesn't silently survive alongside the new one under a "done" confirmation.
+    return `Записал: ${note}. Но старое, что нужно было заменить, не нашёл — глянь /memory, могло остаться противоречие.`;
+  }
+  const tail = unresolved > 0 ? ' (часть старого не нашёл — глянь /memory)' : '';
+  return `Обновил — заменил «${removed.join('», «')}»${tail}. Теперь у меня записано: ${note}`;
+}
+
+/**
+ * Build the `edit_memory` handler for a chat: fix an existing remembered fact in place
+ * (the "поправь/исправь в памяти …" flow). Matches the target fact forgivingly; if it
+ * can't be pinned down, it says so rather than editing the wrong thing.
+ */
+export function makeEditMemoryHandler(chatId: number): (input: EditMemoryInput) => string {
+  return ({ find, replace }) => {
+    const match = findMemoryItemByText(chatId, find);
+    if (!match) {
+      return `Не нашёл в памяти «${find}». Глянь /memory — там точные формулировки, скажи какую менять.`;
+    }
+    editMemoryItemContent(chatId, match.id, replace);
+    return `Поправил: «${match.content}» → «${replace.trim()}». 🤙`;
+  };
+}
 
 export function senderName(ctx: Context): string {
   const u = ctx.from;
@@ -312,6 +379,10 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
     chatBudget: cfg.MEMORY_CONTEXT_CHAT,
     userBudget: cfg.MEMORY_CONTEXT_USER,
+    pinnedChatBudget: cfg.MEMORY_CONTEXT_PINNED,
+    otherUserBudget: cfg.MEMORY_CONTEXT_OTHER,
+    maxOtherUsers: cfg.MEMORY_CONTEXT_MAX_OTHERS,
+    personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
   });
 
   let result: AssistantResult;
@@ -325,6 +396,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           subject: u.subject,
           items: u.items.map((i) => ({ content: i.content })),
         })),
+        memoryPersona: memorySel.persona.map((i) => ({ content: i.content })),
         senderName: senderName(ctx),
         timezone: getTimezone(chatId),
         splidConnected: !!chatCfg?.provider_group_id,
@@ -338,10 +410,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         userContent: args.userContent,
       },
       {
-        remember: (note) => {
-          insertPinned(chatId, note);
-          return 'Запомнил.';
-        },
+        remember: (input) => rememberNote(chatId, input.note, input.replaces),
+        editMemory: makeEditMemoryHandler(chatId),
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         editLexicon: makeEditLexiconHandler(chatId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
@@ -536,7 +606,8 @@ async function rewordPendingInner(
       userContent: correctionContent,
     },
     {
-      remember: (note) => (insertPinned(chatId, note), 'Запомнил.'),
+      remember: (input) => rememberNote(chatId, input.note, input.replaces),
+      editMemory: makeEditMemoryHandler(chatId),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       editLexicon: makeEditLexiconHandler(chatId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),

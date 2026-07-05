@@ -3,6 +3,7 @@ import {
   buildTools,
   RECORD_EXPENSE_TOOL,
   REMEMBER_TOOL,
+  EDIT_MEMORY_TOOL,
   LEARN_EXPENSE_TOOL,
   EDIT_LEXICON_TOOL,
   SCHEDULE_TASK_TOOL,
@@ -63,6 +64,16 @@ describe('buildTools', () => {
     expect(got).not.toContain(REMEMBER_TOOL);
     expect(got).not.toContain(SCHEDULE_TASK_TOOL);
     expect(got).toContain('web_search'); // search still allowed when a task fires
+  });
+
+  it('exposes edit_memory by default and omits it for scheduled runs', () => {
+    expect(names(buildTools({ enableWebSearch: false, enableExpense: false }))).toContain(
+      EDIT_MEMORY_TOOL,
+    );
+    const scheduled = names(
+      buildTools({ enableWebSearch: true, enableExpense: false, enableMemoryEdit: false }),
+    );
+    expect(scheduled).not.toContain(EDIT_MEMORY_TOOL);
   });
 
   it('exposes learn_expense_pattern by default (any chat) and omits it for scheduled runs', () => {

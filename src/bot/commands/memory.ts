@@ -1,12 +1,12 @@
 import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import {
-  insertPinned,
   removeMemoryItem,
   clearMemoryItems,
   listMemoryItemsForDisplay,
 } from '../../db/repos/memoryItem.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
+import { rememberNote } from '../flows/assist.js';
 
 export async function cmdMemory(ctx: Context): Promise<void> {
   if (!ctx.chat) return;
@@ -15,18 +15,19 @@ export async function cmdMemory(ctx: Context): Promise<void> {
     await ctx.reply('Память чата пуста. Добавьте: /remember <текст>');
     return;
   }
-  // 📌 marks a pinned (explicitly remembered) fact; "→ Имя" tags a per-person fact.
+  // 📌 marks a pinned (explicitly remembered) fact; 🎭 a voice/style directive;
+  // "→ Имя" tags a per-person fact.
   const body = items
     .map((it, i) => {
-      const pin = it.pinned ? '📌 ' : '';
+      const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : '';
       const who = it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : '';
-      return `${i + 1}. ${pin}${it.content}${who}`;
+      return `${i + 1}. ${tag}${it.content}${who}`;
     })
     .join('\n');
   await ctx.reply(
     `🧠 Память чата:\n${body}\n\n` +
-      '📌 — закреплено (не забывается). Забыть один пункт: /forget <номер>. ' +
-      'Стереть всё (и историю диалога): /forget',
+      '📌 — закреплено (не забывается), 🎭 — стиль/повадки. Забыть один пункт: ' +
+      '/forget <номер>. Стереть всё (и историю диалога): /forget',
   );
 }
 
@@ -37,8 +38,7 @@ export async function cmdRemember(ctx: Context): Promise<void> {
     await ctx.reply('Использование: /remember <что запомнить>');
     return;
   }
-  insertPinned(ctx.chat.id, note);
-  await ctx.reply('🧠 Запомнил.');
+  await ctx.reply(rememberNote(ctx.chat.id, note).replace(/^Запомнил\.$/, '🧠 Запомнил.'));
 }
 
 export async function cmdForget(ctx: Context): Promise<void> {

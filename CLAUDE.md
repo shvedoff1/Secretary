@@ -45,8 +45,19 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `recordChatMessage`/`getRecentChat`, shared with the scheduler so a humour task can
   riff on it too) and fed in as context. Off via `ENABLE_CHIME=false`.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
-  learn_expense_pattern | edit_lexicon | schedule_task | surf_forecast | add_poi |
-  spending_report | web_search`. Tools in `tools.ts`, Zod + JSON schemas
+  edit_memory | learn_expense_pattern | edit_lexicon | schedule_task | surf_forecast |
+  add_poi | spending_report | web_search`. `remember` pins a fact verbatim and can
+  SUPERSEDE contradicted facts (its `replaces` arg → the handler fuzzy-matches and
+  removes them first, so a correction overrides instead of coexisting; the model pushes
+  back once before overriding — prompt-driven). `edit_memory` fixes an existing fact in
+  place (fuzzy `find` → overwrite with `replace`). Explicit/pinned chat facts get their
+  own guaranteed context budget (`MEMORY_CONTEXT_PINNED`, separate from the rotating
+  `MEMORY_CONTEXT_CHAT`) so a remembered fact always reaches the model. Bulk cleanup of
+  ACCUMULATED conflicts (what `/dedupememory`'s exact-match fold can't catch) is the
+  admin `/reconcile <chatId>` command → `src/llm/reconcile.ts` (a one-shot Haiku pass over
+  the whole store proposing deletes/merges) → dry-run preview → `/reconcile <chatId> apply`
+  (`applyReconcilePlan`); it never changes memory without the admin confirming. Tools in
+  `tools.ts`, Zod + JSON schemas
   in `schema.ts`, system prompt + context block in `prompts.ts`. `edit_lexicon`
   corrects the stored MEANING of a learned slang word (the "поменяй значение у X на Y"
   flow → `lexicon.repo.ts` `setGloss`, exact-then-unique-containment match; never

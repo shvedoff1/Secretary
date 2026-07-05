@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   recordExpenseJsonSchema,
   rememberJsonSchema,
+  editMemoryJsonSchema,
   learnExpenseJsonSchema,
   editLexiconJsonSchema,
   scheduleTaskJsonSchema,
@@ -12,6 +13,7 @@ import {
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
 export const REMEMBER_TOOL = 'remember';
+export const EDIT_MEMORY_TOOL = 'edit_memory';
 export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
 export const EDIT_LEXICON_TOOL = 'edit_lexicon';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
@@ -25,6 +27,9 @@ export interface ToolOptions {
   enableExpense: boolean;
   /** Expose the remember tool. Default true; disabled for scheduled runs. */
   enableRemember?: boolean;
+  /** Expose the edit_memory tool (fix an existing remembered fact in place). Default
+   *  true; disabled for scheduled runs (a firing task shouldn't rewrite memory). */
+  enableMemoryEdit?: boolean;
   /** Expose the learn_expense_pattern tool. Default true; disabled for scheduled runs. */
   enableExpenseLearning?: boolean;
   /** Expose the edit_lexicon tool (correct a slang word's meaning). Default true;
@@ -63,8 +68,17 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
     tools.push({
       name: REMEMBER_TOOL,
       description:
-        'Save a durable note to long-term memory. ONLY call this when the user EXPLICITLY asks to remember/save something (e.g. "запомни…", "сохрани…", "remember that…"). Never auto-remember expenses, receipts, or casual chatter.',
+        'Save a durable note to long-term memory. ONLY call this when the user EXPLICITLY asks to remember/save something (e.g. "запомни…", "сохрани…", "remember that…"). Never auto-remember expenses, receipts, or casual chatter. If the note corrects/contradicts a fact already in the context memory, pass those facts verbatim in `replaces` so the new note overrides them instead of coexisting.',
       input_schema: rememberJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableMemoryEdit !== false) {
+    tools.push({
+      name: EDIT_MEMORY_TOOL,
+      description:
+        "Fix an EXISTING remembered fact in place — the «поправь/исправь в памяти …», «запись неверная, поменяй …» flow. Call this when the user wants to correct a fact the bot already stored (a typo, a wrong detail) WITHOUT adding a new one. Pass `find` = the current fact copied verbatim from the context memory sections, `replace` = the corrected full text. To ADD a new fact use remember; to change what a slang word MEANS use edit_lexicon.",
+      input_schema: editMemoryJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

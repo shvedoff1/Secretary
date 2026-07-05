@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   effectiveWeight,
+  normalizeForDedup,
   selectForContext,
   selectForPrune,
   PINNED_FLOOR,
@@ -70,6 +71,17 @@ describe('effectiveWeight decay', () => {
   });
 });
 
+describe('normalizeForDedup', () => {
+  it('folds casing, ё, punctuation and whitespace', () => {
+    expect(normalizeForDedup('Миша — это Михалыч.')).toBe(normalizeForDedup('миша это михалыч'));
+    expect(normalizeForDedup('всё ещё  болеет!!!')).toBe('все еще болеет');
+  });
+
+  it('keeps genuinely different facts distinct', () => {
+    expect(normalizeForDedup('любит серф')).not.toBe(normalizeForDedup('любит техно'));
+  });
+});
+
 describe('selectForContext', () => {
   const SENDER = 100;
   const OTHER = 200;
@@ -82,8 +94,11 @@ describe('selectForContext', () => {
     item({ id: 10, scope: 'user', tgUserId: SENDER, subject: 'Sky', importance: 5, content: 'U1' }),
     item({ id: 11, scope: 'user', tgUserId: SENDER, subject: 'Sky', importance: 2, content: 'U2' }),
     item({ id: 20, scope: 'user', tgUserId: OTHER, subject: 'Max', importance: 4, content: 'O1' }),
+    item({ id: 21, scope: 'user', tgUserId: OTHER, subject: 'Max', importance: 3, content: 'O2' }),
     item({ id: 30, scope: 'user', tgUserId: ABSENT, subject: 'Joe', importance: 4, content: 'X' }),
     item({ id: 40, scope: 'user', tgUserId: null, subject: 'Ghost', importance: 4, content: 'N' }),
+    item({ id: 50, scope: 'persona', tgUserId: null, subject: '', importance: 5, content: 'P1' }),
+    item({ id: 51, scope: 'persona', tgUserId: null, subject: '', importance: 3, content: 'P2' }),
   ];
 
   const sel = selectForContext(items, {
@@ -95,7 +110,7 @@ describe('selectForContext', () => {
     userBudget: 1,
   });
 
-  it('returns the top-N chat facts by weight', () => {
+  it('returns the top-N chat facts by weight (persona excluded)', () => {
     expect(sel.chat.map((i) => i.content)).toEqual(['A', 'B']);
   });
 
@@ -109,6 +124,65 @@ describe('selectForContext', () => {
     expect(ids).toContain(OTHER);
     expect(ids).not.toContain(ABSENT);
     expect(ids).not.toContain(null);
+  });
+
+  it('collects persona directives into their own bucket, not the chat facts', () => {
+    expect(sel.persona.map((i) => i.content)).toEqual(['P1', 'P2']);
+    expect(sel.chat.map((i) => i.content)).not.toContain('P1');
+  });
+
+  it('guarantees pinned chat facts reach context even past the passive budget', () => {
+    // Many pinned chat facts plus one strong passive fact; passive budget is tiny.
+    const many: WeightedItem[] = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        item({ id: 100 + i, scope: 'chat', source: 'explicit', importance: 3, content: `PIN${i}` }),
+      ),
+      item({ id: 200, scope: 'chat', source: 'passive', importance: 5, content: 'PASS' }),
+    ];
+    const out = selectForContext(many, {
+      now: NOW,
+      halfLifeDays: HALF,
+      senderTgUserId: SENDER,
+      recentParticipantIds: [],
+      chatBudget: 1,
+      userBudget: 1,
+    });
+    const contents = out.chat.map((i) => i.content);
+    // All 10 pinned facts survive (their own generous budget), not squeezed by the
+    // 1-slot passive budget; the passive fact still gets its one slot.
+    for (let i = 0; i < 10; i++) expect(contents).toContain(`PIN${i}`);
+    expect(contents).toContain('PASS');
+  });
+
+  it('caps pinned chat facts at the pinned budget', () => {
+    const many: WeightedItem[] = Array.from({ length: 5 }, (_, i) =>
+      item({ id: 300 + i, scope: 'chat', source: 'explicit', importance: 5 - i, content: `P${i}` }),
+    );
+    const out = selectForContext(many, {
+      now: NOW,
+      halfLifeDays: HALF,
+      senderTgUserId: SENDER,
+      recentParticipantIds: [],
+      chatBudget: 8,
+      userBudget: 1,
+      pinnedChatBudget: 2,
+    });
+    // Only the top-2 by weight (highest importance) survive.
+    expect(out.chat.map((i) => i.content)).toEqual(['P0', 'P1']);
+  });
+
+  it('honours a deeper other-user budget for richer per-person blocks', () => {
+    const deep = selectForContext(items, {
+      now: NOW,
+      halfLifeDays: HALF,
+      senderTgUserId: SENDER,
+      recentParticipantIds: [SENDER, OTHER],
+      chatBudget: 2,
+      userBudget: 1,
+      otherUserBudget: 2,
+    });
+    const max = deep.users.find((u) => u.tgUserId === OTHER)!;
+    expect(max.items.map((i) => i.content)).toEqual(['O1', 'O2']);
   });
 });
 

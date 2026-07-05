@@ -46,8 +46,18 @@ export function toParsedExpense(input: RecordExpenseInput): ParsedExpense {
 
 export const RememberZ = z.object({
   note: z.string().min(1),
+  // Existing remembered facts (verbatim, as shown in context) that this note
+  // supersedes/contradicts and should replace. The handler fuzzy-matches and removes
+  // them before pinning the new note, so a correction overrides instead of piling up.
+  replaces: z.array(z.string().min(1)).optional(),
 });
 export type RememberInput = z.infer<typeof RememberZ>;
+
+export const EditMemoryZ = z.object({
+  find: z.string().min(1),
+  replace: z.string().min(1),
+});
+export type EditMemoryInput = z.infer<typeof EditMemoryZ>;
 
 export const LearnExpenseZ = z.object({
   keywords: z.array(z.string().min(1)).min(1).max(20),
@@ -178,8 +188,32 @@ export const rememberJsonSchema = {
       description:
         'A concise fact to remember about this chat/group (trip, preferences, corrections).',
     },
+    replaces: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Optional. If this note CORRECTS or CONTRADICTS one or more facts already in the memory sections of the context, put those existing facts here VERBATIM (copy their text as shown). They will be removed so the new note overrides them instead of coexisting. Leave empty/omit when the note is brand-new and conflicts with nothing.',
+    },
   },
   required: ['note'],
+} as const;
+
+export const editMemoryJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    find: {
+      type: 'string',
+      description:
+        "The existing remembered fact to fix, copied VERBATIM from the memory sections of the context (or enough of it to identify the fact uniquely). e.g. «Итого 5 человек: …».",
+    },
+    replace: {
+      type: 'string',
+      description:
+        'The corrected full text to store in its place. This overwrites that one fact in place; it does not add a new one.',
+    },
+  },
+  required: ['find', 'replace'],
 } as const;
 
 export const learnExpenseJsonSchema = {

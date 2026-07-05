@@ -2,10 +2,13 @@
 // unit-tested in isolation and reused by both the read path (what to inject into
 // context) and the prune path (what to forget when over the volume cap).
 
+/** Memory scope: shared group fact, per-person fact, or a voice/style directive. */
+export type Scope = 'chat' | 'user' | 'persona';
+
 /** The minimal shape the weight math needs (a subset of a stored memory item). */
 export interface WeightedItem {
   id: number;
-  scope: 'chat' | 'user';
+  scope: Scope;
   tgUserId: number | null;
   subject: string;
   content: string;
@@ -30,6 +33,20 @@ export const REINFORCE_IMPORTANCE_STEP = 0.5;
 const DAY_MS = 86_400_000;
 
 /**
+ * Canonical form of a fact's text for duplicate detection: lowercased, ё→е, all
+ * punctuation/emoji/whitespace runs collapsed to single spaces. Two facts that read
+ * the same but differ only in casing or trailing punctuation normalize equal, so the
+ * store can fold restatements into one item instead of piling up near-duplicates.
+ */
+export function normalizeForDedup(content: string): string {
+  return content
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+/**
  * Effective weight of a memory item right now: base salience (importance plus a
  * diminishing reinforcement bonus) multiplied by an exponential time-decay that
  * halves every `halfLifeDays`. Explicit/pinned items skip decay and sit above the
@@ -49,14 +66,22 @@ export interface ContextBudgets {
   senderTgUserId: number;
   /** Other tg user ids active in the recent conversation (sender may be included; it's filtered out). */
   recentParticipantIds: number[];
-  /** Max shared chat-scope facts to inject. */
+  /** Max PASSIVE (rotating) shared chat-scope facts to inject. */
   chatBudget: number;
+  /**
+   * Max EXPLICIT (pinned) chat facts to always inject, on top of the passive budget, so
+   * a deliberately remembered fact is guaranteed to reach the model instead of competing
+   * with rotating trivia for one shared budget. Default 24.
+   */
+  pinnedChatBudget?: number;
   /** Max facts about the current sender to inject. */
   userBudget: number;
   /** Max facts to inject per OTHER recently-active participant (default 1). */
   otherUserBudget?: number;
   /** Max number of other participants to include (default 4). */
   maxOtherUsers?: number;
+  /** Max persona/style directives to inject (default 20 — they're few and pinned). */
+  personaBudget?: number;
 }
 
 export interface UserMemoryGroup {
@@ -69,6 +94,8 @@ export interface ContextSelection {
   chat: WeightedItem[];
   /** Sender first, then other recently-active participants ordered by their top fact's weight. */
   users: UserMemoryGroup[];
+  /** Voice/style directives — kept out of the factual chat budget so they can't crowd it. */
+  persona: WeightedItem[];
 }
 
 function byWeightDesc(now: number, halfLifeDays: number) {
@@ -86,10 +113,27 @@ export function selectForContext(items: WeightedItem[], b: ContextBudgets): Cont
   const otherBudget = b.otherUserBudget ?? 1;
   const maxOthers = b.maxOtherUsers ?? 4;
 
-  const chat = items
-    .filter((i) => i.scope === 'chat')
+  // Shared chat facts: pinned (explicitly remembered) facts are GUARANTEED in — they
+  // get their own generous budget so they can't be squeezed out by rotating passive
+  // trivia — then the top passive facts fill the rotating budget. Pinned first (they
+  // already outrank passive by weight), so a remembered fact always reaches the model.
+  const chatItems = items.filter((i) => i.scope === 'chat');
+  const pinnedChat = chatItems
+    .filter((i) => i.source === 'explicit')
+    .sort(cmp)
+    .slice(0, b.pinnedChatBudget ?? 24);
+  const passiveChat = chatItems
+    .filter((i) => i.source !== 'explicit')
     .sort(cmp)
     .slice(0, b.chatBudget);
+  const chat = [...pinnedChat, ...passiveChat];
+
+  // Voice/style directives ride in their own section, so a chat with a rich persona
+  // never spends its factual chat budget on tone instructions.
+  const persona = items
+    .filter((i) => i.scope === 'persona')
+    .sort(cmp)
+    .slice(0, b.personaBudget ?? 20);
 
   const userItems = items.filter((i) => i.scope === 'user' && i.tgUserId !== null);
 
@@ -122,7 +166,7 @@ export function selectForContext(items: WeightedItem[], b: ContextBudgets): Cont
   otherGroups.sort((a, c) => cmp(a.items[0]!, c.items[0]!));
   users.push(...otherGroups.slice(0, maxOthers));
 
-  return { chat, users };
+  return { chat, users, persona };
 }
 
 /**

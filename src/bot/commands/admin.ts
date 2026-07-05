@@ -20,7 +20,13 @@ import {
   insertPinned,
   clearMemoryItems,
   listMemoryItemsForDisplay,
+  setItemScope,
+  dedupeMemory,
+  editMemoryItemContent,
+  getAllItems,
+  applyReconcilePlan,
 } from '../../db/repos/memoryItem.repo.js';
+import { reconcileMemory, type ReconcilePlan } from '../../llm/reconcile.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { replyLong } from '../../util/telegramText.js';
@@ -113,7 +119,11 @@ export async function cmdChat(ctx: Context): Promise<void> {
   const memItems = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
   const memory = memItems.length
     ? memItems
-        .map((it) => `   - ${it.pinned ? '📌 ' : ''}${it.content}${it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : ''}`)
+        .map((it, i) => {
+          const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : '';
+          const who = it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : '';
+          return `   ${i + 1}. ${tag}${it.content}${who}`;
+        })
         .join('\n')
     : '(пусто)';
 
@@ -139,7 +149,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       memory,
       slangLine,
       ``,
-      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
+      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /editmemory ${id} <N> <текст> · /dedupememory ${id} · /reconcile ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
     ].join('\n'),
   );
 }
@@ -231,6 +241,152 @@ export async function cmdClearMemory(ctx: Context): Promise<void> {
   clearMemoryItems(id);
   clearTurns(id);
   await ctx.reply(`🧹 Память и история диалога чата ${id} очищены.`);
+}
+
+/**
+ * `/persona <chatId> <N>` reclassifies memory item #N (as numbered in /chat and
+ * /memory) into the chat's voice/style bucket, so a tone directive stops competing
+ * with factual chat memory for the context budget. `/persona <chatId> <текст>` pins a
+ * brand-new style line straight into that bucket.
+ */
+export async function cmdPersona(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null || !rest) {
+    await ctx.reply(
+      'Использование: /persona <chatId> <N> (перенести пункт #N из /chat в стиль) ' +
+        'или /persona <chatId> <текст> (добавить новую стилевую строку).',
+    );
+    return;
+  }
+  // A bare integer targets an existing item by its /chat index; anything else is text.
+  if (/^\d+$/.test(rest)) {
+    const n = Number(rest);
+    const items = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+    const target = items[n - 1];
+    if (!target) {
+      await ctx.reply(`Нет пункта №${n} в памяти чата ${id}. Список: /chat ${id}`);
+      return;
+    }
+    if (target.scope === 'persona') {
+      await ctx.reply(`Пункт №${n} уже в стиле (🎭).`);
+      return;
+    }
+    const moved = setItemScope(id, target.id, 'persona');
+    await ctx.reply(`🎭 Перенёс в стиль чата ${id}: ${moved ?? target.content}`);
+    return;
+  }
+  insertPinned(id, rest, { scope: 'persona' });
+  await ctx.reply(`🎭 Добавил в стиль чата ${id}.`);
+}
+
+/**
+ * `/editmemory <chatId> <N> <текст>` overwrites memory item #N (as numbered in /chat
+ * and /memory) in place — fix a typo or a wrong detail without removing/re-adding.
+ */
+export async function cmdEditMemory(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, restA] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  const [nTok, text] = headTail(restA);
+  const n = Number(nTok);
+  if (id === null || !Number.isInteger(n) || n < 1 || !text) {
+    await ctx.reply('Использование: /editmemory <chatId> <N> <новый текст>');
+    return;
+  }
+  const items = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+  const target = items[n - 1];
+  if (!target) {
+    await ctx.reply(`Нет пункта №${n} в памяти чата ${id}. Список: /chat ${id}`);
+    return;
+  }
+  const old = editMemoryItemContent(id, target.id, text);
+  await ctx.reply(`✏️ Пункт №${n} чата ${id}: «${old ?? target.content}» → «${text}».`);
+}
+
+// A reconciliation plan awaiting the admin's `apply`, per chat. In-memory and
+// ephemeral (like the other admin/session state) — a restart just means re-running the
+// dry-run, which is cheap and safe.
+const pendingReconcile = new Map<number, ReconcilePlan>();
+
+/**
+ * `/reconcile <chatId>` runs an LLM pass over the WHOLE store to find semantic
+ * contradictions / stale / duplicate facts and shows a dry-run of what it would remove
+ * or rewrite (nothing is changed yet). `/reconcile <chatId> apply` applies the last
+ * previewed plan. This is the cleanup for accumulated conflicts that /dedupememory (exact
+ * duplicates only) can't catch.
+ */
+export async function cmdReconcile(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /reconcile <chatId> (превью), затем /reconcile <chatId> apply');
+    return;
+  }
+
+  if (rest.trim().toLowerCase() === 'apply') {
+    const plan = pendingReconcile.get(id);
+    if (!plan) {
+      await ctx.reply(`Нет готового плана для ${id}. Сначала /reconcile ${id} для превью.`);
+      return;
+    }
+    const { edited, deleted } = applyReconcilePlan(id, plan);
+    pendingReconcile.delete(id);
+    await ctx.reply(`✅ Применил к чату ${id}: убрал ${deleted}, поправил ${edited}. Глянь /chat ${id}.`);
+    return;
+  }
+
+  const items = getAllItems(id);
+  if (items.length === 0) {
+    await ctx.reply(`Память чата ${id} пуста — чистить нечего.`);
+    return;
+  }
+  await ctx.reply('🧠 Думаю над противоречиями… (это займёт пару секунд)');
+  const plan = await reconcileMemory(items);
+  if (plan === null) {
+    await ctx.reply('⚠️ Не смог обратиться к ИИ. Попробуй ещё раз чуть позже.');
+    return;
+  }
+  if (plan.deletes.length === 0 && plan.edits.length === 0) {
+    await ctx.reply('Явных противоречий не нашёл. 🤙');
+    return;
+  }
+
+  // Preview by CONTENT (not #id) so the admin reads exactly what would change.
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const lines: string[] = [];
+  for (const e of plan.edits) {
+    const it = byId.get(e.id);
+    if (it) lines.push(`✏️ «${it.content}» → «${e.content}»${e.reason ? ` — ${e.reason}` : ''}`);
+  }
+  for (const d of plan.deletes) {
+    const it = byId.get(d.id);
+    if (it) lines.push(`🗑 «${it.content}»${d.reason ? ` — ${d.reason}` : ''}`);
+  }
+  pendingReconcile.set(id, plan);
+  await replyLong(
+    ctx,
+    `Нашёл на чистку в чате ${id} (${lines.length}) — это ПРЕВЬЮ, ничего не тронул:\n\n` +
+      `${lines.join('\n')}\n\nПрименить: /reconcile ${id} apply`,
+  );
+}
+
+/** `/dedupememory <chatId>` folds duplicate memory items into one pass. */
+export async function cmdDedupeMemory(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const id = parseChatId(args(ctx));
+  if (id === null) {
+    await ctx.reply('Использование: /dedupememory <chatId>');
+    return;
+  }
+  const removed = dedupeMemory(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+  await ctx.reply(
+    removed > 0
+      ? `🧹 Схлопнул дубли в памяти чата ${id}: убрал ${removed}. Глянь /chat ${id}.`
+      : `Дублей в памяти чата ${id} не нашёл.`,
+  );
 }
 
 // --- member links -----------------------------------------------------------

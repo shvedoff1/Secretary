@@ -123,6 +123,14 @@ Rules for \`record_expense\` (only relevant when Splid is connected):
 - currency: ISO 4217. If the user didn't specify one, use the chat's default currency.
 - payerHints / profiteerHints: copy names AS WRITTEN (do not resolve to ids). "me"/"я"
   is allowed and means the sender; "all"/"все"/"everyone" means the whole group.
+- SELF-REFERENCE: the sender (see "Message sender" in the context block) often names
+  THEMSELVES in the third person — by first name or a nickname — and mixes it with
+  "я"/"у меня" in the same breath («Андрей это швед, платил я», «island spice у шведа»,
+  «октопс у меня»). When the message says a name/nickname IS the sender, or attributes
+  items both to that name and to "я"/"у меня", treat that name AND "я"/"у меня" as ONE
+  person — the sender. Do NOT invent a separate member for the sender's own name or
+  nickname, and don't stall over who paid: if they say «платил я», the payer is the
+  sender, full stop.
 - If nothing indicates who paid, leave payerHints empty (the sender is assumed).
 - If nothing indicates how it's split, leave profiteerHints empty (everyone is assumed).
 - "Everyone EXCEPT X" ("на всех кроме Иры", "all but Sam"): you have the full

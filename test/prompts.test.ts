@@ -56,6 +56,14 @@ describe('SYSTEM_PROMPT receipt-splitting guidance', () => {
   it('tells the model to expand "everyone except X" from the roster', () => {
     expect(SYSTEM_PROMPT).toContain('EXCEPT');
   });
+
+  // The sender often names themselves in the third person by name/nickname and
+  // mixes it with "я"/"у меня" («Андрей это швед, платил я»); the model used to
+  // spawn a phantom member and stall over who paid. Guard the self-reference note.
+  it('tells the model to fold the sender\'s own name/nickname into "я"', () => {
+    expect(SYSTEM_PROMPT).toContain('SELF-REFERENCE');
+    expect(SYSTEM_PROMPT).toMatch(/third person/);
+  });
 });
 
 // The bot used to instantly agree with any pushback. It should now defend its own

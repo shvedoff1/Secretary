@@ -85,4 +85,20 @@ describe('withExpenseSweep', () => {
     const clean = [item({ id: 1, content: 'любит серф' })];
     expect(withExpenseSweep({ deletes: [], edits: [] }, clean).deletes).toEqual([]);
   });
+
+  it('never sweeps a hand-entered multi-line config blob that just mentions expenses', () => {
+    const blob = item({
+      id: 42,
+      source: 'explicit',
+      content: [
+        '- чат про Бали ради серфинга, адрес хаты: Bali 80361',
+        '- При внесении траты бот расписывает: кто платил, на кого делится',
+        '- «Иоанн» это Иванес; бота зовут Скайлер Вайт',
+      ].join('\n'),
+    });
+    const expense = item({ id: 43, content: 'Расход на стирку 60 тыс, платил Иван, делится' });
+    const out = withExpenseSweep({ deletes: [], edits: [] }, [blob, expense]);
+    // Only the real one-line expense is swept; the config blob is left intact.
+    expect(out.deletes.map((d) => d.id)).toEqual([43]);
+  });
 });

@@ -131,6 +131,46 @@ describe('selectForContext', () => {
     expect(sel.chat.map((i) => i.content)).not.toContain('P1');
   });
 
+  it('guarantees pinned chat facts reach context even past the passive budget', () => {
+    // Many pinned chat facts plus one strong passive fact; passive budget is tiny.
+    const many: WeightedItem[] = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        item({ id: 100 + i, scope: 'chat', source: 'explicit', importance: 3, content: `PIN${i}` }),
+      ),
+      item({ id: 200, scope: 'chat', source: 'passive', importance: 5, content: 'PASS' }),
+    ];
+    const out = selectForContext(many, {
+      now: NOW,
+      halfLifeDays: HALF,
+      senderTgUserId: SENDER,
+      recentParticipantIds: [],
+      chatBudget: 1,
+      userBudget: 1,
+    });
+    const contents = out.chat.map((i) => i.content);
+    // All 10 pinned facts survive (their own generous budget), not squeezed by the
+    // 1-slot passive budget; the passive fact still gets its one slot.
+    for (let i = 0; i < 10; i++) expect(contents).toContain(`PIN${i}`);
+    expect(contents).toContain('PASS');
+  });
+
+  it('caps pinned chat facts at the pinned budget', () => {
+    const many: WeightedItem[] = Array.from({ length: 5 }, (_, i) =>
+      item({ id: 300 + i, scope: 'chat', source: 'explicit', importance: 5 - i, content: `P${i}` }),
+    );
+    const out = selectForContext(many, {
+      now: NOW,
+      halfLifeDays: HALF,
+      senderTgUserId: SENDER,
+      recentParticipantIds: [],
+      chatBudget: 8,
+      userBudget: 1,
+      pinnedChatBudget: 2,
+    });
+    // Only the top-2 by weight (highest importance) survive.
+    expect(out.chat.map((i) => i.content)).toEqual(['P0', 'P1']);
+  });
+
   it('honours a deeper other-user budget for richer per-person blocks', () => {
     const deep = selectForContext(items, {
       now: NOW,

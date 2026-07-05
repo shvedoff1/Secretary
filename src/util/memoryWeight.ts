@@ -66,8 +66,14 @@ export interface ContextBudgets {
   senderTgUserId: number;
   /** Other tg user ids active in the recent conversation (sender may be included; it's filtered out). */
   recentParticipantIds: number[];
-  /** Max shared chat-scope facts to inject. */
+  /** Max PASSIVE (rotating) shared chat-scope facts to inject. */
   chatBudget: number;
+  /**
+   * Max EXPLICIT (pinned) chat facts to always inject, on top of the passive budget, so
+   * a deliberately remembered fact is guaranteed to reach the model instead of competing
+   * with rotating trivia for one shared budget. Default 24.
+   */
+  pinnedChatBudget?: number;
   /** Max facts about the current sender to inject. */
   userBudget: number;
   /** Max facts to inject per OTHER recently-active participant (default 1). */
@@ -107,10 +113,20 @@ export function selectForContext(items: WeightedItem[], b: ContextBudgets): Cont
   const otherBudget = b.otherUserBudget ?? 1;
   const maxOthers = b.maxOtherUsers ?? 4;
 
-  const chat = items
-    .filter((i) => i.scope === 'chat')
+  // Shared chat facts: pinned (explicitly remembered) facts are GUARANTEED in — they
+  // get their own generous budget so they can't be squeezed out by rotating passive
+  // trivia — then the top passive facts fill the rotating budget. Pinned first (they
+  // already outrank passive by weight), so a remembered fact always reaches the model.
+  const chatItems = items.filter((i) => i.scope === 'chat');
+  const pinnedChat = chatItems
+    .filter((i) => i.source === 'explicit')
+    .sort(cmp)
+    .slice(0, b.pinnedChatBudget ?? 24);
+  const passiveChat = chatItems
+    .filter((i) => i.source !== 'explicit')
     .sort(cmp)
     .slice(0, b.chatBudget);
+  const chat = [...pinnedChat, ...passiveChat];
 
   // Voice/style directives ride in their own section, so a chat with a rich persona
   // never spends its factual chat budget on tone instructions.

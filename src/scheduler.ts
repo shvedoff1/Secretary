@@ -49,6 +49,7 @@ export function scheduledMemory(
     halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
     chatBudget: cfg.MEMORY_CONTEXT_CHAT,
     userBudget: cfg.MEMORY_CONTEXT_USER,
+    pinnedChatBudget: cfg.MEMORY_CONTEXT_PINNED,
     personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
   });
   return {
@@ -120,7 +121,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // A firing reminder just produces text (optionally via web search). It must
         // NOT be able to create reminders or write memory — otherwise a reminder
         // could spawn more reminders every time it runs.
-        allowRemember: false,
+        allowRemember: false, // also gates edit_memory (both off for firing tasks)
         allowExpenseLearning: false,
         allowLexiconEdit: false,
         allowReminders: false,
@@ -130,6 +131,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       },
       {
         remember: () => 'noop',
+        editMemory: () => 'noop',
         learnExpense: () => 'noop',
         editLexicon: () => 'noop',
         scheduleTask: () => 'noop',

@@ -213,6 +213,46 @@ describe('memory store', () => {
     expect(survivors[0]!.reinforce).toBe(4);
   });
 
+  it('finds a fact by text forgivingly and refuses ambiguous matches', async () => {
+    const repo = await freshRepo();
+    repo.insertPinned(1, 'Итого 5 человек: Шведский, Антоха, Иванес, Миша, Михалыч');
+    repo.insertPinned(1, 'Едут на Бали ради серфинга');
+    // Exact-ish (casing/punctuation-insensitive) and containment both resolve.
+    expect(repo.findMemoryItemByText(1, 'итого 5 человек')!.content).toContain('Итого 5');
+    expect(repo.findMemoryItemByText(1, 'бали ради серфинга')!.content).toContain('Бали');
+    // No match → null.
+    expect(repo.findMemoryItemByText(1, 'совершенно другое')).toBeNull();
+    // Ambiguous containment → null (never guesses).
+    repo.insertPinned(1, 'серфинг утром');
+    expect(repo.findMemoryItemByText(1, 'серфинг')).toBeNull();
+  });
+
+  it('edits a fact in place, keeping its id and reinforcement history', async () => {
+    const repo = await freshRepo();
+    const id = repo.insertPinned(1, 'Итого 5 человек');
+    repo.reinforceItems(1, [id]);
+    const old = repo.editMemoryItemContent(1, id, 'Итого 4 человека');
+    expect(old).toBe('Итого 5 человек');
+    const it = repo.getAllItems(1)[0]!;
+    expect(it.id).toBe(id); // same row
+    expect(it.content).toBe('Итого 4 человека');
+    expect(it.reinforce).toBe(1); // history preserved
+    expect(repo.editMemoryItemContent(1, 9999, 'x')).toBeNull();
+  });
+
+  it('injects pinned chat facts beyond the passive budget', async () => {
+    const repo = await freshRepo();
+    for (let i = 0; i < 12; i++) repo.insertPinned(1, `закреплённый факт ${i}`);
+    const sel = repo.getMemoryForContext(1, {
+      senderTgUserId: 100,
+      recentParticipantIds: [],
+      halfLifeDays: 14,
+      chatBudget: 8, // passive budget — must NOT cap pinned facts
+      userBudget: 6,
+    });
+    expect(sel.chat).toHaveLength(12); // all pinned survive
+  });
+
   it('builds a context selection split into chat and per-user sections', async () => {
     const repo = await freshRepo();
     repo.recordMemoryItems(1, [

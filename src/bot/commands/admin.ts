@@ -22,6 +22,7 @@ import {
   listMemoryItemsForDisplay,
   setItemScope,
   dedupeMemory,
+  editMemoryItemContent,
 } from '../../db/repos/memoryItem.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
@@ -145,7 +146,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       memory,
       slangLine,
       ``,
-      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /dedupememory ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
+      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /editmemory ${id} <N> <текст> · /dedupememory ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
     ].join('\n'),
   );
 }
@@ -275,6 +276,30 @@ export async function cmdPersona(ctx: Context): Promise<void> {
   }
   insertPinned(id, rest, { scope: 'persona' });
   await ctx.reply(`🎭 Добавил в стиль чата ${id}.`);
+}
+
+/**
+ * `/editmemory <chatId> <N> <текст>` overwrites memory item #N (as numbered in /chat
+ * and /memory) in place — fix a typo or a wrong detail without removing/re-adding.
+ */
+export async function cmdEditMemory(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, restA] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  const [nTok, text] = headTail(restA);
+  const n = Number(nTok);
+  if (id === null || !Number.isInteger(n) || n < 1 || !text) {
+    await ctx.reply('Использование: /editmemory <chatId> <N> <новый текст>');
+    return;
+  }
+  const items = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+  const target = items[n - 1];
+  if (!target) {
+    await ctx.reply(`Нет пункта №${n} в памяти чата ${id}. Список: /chat ${id}`);
+    return;
+  }
+  const old = editMemoryItemContent(id, target.id, text);
+  await ctx.reply(`✏️ Пункт №${n} чата ${id}: «${old ?? target.content}» → «${text}».`);
 }
 
 /** `/dedupememory <chatId>` folds duplicate memory items into one pass. */

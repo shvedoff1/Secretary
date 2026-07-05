@@ -362,6 +362,7 @@ export function getMemoryForContext(
     halfLifeDays: number;
     chatBudget: number;
     userBudget: number;
+    pinnedChatBudget?: number;
     otherUserBudget?: number;
     maxOtherUsers?: number;
     personaBudget?: number;
@@ -374,6 +375,7 @@ export function getMemoryForContext(
     recentParticipantIds: opts.recentParticipantIds,
     chatBudget: opts.chatBudget,
     userBudget: opts.userBudget,
+    pinnedChatBudget: opts.pinnedChatBudget,
     otherUserBudget: opts.otherUserBudget,
     maxOtherUsers: opts.maxOtherUsers,
     personaBudget: opts.personaBudget,
@@ -408,6 +410,45 @@ export function listMemoryItemsForDisplay(chatId: number, halfLifeDays: number):
       subject: i.subject,
       pinned: i.source === 'explicit',
     }));
+}
+
+/**
+ * Find one stored fact by free text, forgivingly: a normalized exact match wins;
+ * failing that, a UNIQUE normalized containment match (the query contains a stored
+ * fact or vice-versa). Returns the single match, or null when nothing matches or the
+ * match is ambiguous (so a vague query never nukes the wrong fact). Used to resolve the
+ * facts the model names in `remember.replaces` / `edit_memory.find` back to real rows.
+ */
+export function findMemoryItemByText(chatId: number, text: string): MemoryItem | null {
+  const q = normalizeForDedup(text);
+  if (!q) return null;
+  const items = getAllItems(chatId);
+  const exact = items.filter((i) => normalizeForDedup(i.content) === q);
+  if (exact.length === 1) return exact[0]!;
+  if (exact.length > 1) return null; // ambiguous — refuse rather than guess
+  const near = items.filter((i) => {
+    const c = normalizeForDedup(i.content);
+    return c.includes(q) || q.includes(c);
+  });
+  return near.length === 1 ? near[0]! : null;
+}
+
+/**
+ * Overwrite one item's content in place (keeping its id, scope, source and
+ * reinforcement history) and refresh its recency. Returns the OLD content, or null if
+ * the id isn't in the chat. This is the surgical "fix an existing fact" path.
+ */
+export function editMemoryItemContent(chatId: number, id: number, content: string): string | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT content FROM chat_memory_item WHERE id = ? AND chat_id = ?')
+    .get(id, chatId) as { content: string } | undefined;
+  if (!row) return null;
+  db.prepare(
+    `UPDATE chat_memory_item SET content = ?, last_seen = unixepoch() * 1000
+     WHERE id = ? AND chat_id = ?`,
+  ).run(content.trim(), id, chatId);
+  return row.content;
 }
 
 /** Delete one item by id (scoped to the chat). Returns its content, or null. */

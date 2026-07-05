@@ -13,7 +13,13 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
-import { getMemoryForContext, insertPinned } from '../../db/repos/memoryItem.repo.js';
+import {
+  getMemoryForContext,
+  insertPinned,
+  findMemoryItemByText,
+  editMemoryItemContent,
+  removeMemoryItem,
+} from '../../db/repos/memoryItem.repo.js';
 import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
@@ -30,7 +36,12 @@ import {
   isValidTimezone,
   formatInTimezone,
 } from '../../util/schedule.js';
-import type { ScheduleTaskInput, AddPoiInput, EditLexiconInput } from '../../llm/schema.js';
+import type {
+  ScheduleTaskInput,
+  AddPoiInput,
+  EditLexiconInput,
+  EditMemoryInput,
+} from '../../llm/schema.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -50,15 +61,41 @@ import { looksLikeExpense } from '../../util/money.js';
 
 /**
  * Handle the `remember` tool / explicit "запомни …": pin the note, but keep recorded
- * expenses out of memory — those belong in Splid. Expense-like notes are refused with a
- * short nudge instead of polluting the durable memory store.
+ * expenses out of memory — those belong in Splid. When `replaces` is given (a
+ * correction/contradiction), the superseded facts are removed first so the new note
+ * overrides them instead of coexisting. The "push back once before overriding" is the
+ * model's job (prompt-driven); by the time this runs the override is already confirmed.
  */
-export function rememberNote(chatId: number, note: string): string {
+export function rememberNote(chatId: number, note: string, replaces?: string[]): string {
   if (looksLikeExpense(note)) {
     return 'Это похоже на трату — такое в память не пишу, для трат есть Splid. Если это правда трата — просто скажи её как трату, я оформлю. 🤙';
   }
+  const removed: string[] = [];
+  for (const text of replaces ?? []) {
+    const match = findMemoryItemByText(chatId, text);
+    if (match && removeMemoryItem(chatId, match.id) !== null) removed.push(match.content);
+  }
   insertPinned(chatId, note);
+  if (removed.length > 0) {
+    return `Обновил — заменил «${removed.join('», «')}». Теперь у меня записано: ${note}`;
+  }
   return 'Запомнил.';
+}
+
+/**
+ * Build the `edit_memory` handler for a chat: fix an existing remembered fact in place
+ * (the "поправь/исправь в памяти …" flow). Matches the target fact forgivingly; if it
+ * can't be pinned down, it says so rather than editing the wrong thing.
+ */
+export function makeEditMemoryHandler(chatId: number): (input: EditMemoryInput) => string {
+  return ({ find, replace }) => {
+    const match = findMemoryItemByText(chatId, find);
+    if (!match) {
+      return `Не нашёл в памяти «${find}». Глянь /memory — там точные формулировки, скажи какую менять.`;
+    }
+    editMemoryItemContent(chatId, match.id, replace);
+    return `Поправил: «${match.content}» → «${replace.trim()}». 🤙`;
+  };
 }
 
 export function senderName(ctx: Context): string {
@@ -326,6 +363,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
     chatBudget: cfg.MEMORY_CONTEXT_CHAT,
     userBudget: cfg.MEMORY_CONTEXT_USER,
+    pinnedChatBudget: cfg.MEMORY_CONTEXT_PINNED,
     otherUserBudget: cfg.MEMORY_CONTEXT_OTHER,
     maxOtherUsers: cfg.MEMORY_CONTEXT_MAX_OTHERS,
     personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
@@ -356,7 +394,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         userContent: args.userContent,
       },
       {
-        remember: (note) => rememberNote(chatId, note),
+        remember: (input) => rememberNote(chatId, input.note, input.replaces),
+        editMemory: makeEditMemoryHandler(chatId),
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         editLexicon: makeEditLexiconHandler(chatId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
@@ -551,7 +590,8 @@ async function rewordPendingInner(
       userContent: correctionContent,
     },
     {
-      remember: (note) => rememberNote(chatId, note),
+      remember: (input) => rememberNote(chatId, input.note, input.replaces),
+      editMemory: makeEditMemoryHandler(chatId),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       editLexicon: makeEditLexiconHandler(chatId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),

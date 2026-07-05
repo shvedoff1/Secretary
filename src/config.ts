@@ -102,8 +102,11 @@ const ConfigSchema = z.object({
   // Hard cap on stored passive facts per chat; lowest-weight overflow is pruned
   // (pinned facts are exempt). This is the "limited volume" of human-like memory.
   MEMORY_MAX_ITEMS: z.coerce.number().int().positive().default(200),
-  // How many shared chat facts to inject into the assistant context.
+  // How many rotating PASSIVE shared chat facts to inject into the assistant context.
   MEMORY_CONTEXT_CHAT: z.coerce.number().int().positive().default(8),
+  // How many EXPLICIT (pinned / remembered) chat facts to always inject on top, so a
+  // deliberately remembered fact is guaranteed into context and never squeezed out.
+  MEMORY_CONTEXT_PINNED: z.coerce.number().int().positive().default(24),
   // How many facts about the current sender to inject into the assistant context.
   MEMORY_CONTEXT_USER: z.coerce.number().int().positive().default(6),
   // How many facts about EACH other recently-active participant to inject. Higher

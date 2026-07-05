@@ -7,6 +7,7 @@ import {
   buildTools,
   RECORD_EXPENSE_TOOL,
   REMEMBER_TOOL,
+  EDIT_MEMORY_TOOL,
   LEARN_EXPENSE_TOOL,
   EDIT_LEXICON_TOOL,
   SCHEDULE_TASK_TOOL,
@@ -17,6 +18,7 @@ import {
 import {
   RecordExpenseZ,
   RememberZ,
+  EditMemoryZ,
   LearnExpenseZ,
   EditLexiconZ,
   ScheduleTaskZ,
@@ -25,6 +27,8 @@ import {
   SpendingReportZ,
   toParsedExpense,
   type RecordExpenseInput,
+  type RememberInput,
+  type EditMemoryInput,
   type LearnExpenseInput,
   type EditLexiconInput,
   type ScheduleTaskInput,
@@ -68,8 +72,10 @@ export interface AssistantContext {
 }
 
 export interface AssistantHandlers {
-  /** Persist a remembered note; return a short human confirmation. */
-  remember: (note: string) => string;
+  /** Persist a remembered note (optionally superseding contradicted facts); confirm. */
+  remember: (input: RememberInput) => string;
+  /** Fix an existing remembered fact in place; return a short confirmation. */
+  editMemory: (input: EditMemoryInput) => string;
   /** Add trigger words to the chat's expense dictionary; return a confirmation. */
   learnExpense: (input: LearnExpenseInput) => string;
   /** Change the meaning of a learned slang word; return a short confirmation. */
@@ -110,6 +116,7 @@ export async function runAssistant(
     enableWebSearch: cfg.ENABLE_WEB_SEARCH,
     enableExpense: ctx.splidConnected,
     enableRemember: ctx.allowRemember !== false,
+    enableMemoryEdit: ctx.allowRemember !== false,
     enableExpenseLearning: ctx.allowExpenseLearning !== false,
     enableLexiconEdit: ctx.allowLexiconEdit !== false,
     enableReminders: ctx.allowReminders !== false,
@@ -243,8 +250,22 @@ export async function runAssistant(
         if (block.name === REMEMBER_TOOL) {
           const parsed = RememberZ.safeParse(block.input);
           const confirmation = parsed.success
-            ? handlers.remember(parsed.data.note)
+            ? handlers.remember(parsed.data)
             : 'Could not parse the note.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === EDIT_MEMORY_TOOL) {
+          const parsed = EditMemoryZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'edit_memory input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.editMemory(parsed.data)
+            : 'Could not parse the memory edit.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

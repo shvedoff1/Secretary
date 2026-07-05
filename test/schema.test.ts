@@ -1,5 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { RecordExpenseZ, toParsedExpense } from '../src/llm/schema.js';
+import { RecordExpenseZ, RememberZ, EditMemoryZ, toParsedExpense } from '../src/llm/schema.js';
+
+describe('RememberZ', () => {
+  it('accepts a bare note (replaces optional)', () => {
+    const r = RememberZ.safeParse({ note: 'любит серф' });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.replaces).toBeUndefined();
+  });
+
+  it('accepts a note with facts to supersede', () => {
+    const r = RememberZ.safeParse({ note: 'нас 4', replaces: ['Итого 5 человек'] });
+    expect(r.success && r.data.replaces).toEqual(['Итого 5 человек']);
+  });
+
+  it('rejects an empty note', () => {
+    expect(RememberZ.safeParse({ note: '' }).success).toBe(false);
+  });
+});
+
+describe('EditMemoryZ', () => {
+  it('requires both non-empty find and replace', () => {
+    expect(EditMemoryZ.safeParse({ find: 'старое', replace: 'новое' }).success).toBe(true);
+    expect(EditMemoryZ.safeParse({ find: 'старое' }).success).toBe(false);
+    expect(EditMemoryZ.safeParse({ find: '', replace: 'x' }).success).toBe(false);
+  });
+});
 
 function parse(over: Record<string, unknown> = {}) {
   return RecordExpenseZ.parse({

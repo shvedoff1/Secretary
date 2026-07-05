@@ -30,6 +30,18 @@ describe('SYSTEM_PROMPT memory guidance', () => {
   it('tells the model to follow the voice/style section', () => {
     expect(SYSTEM_PROMPT).toContain('Voice & style');
   });
+
+  it('tells the model to override contradictions via replaces, after one pushback', () => {
+    expect(SYSTEM_PROMPT).toContain('replaces');
+    expect(SYSTEM_PROMPT).toMatch(/push back ONCE/);
+    expect(SYSTEM_PROMPT).toContain('edit_memory');
+  });
+
+  it('carves the written-memory exception into the accept-facts rule', () => {
+    // A plain factual correction is still accepted, but a contradiction of WRITTEN
+    // memory may earn one pushback — guard that the carve-out is present.
+    expect(SYSTEM_PROMPT).toMatch(/WRITTEN in the chat memory/);
+  });
 });
 
 // A receipt with items belonging to different people must split into several

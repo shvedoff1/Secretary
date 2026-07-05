@@ -29,11 +29,15 @@ vi.mock('../src/bot/flows/lexicon.js', () => ({
 vi.mock('../src/bot/flows/memory.js', () => ({
   learnMemoryFromMessage: vi.fn(() => Promise.resolve()),
 }));
+vi.mock('../src/bot/handlers/onPhoto.js', () => ({
+  handleReceiptPhoto: vi.fn(),
+}));
 
 import { onVoice } from '../src/bot/handlers/onVoice.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../src/llm/transcribe.js';
 import { isAddressed, routeMessage, addressesBotByName } from '../src/bot/triggers.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
+import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
 
 const mockEnabled = vi.mocked(isTranscriptionEnabled);
 const mockTranscribe = vi.mocked(transcribeAudio);
@@ -41,6 +45,7 @@ const mockAddressed = vi.mocked(isAddressed);
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
 const mockRun = vi.mocked(runAndRespond);
+const mockPhoto = vi.mocked(handleReceiptPhoto);
 
 // Bare writing-hand codepoint (no variation selector) — the only form Telegram
 // accepts as a reaction.
@@ -204,5 +209,84 @@ describe('onVoice reaction lifecycle', () => {
     expect(react).not.toHaveBeenCalled();
     expect(reply).toHaveBeenCalledOnce(); // nag, because addressed
     expect(mockTranscribe).not.toHaveBeenCalled();
+  });
+});
+
+// A voice note that REPLIES to a photo is a spoken receipt split: the amounts are
+// in the picture, the voice says who had what. It must reach the receipt handler
+// (like the text «reply to a photo» path), not be routed as standalone text where
+// it looks like nothing and gets ignored — the "photo + голосовое = ничего" bug.
+describe('onVoice reply to a photo (spoken receipt split)', () => {
+  function voiceReplyToPhotoCtx(
+    transcript: string,
+    replyOver: Record<string, unknown> = {},
+  ) {
+    const react = vi.fn(async () => {});
+    const reply = vi.fn(async () => {});
+    const sendMessage = vi.fn(async () => {});
+    const photo = [{ file_id: 'small' }, { file_id: 'big' }];
+    const ctx = {
+      message: {
+        voice: { file_id: 'f', mime_type: 'audio/ogg' },
+        reply_to_message: { message_id: 42, photo, ...replyOver },
+      },
+      chat: { id: 1, type: 'group', title: 'Surf Crew' },
+      from: { id: 2, first_name: 'Андрей', last_name: 'Шведов' },
+      react,
+      reply,
+      api: { sendMessage },
+    } as unknown as Context;
+    mockEnabled.mockReturnValue(true);
+    mockTranscribe.mockResolvedValue(transcript);
+    return { ctx, react, photo };
+  }
+
+  it('feeds the photo + transcript to the receipt handler instead of routing as text', async () => {
+    mockAddressed.mockReturnValue(false); // a reply to a user's photo isn't "addressed"
+    const { ctx, photo } = voiceReplyToPhotoCtx('бургер у меня, креветки у Ивана');
+
+    await onVoice(ctx);
+
+    expect(mockPhoto).toHaveBeenCalledOnce();
+    const [, photos, caption, addressed] = mockPhoto.mock.calls[0]!;
+    expect(photos).toBe(photo);
+    expect(caption).toBe('бургер у меня, креветки у Ивана');
+    expect(addressed).toBe(false); // silent unless it really is an expense
+    // Must NOT fall through to the plain-text routing path.
+    expect(mockRoute).not.toHaveBeenCalled();
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('keeps the photo original caption alongside the spoken split', async () => {
+    mockAddressed.mockReturnValue(false);
+    const { ctx } = voiceReplyToPhotoCtx('бургер у меня, октопс у шведа', {
+      caption: 'на меня Ивана и Антона',
+    });
+
+    await onVoice(ctx);
+
+    const caption = mockPhoto.mock.calls[0]![2];
+    expect(caption).toContain('на меня Ивана и Антона');
+    expect(caption).toContain('бургер у меня, октопс у шведа');
+  });
+
+  it('treats it as addressed when the transcript names the bot with a request', async () => {
+    mockAddressed.mockReturnValue(false);
+    mockByName.mockReturnValue(true); // «Скай, посчитай …»
+    const { ctx } = voiceReplyToPhotoCtx('Скай, посчитай чек, бургер у меня');
+
+    await onVoice(ctx);
+
+    expect(mockPhoto.mock.calls[0]![3]).toBe(true);
+  });
+
+  it('clears the ✍️ ack before delegating to the receipt handler', async () => {
+    mockAddressed.mockReturnValue(false);
+    const { ctx, react } = voiceReplyToPhotoCtx('бургер у меня');
+
+    await onVoice(ctx);
+
+    expect(react).toHaveBeenNthCalledWith(1, WRITING);
+    expect(react).toHaveBeenNthCalledWith(2, []);
   });
 });

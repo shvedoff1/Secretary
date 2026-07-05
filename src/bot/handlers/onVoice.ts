@@ -8,6 +8,7 @@ import { learnMemoryFromMessage } from '../flows/memory.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
 import { setTranscript } from '../transcriptCache.js';
+import { handleReceiptPhoto } from './onPhoto.js';
 
 // "Writing it down" marker. We react with ✍️ as soon as a voice note arrives, so
 // the chat sees it was heard; the mark stays only if it became an expense and is
@@ -118,6 +119,27 @@ export async function onVoice(ctx: Context): Promise<void> {
   // Build weighted long-term memory from the transcript too. Best-effort.
   if (ctx.from) {
     void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript);
+  }
+
+  // A voice note REPLYING to a photo is a receipt split spoken aloud — the amounts
+  // are in the picture, the voice says who had what. Feed BOTH the photo and the
+  // transcript to the receipt handler (mirroring the text «reply to a photo» path in
+  // onMessage) instead of routing the transcript as standalone text: on its own it
+  // carries no numbers, wouldn't look like an expense, and would be silently ignored
+  // (exactly the "ничего не происходит" the user hit). Keep the photo's original
+  // caption too — it may hold the real instruction («Скай, на меня Ивана и Антона»).
+  // handleReceiptPhoto still shows the preview even when unaddressed if it really is
+  // an expense, and stays silent otherwise, so a stray voice reply to a random photo
+  // costs only a wasted model call, never noise.
+  const replyTo = ctx.message!.reply_to_message;
+  if (replyTo?.photo && replyTo.photo.length > 0) {
+    const addressed = isAddressed(ctx) || addressesBotByName(transcript);
+    const caption = replyTo.caption ? `${replyTo.caption}\n\n${transcript}` : transcript;
+    // The ✍️ was just a "heard you" ack; the receipt handler owns the UI from here
+    // (its own 👀 while working, then a preview), so drop our mark before delegating.
+    await clearWriting(ctx);
+    await handleReceiptPhoto(ctx, replyTo.photo, caption, addressed);
+    return;
   }
 
   // Route the transcript exactly like a text message: addressed → process,

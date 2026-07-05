@@ -45,7 +45,15 @@ const EXPENSE_INTENT =
  * Heuristic: does this free-text note read like a recorded shared expense
  * ("Расход на кофе 260 тыс, платил Антон, делится…")? Requires BOTH a number and an
  * explicit spend-intent word, so plain facts that merely mention money survive.
+ *
+ * A recorded expense is a SHORT, SINGLE-LINE statement. A long or multi-line note that
+ * merely mentions money — e.g. a chat's manually-entered config/persona blob that happens
+ * to include a rule like "при внесении траты бот должен расписывать кто платил и делится"
+ * — is NOT an expense, and treating it as one would wrongly purge hand-written memory.
  */
+const MAX_EXPENSE_LEN = 220;
+
 export function looksLikeExpense(text: string): boolean {
+  if (text.includes('\n') || text.length > MAX_EXPENSE_LEN) return false;
   return /\d/.test(text) && EXPENSE_INTENT.test(text);
 }

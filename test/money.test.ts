@@ -29,6 +29,20 @@ describe('looksLikeExpense', () => {
     expect(looksLikeExpense('paid 100k for the boat')).toBe(true);
   });
 
+  it('does not treat a long, multi-line config blob as an expense', () => {
+    // A hand-entered memory blob that merely CONTAINS an expense-formatting rule (plus
+    // numbers elsewhere) must not be swept as an expense — this was nuking chat config.
+    const blob = [
+      '- это чат про поездку на Бали ради серфинга',
+      'адрес хаты: Gg. Jero, Tibubeneng, Bali 80361',
+      '- При внесении траты в Splid бот должен расписывать: кто платил, на кого делится',
+      '- с вероятностью 30% добавляй слово "иншала"',
+    ].join('\n');
+    expect(looksLikeExpense(blob)).toBe(false);
+    // A single very long line that merely mentions spending is also not one expense.
+    expect(looksLikeExpense('x'.repeat(300) + ' платил 5 делится')).toBe(false);
+  });
+
   it('keeps plain facts that merely mention money or numbers', () => {
     // FX rate — a number and currency words, but no spend intent.
     expect(looksLikeExpense('Курс обмена сегодня: 17700 рупий за доллар')).toBe(false);

@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
+import { looksLikeExpense } from '../util/money.js';
 import type { MemoryItem } from '../db/repos/memoryItem.repo.js';
 
 /** A fact the pass proposes to drop (contradicted / stale / duplicate). */
@@ -27,8 +28,9 @@ const EMPTY: ReconcilePlan = { deletes: [], edits: [] };
 
 // One-shot cleanup of accumulated memory: unlike the extractor (which only ADDS and
 // reinforces), this looks across the WHOLE store for facts that conflict or went stale
-// and proposes removals/merges. Conservative by design — it is applied only after a
-// human reviews the dry-run, so it errs toward proposing few, high-confidence changes.
+// and proposes removals/merges. Applied only after a human reviews the dry-run. Recorded
+// expenses that leaked into memory are swept OUT deterministically (see withExpenseSweep)
+// rather than left to the model's mood — money belongs in Splid, not memory.
 const RECONCILE_SYSTEM = `You are cleaning a group chat's long-term memory. You get a numbered list of stored
 facts, one per line as \`#id [who] text\` (📌 marks a fact a human pinned deliberately —
 treat it as more authoritative and prefer keeping it).
@@ -41,9 +43,10 @@ Find ONLY these problems:
   Delete the outdated one.
 - EXACT DUPLICATES: the same fact restated. Delete the extra copies, keep one.
 
-Do NOT delete a fact merely for being trivial, unrelated, or one you dislike. When you
-are not sure two facts truly conflict, LEAVE THEM BOTH. Prefer few, high-confidence
-changes over aggressive cleanup — a human will review this.
+List EVERY contradiction / stale / duplicate you are confident about — a human reviews
+this dry-run before anything is applied, so be thorough, not shy. But do NOT delete a
+fact merely for being trivial, unrelated, or one you dislike, and when you are not sure
+two facts truly conflict, LEAVE THEM BOTH.
 
 When merging a group, you MAY rewrite ONE surviving fact to a clean consolidated wording
 via "edits", and delete the rest.
@@ -105,6 +108,25 @@ export function parseReconcileJson(text: string, max = 100): ReconcilePlan {
 }
 
 /**
+ * Add a DETERMINISTIC pass over the store for recorded expenses that leaked into memory
+ * ("Расход на … платил … делится …") and mark every one for deletion — money belongs in
+ * the provider, not memory. This runs regardless of the model's output (the LLM only
+ * unreliably flags expenses since they aren't "contradictions"), so a `/reconcile` run
+ * reliably clears the same expense lines every time. Skips ids already edited or deleted.
+ */
+export function withExpenseSweep(plan: ReconcilePlan, items: MemoryItem[]): ReconcilePlan {
+  const claimed = new Set<number>([...plan.edits.map((e) => e.id), ...plan.deletes.map((d) => d.id)]);
+  const extra: ReconcileDelete[] = [];
+  for (const it of items) {
+    if (claimed.has(it.id)) continue;
+    if (looksLikeExpense(it.content)) {
+      extra.push({ id: it.id, reason: 'трата — память не для трат, ей место в Splid' });
+    }
+  }
+  return { deletes: [...plan.deletes, ...extra], edits: plan.edits };
+}
+
+/**
  * Run a one-shot reconciliation pass over a chat's whole memory using the cheap model.
  * Returns the proposed plan, or null if the model call failed (no key, API error) so the
  * caller can distinguish "nothing to clean" (empty plan) from "couldn't run".
@@ -123,6 +145,9 @@ export async function reconcileMemory(items: MemoryItem[]): Promise<ReconcilePla
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_MEMORY_MODEL,
       max_tokens: 2048,
+      // Deterministic so re-running /reconcile on the same store proposes the same plan
+      // instead of a different subset each time.
+      temperature: 0,
       system: RECONCILE_SYSTEM,
       messages: [{ role: 'user', content: rendered }],
     });
@@ -131,7 +156,9 @@ export async function reconcileMemory(items: MemoryItem[]): Promise<ReconcilePla
       .map((b) => b.text)
       .join('')
       .trim();
-    return parseReconcileJson(text);
+    // The LLM handles contradictions/stale/dupes; the expense sweep deterministically
+    // clears any recorded-expense lines it left behind.
+    return withExpenseSweep(parseReconcileJson(text), items);
   } catch (err) {
     logger.warn({ err }, 'memory reconciliation failed');
     return null;

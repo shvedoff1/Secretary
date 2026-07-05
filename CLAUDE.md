@@ -54,9 +54,13 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   own guaranteed context budget (`MEMORY_CONTEXT_PINNED`, separate from the rotating
   `MEMORY_CONTEXT_CHAT`) so a remembered fact always reaches the model. Bulk cleanup of
   ACCUMULATED conflicts (what `/dedupememory`'s exact-match fold can't catch) is the
-  admin `/reconcile <chatId>` command → `src/llm/reconcile.ts` (a one-shot Haiku pass over
-  the whole store proposing deletes/merges) → dry-run preview → `/reconcile <chatId> apply`
-  (`applyReconcilePlan`); it never changes memory without the admin confirming. Tools in
+  admin `/reconcile <chatId>` command → `src/llm/reconcile.ts` (a one-shot Haiku pass at
+  `temperature:0` so re-runs are stable, proposing deletes/merges for contradictions/stale/
+  dupes) → dry-run preview → `/reconcile <chatId> apply` (`applyReconcilePlan`); it never
+  changes memory without the admin confirming. `withExpenseSweep` additionally marks any
+  recorded-expense line (`looksLikeExpense`) for deletion DETERMINISTICALLY, so legacy
+  expenses that leaked into memory are cleared reliably rather than at the model's whim.
+  Tools in
   `tools.ts`, Zod + JSON schemas
   in `schema.ts`, system prompt + context block in `prompts.ts`. `edit_lexicon`
   corrects the stored MEANING of a learned slang word (the "поменяй значение у X на Y"

@@ -60,6 +60,8 @@ export interface AssistantContext {
   memoryChat?: { content: string }[];
   /** Per-person facts: the current sender first, then other recently-active participants. */
   memoryUsers?: { subject: string; items: { content: string }[] }[];
+  /** Voice/style directives for this chat (how to talk here), kept apart from facts. */
+  memoryPersona?: { content: string }[];
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -126,6 +128,7 @@ export async function runAssistant(
     places: ctx.places ?? [],
     memoryChat: ctx.memoryChat ?? [],
     memoryUsers: ctx.memoryUsers ?? [],
+    memoryPersona: ctx.memoryPersona ?? [],
   });
 
   let scheduled = false;

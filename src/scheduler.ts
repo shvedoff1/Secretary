@@ -38,6 +38,7 @@ export function scheduledMemory(
 ): {
   memoryChat: { content: string }[];
   memoryUsers: { subject: string; items: { content: string }[] }[];
+  memoryPersona: { content: string }[];
 } {
   const sel = getMemoryForContext(chatId, {
     // No recent conversation in a scheduled run, so there are no other
@@ -48,6 +49,7 @@ export function scheduledMemory(
     halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
     chatBudget: cfg.MEMORY_CONTEXT_CHAT,
     userBudget: cfg.MEMORY_CONTEXT_USER,
+    personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
   });
   return {
     memoryChat: sel.chat.map((i) => ({ content: i.content })),
@@ -55,6 +57,7 @@ export function scheduledMemory(
       subject: u.subject,
       items: u.items.map((i) => ({ content: i.content })),
     })),
+    memoryPersona: sel.persona.map((i) => ({ content: i.content })),
   };
 }
 
@@ -83,7 +86,11 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
     // Scheduled runs fire with no chat history, but they SHOULD still see the
     // chat's durable memory so a recurring task can use what the bot knows about
     // the group (e.g. a daily joke forecast riffing on remembered facts).
-    const { memoryChat, memoryUsers } = scheduledMemory(task.chatId, task.tgUserId, cfg);
+    const { memoryChat, memoryUsers, memoryPersona } = scheduledMemory(
+      task.chatId,
+      task.tgUserId,
+      cfg,
+    );
 
     // A humour task is a "vibe" post, not a plain reminder: give it the chat's
     // recent chatter so it can riff on what was just said (the same in-memory
@@ -106,6 +113,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,
         memoryUsers,
+        memoryPersona,
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: !!chatCfg?.provider_group_id,

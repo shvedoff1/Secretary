@@ -1,6 +1,7 @@
 import { getDb } from '../client.js';
 import {
   effectiveWeight,
+  normalizeForDedup,
   selectForContext,
   selectForPrune,
   MAX_IMPORTANCE,
@@ -9,8 +10,29 @@ import {
   type WeightedItem,
   type ContextSelection,
 } from '../../util/memoryWeight.js';
+import { looksLikeExpense } from '../../util/money.js';
 
-export type MemoryScope = 'chat' | 'user';
+export type MemoryScope = 'chat' | 'user' | 'persona';
+
+/**
+ * Duplicate-detection key for a fact: its identity bucket (a specific user, else the
+ * scope) plus the normalized content. Two rows with the same key say the same thing
+ * about the same subject, so one can fold into the other instead of both being stored.
+ */
+function dedupKey(
+  scope: MemoryScope,
+  tgUserId: number | null,
+  subject: string,
+  content: string,
+): string {
+  const who =
+    scope === 'user'
+      ? tgUserId !== null
+        ? `u:${tgUserId}`
+        : `s:${normalizeForDedup(subject)}`
+      : scope;
+  return `${who}|${normalizeForDedup(content)}`;
+}
 export type MemorySource = 'passive' | 'explicit';
 
 /** A stored memory item (one row of chat_memory_item). */
@@ -135,25 +157,47 @@ export function getAllItems(chatId: number): MemoryItem[] {
   return rows.map(mapRow);
 }
 
-/** Insert a batch of extracted passive facts. Blank content is skipped. */
+/**
+ * Insert a batch of extracted passive facts. Blank content is skipped, expense-like
+ * lines are dropped (money belongs in the provider, not memory), and a fact that
+ * exactly restates an existing one (same subject + normalized content) reinforces
+ * that row instead of piling up a near-duplicate.
+ */
 export function recordMemoryItems(chatId: number, drafts: MemoryDraft[]): void {
   const db = getDb();
+  const byKey = new Map<string, number>();
+  for (const it of getAllItems(chatId)) {
+    byKey.set(dedupKey(it.scope, it.tgUserId, it.subject, it.content), it.id);
+  }
   const stmt = db.prepare(
     `INSERT INTO chat_memory_item
        (chat_id, scope, tg_user_id, subject, content, importance, reinforce, source, created_at, last_seen)
      VALUES (?, ?, ?, ?, ?, ?, 0, 'passive', unixepoch() * 1000, unixepoch() * 1000)`,
   );
+  const reinforceIds: number[] = [];
   const run = db.transaction((items: MemoryDraft[]) => {
+    const seen = new Set<string>();
     for (const d of items) {
       const content = d.content.trim();
       if (!content) continue;
-      const importance = Math.min(MAX_IMPORTANCE, Math.max(MIN_IMPORTANCE, d.importance));
+      if (looksLikeExpense(content)) continue; // expenses live in Splid, not memory
       const tgUserId = d.scope === 'user' ? d.tgUserId : null;
       const subject = d.scope === 'user' ? d.subject.trim() : '';
-      stmt.run(chatId, d.scope, tgUserId, subject, content, importance);
+      const key = dedupKey(d.scope, tgUserId, subject, content);
+      if (seen.has(key)) continue; // collapse dupes within the same batch
+      seen.add(key);
+      const existingId = byKey.get(key);
+      if (existingId !== undefined) {
+        reinforceIds.push(existingId); // restatement → reinforce, don't duplicate
+        continue;
+      }
+      const importance = Math.min(MAX_IMPORTANCE, Math.max(MIN_IMPORTANCE, d.importance));
+      const res = stmt.run(chatId, d.scope, tgUserId, subject, content, importance);
+      byKey.set(key, Number(res.lastInsertRowid));
     }
   });
   run(drafts);
+  reinforceItems(chatId, reinforceIds);
 }
 
 /**
@@ -190,14 +234,111 @@ export function insertPinned(
   const scope = opts.scope ?? 'chat';
   const subject = scope === 'user' ? (opts.subject ?? '').trim() : '';
   const tgUserId = scope === 'user' ? (opts.tgUserId ?? null) : null;
-  const res = getDb()
+  const text = content.trim();
+  const db = getDb();
+
+  // If this fact is already known (even as a decaying passive item), don't duplicate:
+  // promote it to pinned, reinforce it and refresh its recency, then return its id.
+  const key = dedupKey(scope, tgUserId, subject, text);
+  const existing = getAllItems(chatId).find(
+    (i) => dedupKey(i.scope, i.tgUserId, i.subject, i.content) === key,
+  );
+  if (existing) {
+    db.prepare(
+      `UPDATE chat_memory_item
+         SET source = 'explicit',
+             reinforce = reinforce + 1,
+             importance = MIN(?, importance + ?),
+             last_seen = unixepoch() * 1000
+       WHERE id = ? AND chat_id = ?`,
+    ).run(MAX_IMPORTANCE, REINFORCE_IMPORTANCE_STEP, existing.id, chatId);
+    return existing.id;
+  }
+
+  const res = db
     .prepare(
       `INSERT INTO chat_memory_item
          (chat_id, scope, tg_user_id, subject, content, importance, reinforce, source, created_at, last_seen)
        VALUES (?, ?, ?, ?, ?, 3, 0, 'explicit', unixepoch() * 1000, unixepoch() * 1000)`,
     )
-    .run(chatId, scope, tgUserId, subject, content.trim());
+    .run(chatId, scope, tgUserId, subject, text);
   return Number(res.lastInsertRowid);
+}
+
+/**
+ * Reclassify one item's scope in place (e.g. moving a voice/style directive out of
+ * factual chat memory into the 'persona' bucket so it no longer competes for the chat
+ * fact budget). Moving to 'persona' also pins it (explicit, never pruned) and drops any
+ * per-person attribution. Returns the item's content, or null if the id isn't in the chat.
+ */
+export function setItemScope(chatId: number, id: number, scope: MemoryScope): string | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT content FROM chat_memory_item WHERE id = ? AND chat_id = ?')
+    .get(id, chatId) as { content: string } | undefined;
+  if (!row) return null;
+  if (scope === 'persona') {
+    db.prepare(
+      `UPDATE chat_memory_item
+         SET scope = 'persona', source = 'explicit', tg_user_id = NULL, subject = '',
+             last_seen = unixepoch() * 1000
+       WHERE id = ? AND chat_id = ?`,
+    ).run(id, chatId);
+  } else {
+    db.prepare(`UPDATE chat_memory_item SET scope = ? WHERE id = ? AND chat_id = ?`).run(
+      scope,
+      id,
+      chatId,
+    );
+  }
+  return row.content;
+}
+
+/**
+ * Collapse duplicate memory items in one pass: facts with the same identity + normalized
+ * content are merged into the strongest survivor (pinned beats passive, then highest
+ * weight), whose reinforcement absorbs the folded rows. Returns how many rows were
+ * removed. Use to clean a store that accumulated duplicates before dedup-on-insert.
+ */
+export function dedupeMemory(chatId: number, halfLifeDays: number): number {
+  const items = getAllItems(chatId);
+  const groups = new Map<string, MemoryItem[]>();
+  for (const it of items) {
+    const key = dedupKey(it.scope, it.tgUserId, it.subject, it.content);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(it);
+    else groups.set(key, [it]);
+  }
+
+  const now = Date.now();
+  const toDelete: number[] = [];
+  const bumps: { id: number; add: number }[] = [];
+  for (const bucket of groups.values()) {
+    if (bucket.length < 2) continue;
+    bucket.sort((a, b) => {
+      if (a.source !== b.source) return a.source === 'explicit' ? -1 : 1;
+      return effectiveWeight(b, now, halfLifeDays) - effectiveWeight(a, now, halfLifeDays);
+    });
+    const [keep, ...drop] = bucket;
+    // The survivor absorbs each folded row (one re-mention each, plus its own count).
+    const add = drop.reduce((sum, d) => sum + 1 + d.reinforce, 0);
+    bumps.push({ id: keep!.id, add });
+    for (const d of drop) toDelete.push(d.id);
+  }
+  if (toDelete.length === 0) return 0;
+
+  const db = getDb();
+  const bump = db.prepare(
+    `UPDATE chat_memory_item
+       SET reinforce = reinforce + ?, last_seen = unixepoch() * 1000
+     WHERE id = ?`,
+  );
+  const del = db.prepare('DELETE FROM chat_memory_item WHERE id = ?');
+  db.transaction(() => {
+    for (const b of bumps) bump.run(b.add, b.id);
+    for (const id of toDelete) del.run(id);
+  })();
+  return toDelete.length;
 }
 
 /** Keep storage within `max` passive items; delete the lowest-weight overflow. */
@@ -221,6 +362,9 @@ export function getMemoryForContext(
     halfLifeDays: number;
     chatBudget: number;
     userBudget: number;
+    otherUserBudget?: number;
+    maxOtherUsers?: number;
+    personaBudget?: number;
   },
 ): ContextSelection {
   return selectForContext(getAllItems(chatId), {
@@ -230,6 +374,9 @@ export function getMemoryForContext(
     recentParticipantIds: opts.recentParticipantIds,
     chatBudget: opts.chatBudget,
     userBudget: opts.userBudget,
+    otherUserBudget: opts.otherUserBudget,
+    maxOtherUsers: opts.maxOtherUsers,
+    personaBudget: opts.personaBudget,
   });
 }
 

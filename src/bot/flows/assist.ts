@@ -46,6 +46,20 @@ import {
 } from '../../db/repos/pending.repo.js';
 import { previewKeyboard } from '../keyboards.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
+import { looksLikeExpense } from '../../util/money.js';
+
+/**
+ * Handle the `remember` tool / explicit "запомни …": pin the note, but keep recorded
+ * expenses out of memory — those belong in Splid. Expense-like notes are refused with a
+ * short nudge instead of polluting the durable memory store.
+ */
+export function rememberNote(chatId: number, note: string): string {
+  if (looksLikeExpense(note)) {
+    return 'Это похоже на трату — такое в память не пишу, для трат есть Splid. Если это правда трата — просто скажи её как трату, я оформлю. 🤙';
+  }
+  insertPinned(chatId, note);
+  return 'Запомнил.';
+}
 
 export function senderName(ctx: Context): string {
   const u = ctx.from;
@@ -312,6 +326,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
     chatBudget: cfg.MEMORY_CONTEXT_CHAT,
     userBudget: cfg.MEMORY_CONTEXT_USER,
+    otherUserBudget: cfg.MEMORY_CONTEXT_OTHER,
+    maxOtherUsers: cfg.MEMORY_CONTEXT_MAX_OTHERS,
+    personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
   });
 
   let result: AssistantResult;
@@ -325,6 +342,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           subject: u.subject,
           items: u.items.map((i) => ({ content: i.content })),
         })),
+        memoryPersona: memorySel.persona.map((i) => ({ content: i.content })),
         senderName: senderName(ctx),
         timezone: getTimezone(chatId),
         splidConnected: !!chatCfg?.provider_group_id,
@@ -338,10 +356,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         userContent: args.userContent,
       },
       {
-        remember: (note) => {
-          insertPinned(chatId, note);
-          return 'Запомнил.';
-        },
+        remember: (note) => rememberNote(chatId, note),
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         editLexicon: makeEditLexiconHandler(chatId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
@@ -536,7 +551,7 @@ async function rewordPendingInner(
       userContent: correctionContent,
     },
     {
-      remember: (note) => (insertPinned(chatId, note), 'Запомнил.'),
+      remember: (note) => rememberNote(chatId, note),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       editLexicon: makeEditLexiconHandler(chatId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),

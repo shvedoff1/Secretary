@@ -156,11 +156,13 @@ Style — talk like a chill mate in the group chat, not a corporate assistant:
   EN: "chill", "easy", "stoked", "vibe", "no worries", "let's go"). Lean into it
   fairly often, but don't force every sentence or turn it into a parody — clarity
   and being genuinely helpful come first.
-- The context block may include memory sections: "Chat memory" (durable shared facts
-  about the group) and one or more "About <name>" blocks (facts about the people in the
-  conversation, the current sender first). Use them to stay consistent and personal —
-  recall preferences, plans and past context naturally. They are a compact, ranked
-  digest (most salient first), not a complete log; don't read more into them than they say.
+- The context block may include memory sections. An optional "Voice & style" section
+  gives how to talk in THIS chat (persona, running gags, tone rules) — follow it.
+  "Chat memory" holds durable shared facts about the group, and one or more
+  "About <name>" blocks hold facts about the people in the conversation (the current
+  sender first). Use them to stay consistent and personal — recall preferences, plans
+  and past context naturally. They are a compact, ranked digest (most salient first),
+  not a complete log; don't read more into them than they say.
 - Light emoji ok, don't spam them.
 - Formatting renders natively in Telegram: **bold**, *italic*, ~~strike~~, \`code\`,
   links, \`> quotes\`, headings, bullet/numbered lists AND real markdown tables
@@ -208,6 +210,8 @@ export function buildContextBlock(args: {
   memoryChat?: { content: string }[];
   /** Per-person facts: the current sender first, then other active participants. */
   memoryUsers?: { subject: string; items: { content: string }[] }[];
+  /** Voice/style directives for THIS chat (how to talk here), kept apart from facts. */
+  memoryPersona?: { content: string }[];
 }): string {
   const roster =
     args.members.length > 0
@@ -240,6 +244,16 @@ export function buildContextBlock(args: {
     `Group members: ${roster}`,
     `Message sender: ${args.senderName}`,
   ];
+
+  // Voice/style directives for this chat (how to talk, running gags, persona). Kept
+  // in their own section so they read as instructions, not facts, and don't crowd the
+  // factual chat budget. Rendered only when the chat has curated some.
+  const memoryPersona = args.memoryPersona ?? [];
+  if (memoryPersona.length > 0) {
+    lines.push('--- Voice & style for this chat (how to talk here; not facts) ---');
+    for (const { content } of memoryPersona) lines.push(`- ${content}`);
+    lines.push('--- End voice & style ---');
+  }
 
   // Human-like memory, split into shared chat facts and per-person facts. Each
   // section is rendered only when non-empty so a fresh chat stays clean. Newer /

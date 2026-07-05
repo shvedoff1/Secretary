@@ -20,6 +20,8 @@ import {
   insertPinned,
   clearMemoryItems,
   listMemoryItemsForDisplay,
+  setItemScope,
+  dedupeMemory,
 } from '../../db/repos/memoryItem.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
@@ -113,7 +115,11 @@ export async function cmdChat(ctx: Context): Promise<void> {
   const memItems = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
   const memory = memItems.length
     ? memItems
-        .map((it) => `   - ${it.pinned ? '📌 ' : ''}${it.content}${it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : ''}`)
+        .map((it, i) => {
+          const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : '';
+          const who = it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : '';
+          return `   ${i + 1}. ${tag}${it.content}${who}`;
+        })
         .join('\n')
     : '(пусто)';
 
@@ -139,7 +145,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       memory,
       slangLine,
       ``,
-      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
+      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /dedupememory ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
     ].join('\n'),
   );
 }
@@ -231,6 +237,60 @@ export async function cmdClearMemory(ctx: Context): Promise<void> {
   clearMemoryItems(id);
   clearTurns(id);
   await ctx.reply(`🧹 Память и история диалога чата ${id} очищены.`);
+}
+
+/**
+ * `/persona <chatId> <N>` reclassifies memory item #N (as numbered in /chat and
+ * /memory) into the chat's voice/style bucket, so a tone directive stops competing
+ * with factual chat memory for the context budget. `/persona <chatId> <текст>` pins a
+ * brand-new style line straight into that bucket.
+ */
+export async function cmdPersona(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null || !rest) {
+    await ctx.reply(
+      'Использование: /persona <chatId> <N> (перенести пункт #N из /chat в стиль) ' +
+        'или /persona <chatId> <текст> (добавить новую стилевую строку).',
+    );
+    return;
+  }
+  // A bare integer targets an existing item by its /chat index; anything else is text.
+  if (/^\d+$/.test(rest)) {
+    const n = Number(rest);
+    const items = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+    const target = items[n - 1];
+    if (!target) {
+      await ctx.reply(`Нет пункта №${n} в памяти чата ${id}. Список: /chat ${id}`);
+      return;
+    }
+    if (target.scope === 'persona') {
+      await ctx.reply(`Пункт №${n} уже в стиле (🎭).`);
+      return;
+    }
+    const moved = setItemScope(id, target.id, 'persona');
+    await ctx.reply(`🎭 Перенёс в стиль чата ${id}: ${moved ?? target.content}`);
+    return;
+  }
+  insertPinned(id, rest, { scope: 'persona' });
+  await ctx.reply(`🎭 Добавил в стиль чата ${id}.`);
+}
+
+/** `/dedupememory <chatId>` folds duplicate memory items into one pass. */
+export async function cmdDedupeMemory(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const id = parseChatId(args(ctx));
+  if (id === null) {
+    await ctx.reply('Использование: /dedupememory <chatId>');
+    return;
+  }
+  const removed = dedupeMemory(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+  await ctx.reply(
+    removed > 0
+      ? `🧹 Схлопнул дубли в памяти чата ${id}: убрал ${removed}. Глянь /chat ${id}.`
+      : `Дублей в памяти чата ${id} не нашёл.`,
+  );
 }
 
 // --- member links -----------------------------------------------------------

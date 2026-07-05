@@ -22,6 +22,8 @@ import {
   cmdSetCurrency,
   cmdSetMemory,
   cmdAddMemory,
+  cmdPersona,
+  cmdDedupeMemory,
   cmdClearMemory,
   cmdSetLink,
   cmdUnlink,
@@ -86,6 +88,8 @@ export function buildBot(token: string): Bot {
   bot.command('setcurrency', cmdSetCurrency);
   bot.command('setmemory', cmdSetMemory);
   bot.command('addmemory', cmdAddMemory);
+  bot.command('persona', cmdPersona);
+  bot.command('dedupememory', cmdDedupeMemory);
   bot.command('clearmemory', cmdClearMemory);
   bot.command('setlink', cmdSetLink);
   bot.command('unlink', cmdUnlink);

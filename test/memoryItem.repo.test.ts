@@ -115,6 +115,104 @@ describe('memory store', () => {
     expect(repo.sampleStats(1).count).toBe(0);
   });
 
+  it('drops expense-like passive facts (money belongs in Splid, not memory)', async () => {
+    const repo = await freshRepo();
+    repo.recordMemoryItems(1, [
+      { scope: 'chat', tgUserId: null, subject: '', content: 'едут на Бали', importance: 4 },
+      {
+        scope: 'chat',
+        tgUserId: null,
+        subject: '',
+        content: 'Расход на кофе 260 тыс, платил Антон, делится пополам',
+        importance: 4,
+      },
+    ]);
+    expect(repo.getAllItems(1).map((i) => i.content)).toEqual(['едут на Бали']);
+  });
+
+  it('folds a restated passive fact into a reinforce instead of duplicating', async () => {
+    const repo = await freshRepo();
+    repo.recordMemoryItems(1, [
+      { scope: 'chat', tgUserId: null, subject: '', content: 'Миша — это Михалыч', importance: 3 },
+    ]);
+    // A later batch restates the same fact with different casing/punctuation.
+    repo.recordMemoryItems(1, [
+      { scope: 'chat', tgUserId: null, subject: '', content: 'миша это михалыч.', importance: 3 },
+    ]);
+    const items = repo.getAllItems(1);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.reinforce).toBe(1);
+  });
+
+  it('re-pinning an existing (even passive) fact promotes it, never duplicates', async () => {
+    const repo = await freshRepo();
+    repo.recordMemoryItems(1, [
+      { scope: 'chat', tgUserId: null, subject: '', content: 'любит серф', importance: 2 },
+    ]);
+    const passiveId = repo.getAllItems(1)[0]!.id;
+    const pinnedId = repo.insertPinned(1, 'Любит серф!');
+    expect(pinnedId).toBe(passiveId); // same row
+    const items = repo.getAllItems(1);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.source).toBe('explicit'); // promoted to pinned
+  });
+
+  it('reclassifies an item into the persona bucket (pinned, unattributed)', async () => {
+    const repo = await freshRepo();
+    repo.recordMemoryItems(1, [
+      { scope: 'user', tgUserId: 5, subject: 'Sky', content: 'говори как серфер', importance: 3 },
+    ]);
+    const id = repo.getAllItems(1)[0]!.id;
+    const moved = repo.setItemScope(1, id, 'persona');
+    expect(moved).toBe('говори как серфер');
+    const it = repo.getAllItems(1)[0]!;
+    expect(it.scope).toBe('persona');
+    expect(it.source).toBe('explicit');
+    expect(it.tgUserId).toBeNull();
+    // Persona items ride their own context section, not the chat facts.
+    const sel = repo.getMemoryForContext(1, {
+      senderTgUserId: 5,
+      recentParticipantIds: [5],
+      halfLifeDays: 14,
+      chatBudget: 8,
+      userBudget: 6,
+    });
+    expect(sel.persona.map((i) => i.content)).toEqual(['говори как серфер']);
+    expect(sel.chat).toHaveLength(0);
+  });
+
+  it('dedupeMemory folds duplicates into the strongest survivor', async () => {
+    const repo = await freshRepo();
+    // Two passive dupes plus a pinned dupe of the same fact.
+    repo.recordMemoryItems(1, [
+      { scope: 'chat', tgUserId: null, subject: '', content: 'уникальный факт', importance: 3 },
+    ]);
+    // Bypass insert-time dedup by writing raw dupes via the pinned path with distinct
+    // punctuation is folded on insert, so craft dupes that only collide after
+    // normalization but were stored before dedup existed: use recordMemoryItems for
+    // one and a direct second insert with different surface form.
+    const db = (await import('../src/db/client.js')).getDb();
+    db.prepare(
+      `INSERT INTO chat_memory_item
+         (chat_id, scope, tg_user_id, subject, content, importance, reinforce, source, created_at, last_seen)
+       VALUES (1,'chat',NULL,'','Уникальный факт!',3,0,'passive',1,1)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO chat_memory_item
+         (chat_id, scope, tg_user_id, subject, content, importance, reinforce, source, created_at, last_seen)
+       VALUES (1,'chat',NULL,'','уникальный   факт',3,2,'explicit',1,1)`,
+    ).run();
+    expect(repo.getAllItems(1)).toHaveLength(3);
+
+    const removed = repo.dedupeMemory(1, 14);
+    expect(removed).toBe(2);
+    const survivors = repo.getAllItems(1);
+    expect(survivors).toHaveLength(1);
+    // The pinned row wins; it absorbs the folded rows' reinforcement (2 + 1 + 1 = 4).
+    expect(survivors[0]!.source).toBe('explicit');
+    expect(survivors[0]!.reinforce).toBe(4);
+  });
+
   it('builds a context selection split into chat and per-user sections', async () => {
     const repo = await freshRepo();
     repo.recordMemoryItems(1, [

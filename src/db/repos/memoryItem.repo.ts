@@ -488,6 +488,33 @@ export function removeMemoryItem(chatId: number, id: number): string | null {
   return row.content;
 }
 
+/**
+ * Apply a reconciliation plan to a chat's memory: rewrite the consolidated survivors
+ * first (edits), then remove the contradicted/stale/duplicate rows (deletes). Both are
+ * scoped to the chat and no-op on ids that aren't in it, so a stale plan can't touch the
+ * wrong data. A delete whose id was just edited is skipped (the edit keeps the survivor).
+ * Returns how many rows were edited/deleted.
+ */
+export function applyReconcilePlan(
+  chatId: number,
+  plan: { deletes: { id: number }[]; edits: { id: number; content: string }[] },
+): { edited: number; deleted: number } {
+  let edited = 0;
+  const editedIds = new Set<number>();
+  for (const e of plan.edits) {
+    if (editMemoryItemContent(chatId, e.id, e.content) !== null) {
+      edited++;
+      editedIds.add(e.id);
+    }
+  }
+  let deleted = 0;
+  for (const d of plan.deletes) {
+    if (editedIds.has(d.id)) continue;
+    if (removeMemoryItem(chatId, d.id) !== null) deleted++;
+  }
+  return { edited, deleted };
+}
+
 /** Wipe a chat's memory items and any buffered samples. */
 export function clearMemoryItems(chatId: number): void {
   const db = getDb();

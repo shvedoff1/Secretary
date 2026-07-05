@@ -52,7 +52,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   back once before overriding — prompt-driven). `edit_memory` fixes an existing fact in
   place (fuzzy `find` → overwrite with `replace`). Explicit/pinned chat facts get their
   own guaranteed context budget (`MEMORY_CONTEXT_PINNED`, separate from the rotating
-  `MEMORY_CONTEXT_CHAT`) so a remembered fact always reaches the model. Tools in
+  `MEMORY_CONTEXT_CHAT`) so a remembered fact always reaches the model. Bulk cleanup of
+  ACCUMULATED conflicts (what `/dedupememory`'s exact-match fold can't catch) is the
+  admin `/reconcile <chatId>` command → `src/llm/reconcile.ts` (a one-shot Haiku pass over
+  the whole store proposing deletes/merges) → dry-run preview → `/reconcile <chatId> apply`
+  (`applyReconcilePlan`); it never changes memory without the admin confirming. Tools in
   `tools.ts`, Zod + JSON schemas
   in `schema.ts`, system prompt + context block in `prompts.ts`. `edit_lexicon`
   corrects the stored MEANING of a learned slang word (the "поменяй значение у X на Y"

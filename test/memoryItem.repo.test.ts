@@ -106,6 +106,25 @@ describe('memory store', () => {
     expect(repo.getAllItems(1).map((i) => i.content).sort()).toEqual(['low', 'pinned']);
   });
 
+  it('applies a reconcile plan: edits survivors, deletes the rest, skips foreign ids', async () => {
+    const repo = await freshRepo();
+    const a = repo.insertPinned(1, 'Миша и Михалыч разные люди');
+    const b = repo.insertPinned(1, 'Миша это Михалыч, один человек');
+    const c = repo.insertPinned(1, 'едут на Бали');
+    // Plan: rewrite A to the resolved wording, delete B (contradiction), delete a
+    // foreign id (no-op), and delete C's id which is ALSO edited → the edit wins.
+    const res = repo.applyReconcilePlan(1, {
+      edits: [
+        { id: a, content: 'Миша = Михалыч — один человек' },
+        { id: c, content: 'едут на Бали ради серфинга' },
+      ],
+      deletes: [{ id: b }, { id: 99999 }, { id: c }],
+    });
+    expect(res).toEqual({ edited: 2, deleted: 1 }); // only B deleted; foreign + edited-c skipped
+    const contents = repo.getAllItems(1).map((i) => i.content).sort();
+    expect(contents).toEqual(['Миша = Михалыч — один человек', 'едут на Бали ради серфинга']);
+  });
+
   it('clears all items and buffered samples for a chat', async () => {
     const repo = await freshRepo();
     repo.insertPinned(1, 'x');

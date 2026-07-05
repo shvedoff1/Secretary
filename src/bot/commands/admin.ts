@@ -23,7 +23,10 @@ import {
   setItemScope,
   dedupeMemory,
   editMemoryItemContent,
+  getAllItems,
+  applyReconcilePlan,
 } from '../../db/repos/memoryItem.repo.js';
+import { reconcileMemory, type ReconcilePlan } from '../../llm/reconcile.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { replyLong } from '../../util/telegramText.js';
@@ -146,7 +149,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       memory,
       slangLine,
       ``,
-      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /editmemory ${id} <N> <текст> · /dedupememory ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
+      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /editmemory ${id} <N> <текст> · /dedupememory ${id} · /reconcile ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
     ].join('\n'),
   );
 }
@@ -300,6 +303,74 @@ export async function cmdEditMemory(ctx: Context): Promise<void> {
   }
   const old = editMemoryItemContent(id, target.id, text);
   await ctx.reply(`✏️ Пункт №${n} чата ${id}: «${old ?? target.content}» → «${text}».`);
+}
+
+// A reconciliation plan awaiting the admin's `apply`, per chat. In-memory and
+// ephemeral (like the other admin/session state) — a restart just means re-running the
+// dry-run, which is cheap and safe.
+const pendingReconcile = new Map<number, ReconcilePlan>();
+
+/**
+ * `/reconcile <chatId>` runs an LLM pass over the WHOLE store to find semantic
+ * contradictions / stale / duplicate facts and shows a dry-run of what it would remove
+ * or rewrite (nothing is changed yet). `/reconcile <chatId> apply` applies the last
+ * previewed plan. This is the cleanup for accumulated conflicts that /dedupememory (exact
+ * duplicates only) can't catch.
+ */
+export async function cmdReconcile(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /reconcile <chatId> (превью), затем /reconcile <chatId> apply');
+    return;
+  }
+
+  if (rest.trim().toLowerCase() === 'apply') {
+    const plan = pendingReconcile.get(id);
+    if (!plan) {
+      await ctx.reply(`Нет готового плана для ${id}. Сначала /reconcile ${id} для превью.`);
+      return;
+    }
+    const { edited, deleted } = applyReconcilePlan(id, plan);
+    pendingReconcile.delete(id);
+    await ctx.reply(`✅ Применил к чату ${id}: убрал ${deleted}, поправил ${edited}. Глянь /chat ${id}.`);
+    return;
+  }
+
+  const items = getAllItems(id);
+  if (items.length === 0) {
+    await ctx.reply(`Память чата ${id} пуста — чистить нечего.`);
+    return;
+  }
+  await ctx.reply('🧠 Думаю над противоречиями… (это займёт пару секунд)');
+  const plan = await reconcileMemory(items);
+  if (plan === null) {
+    await ctx.reply('⚠️ Не смог обратиться к ИИ. Попробуй ещё раз чуть позже.');
+    return;
+  }
+  if (plan.deletes.length === 0 && plan.edits.length === 0) {
+    await ctx.reply('Явных противоречий не нашёл. 🤙');
+    return;
+  }
+
+  // Preview by CONTENT (not #id) so the admin reads exactly what would change.
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const lines: string[] = [];
+  for (const e of plan.edits) {
+    const it = byId.get(e.id);
+    if (it) lines.push(`✏️ «${it.content}» → «${e.content}»${e.reason ? ` — ${e.reason}` : ''}`);
+  }
+  for (const d of plan.deletes) {
+    const it = byId.get(d.id);
+    if (it) lines.push(`🗑 «${it.content}»${d.reason ? ` — ${d.reason}` : ''}`);
+  }
+  pendingReconcile.set(id, plan);
+  await replyLong(
+    ctx,
+    `Нашёл на чистку в чате ${id} (${lines.length}) — это ПРЕВЬЮ, ничего не тронул:\n\n` +
+      `${lines.join('\n')}\n\nПрименить: /reconcile ${id} apply`,
+  );
 }
 
 /** `/dedupememory <chatId>` folds duplicate memory items into one pass. */

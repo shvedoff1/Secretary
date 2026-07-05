@@ -48,11 +48,29 @@ describe('rememberNote', () => {
     expect(contents).toEqual(['Итого 4 человека']); // old removed, new pinned
   });
 
-  it('ignores a replaces entry that matches nothing (still pins the note)', async () => {
+  it('surfaces a failed override instead of a misleading success', async () => {
     const { assist, repo } = await load();
-    const out = assist.rememberNote(1, 'новый факт', ['которого нет в памяти']);
-    expect(out).toBe('Запомнил.'); // nothing removed → plain confirmation
-    expect(repo.getAllItems(1).map((i) => i.content)).toEqual(['новый факт']);
+    repo.insertPinned(1, 'нас 5 человек');
+    // The model paraphrases the old fact so it does not match — the override fails.
+    const out = assist.rememberNote(1, 'нас 4 человека', ['нас пятеро было раньше']);
+    expect(out).toMatch(/не нашёл/i); // does NOT claim a clean update
+    const contents = repo.getAllItems(1).map((i) => i.content).sort();
+    // Both survive (nothing matched), but the user was told, not misled.
+    expect(contents).toEqual(['нас 4 человека', 'нас 5 человек']);
+  });
+
+  it('resolves all replaces against the original state, not mutated mid-loop', async () => {
+    const { assist, repo } = await load();
+    repo.insertPinned(1, 'серфинг утром');
+    repo.insertPinned(1, 'серфинг вечером');
+    // "серфинг" is ambiguous (two containment matches) and must stay ambiguous even
+    // after "серфинг утром" is removed — so the evening fact is NOT collateral-nuked.
+    const out = assist.rememberNote(1, 'серфинг днём', ['серфинг утром', 'серфинг']);
+    const contents = repo.getAllItems(1).map((i) => i.content).sort();
+    expect(contents).toContain('серфинг вечером'); // survived
+    expect(contents).toContain('серфинг днём'); // new note pinned
+    expect(contents).not.toContain('серфинг утром'); // the one real match removed
+    expect(out).toMatch(/не нашёл/i); // "серфинг" was unresolved → surfaced
   });
 });
 

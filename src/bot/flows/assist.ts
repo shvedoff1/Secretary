@@ -70,16 +70,32 @@ export function rememberNote(chatId: number, note: string, replaces?: string[]):
   if (looksLikeExpense(note)) {
     return 'Это похоже на трату — такое в память не пишу, для трат есть Splid. Если это правда трата — просто скажи её как трату, я оформлю. 🤙';
   }
-  const removed: string[] = [];
-  for (const text of replaces ?? []) {
+  // Resolve EVERY superseded fact against the current (unmutated) state first, then
+  // remove — otherwise an earlier removal could turn a later `replaces` entry that was
+  // safely ambiguous into a unique match and nuke an unrelated fact.
+  const requested = replaces ?? [];
+  const ids = new Set<number>();
+  let unresolved = 0;
+  for (const text of requested) {
     const match = findMemoryItemByText(chatId, text);
-    if (match && removeMemoryItem(chatId, match.id) !== null) removed.push(match.content);
+    if (match) ids.add(match.id);
+    else unresolved++;
+  }
+  const removed: string[] = [];
+  for (const id of ids) {
+    const content = removeMemoryItem(chatId, id);
+    if (content !== null) removed.push(content);
   }
   insertPinned(chatId, note);
-  if (removed.length > 0) {
-    return `Обновил — заменил «${removed.join('», «')}». Теперь у меня записано: ${note}`;
+
+  if (requested.length === 0) return 'Запомнил.';
+  if (removed.length === 0) {
+    // The override was asked for but nothing matched — say so, so a stale contradicting
+    // fact doesn't silently survive alongside the new one under a "done" confirmation.
+    return `Записал: ${note}. Но старое, что нужно было заменить, не нашёл — глянь /memory, могло остаться противоречие.`;
   }
-  return 'Запомнил.';
+  const tail = unresolved > 0 ? ' (часть старого не нашёл — глянь /memory)' : '';
+  return `Обновил — заменил «${removed.join('», «')}»${tail}. Теперь у меня записано: ${note}`;
 }
 
 /**

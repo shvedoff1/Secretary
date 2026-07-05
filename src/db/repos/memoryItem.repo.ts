@@ -428,6 +428,10 @@ export function findMemoryItemByText(chatId: number, text: string): MemoryItem |
   if (exact.length > 1) return null; // ambiguous — refuse rather than guess
   const near = items.filter((i) => {
     const c = normalizeForDedup(i.content);
+    // Skip facts that normalize to nothing (emoji/punctuation-only): an empty string is
+    // a substring of every query, so it would act as a universal wildcard and match — and
+    // possibly delete/overwrite — the wrong row.
+    if (!c) return false;
     return c.includes(q) || q.includes(c);
   });
   return near.length === 1 ? near[0]! : null;
@@ -437,17 +441,39 @@ export function findMemoryItemByText(chatId: number, text: string): MemoryItem |
  * Overwrite one item's content in place (keeping its id, scope, source and
  * reinforcement history) and refresh its recency. Returns the OLD content, or null if
  * the id isn't in the chat. This is the surgical "fix an existing fact" path.
+ *
+ * If the edit would make this fact identical (same identity + normalized content) to
+ * another existing item, they are FOLDED instead: the other row absorbs a reinforce and
+ * this row is deleted — keeping the module's no-duplicate invariant, so the text stays
+ * findable by the tools (two exact matches would otherwise resolve to null forever).
  */
 export function editMemoryItemContent(chatId: number, id: number, content: string): string | null {
   const db = getDb();
   const row = db
-    .prepare('SELECT content FROM chat_memory_item WHERE id = ? AND chat_id = ?')
-    .get(id, chatId) as { content: string } | undefined;
+    .prepare('SELECT scope, tg_user_id, subject, content FROM chat_memory_item WHERE id = ? AND chat_id = ?')
+    .get(id, chatId) as
+    | { scope: MemoryScope; tg_user_id: number | null; subject: string; content: string }
+    | undefined;
   if (!row) return null;
+  const text = content.trim();
+  const key = dedupKey(row.scope, row.tg_user_id, row.subject, text);
+  const collision = getAllItems(chatId).find(
+    (i) => i.id !== id && dedupKey(i.scope, i.tgUserId, i.subject, i.content) === key,
+  );
+  if (collision) {
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE chat_memory_item SET reinforce = reinforce + 1, last_seen = unixepoch() * 1000
+         WHERE id = ?`,
+      ).run(collision.id);
+      db.prepare('DELETE FROM chat_memory_item WHERE id = ? AND chat_id = ?').run(id, chatId);
+    })();
+    return row.content;
+  }
   db.prepare(
     `UPDATE chat_memory_item SET content = ?, last_seen = unixepoch() * 1000
      WHERE id = ? AND chat_id = ?`,
-  ).run(content.trim(), id, chatId);
+  ).run(text, id, chatId);
   return row.content;
 }
 

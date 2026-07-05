@@ -227,6 +227,32 @@ describe('memory store', () => {
     expect(repo.findMemoryItemByText(1, 'серфинг')).toBeNull();
   });
 
+  it('does not let an emoji/punctuation-only fact act as a match-everything wildcard', async () => {
+    const repo = await freshRepo();
+    repo.insertPinned(1, '🤙'); // normalizes to empty
+    repo.insertPinned(1, 'Итого 5 человек');
+    // A query that matches no real fact must NOT resolve to the empty-normalized fact.
+    expect(repo.findMemoryItemByText(1, 'совершенно левый текст')).toBeNull();
+    // Real matches still work with the wildcard fact present.
+    expect(repo.findMemoryItemByText(1, 'итого 5 человек')!.content).toBe('Итого 5 человек');
+  });
+
+  it('folds an edit that would duplicate another fact instead of creating a twin', async () => {
+    const repo = await freshRepo();
+    const a = repo.insertPinned(1, 'Едем на Бали');
+    const b = repo.insertPinned(1, 'Летим на Бали');
+    // Correcting B to equal A must not leave two identical rows (which would be
+    // un-findable by the tools, exact.length > 1 → null).
+    const old = repo.editMemoryItemContent(1, b, 'едем на бали');
+    expect(old).toBe('Летим на Бали');
+    const items = repo.getAllItems(1);
+    expect(items).toHaveLength(1); // B folded into A
+    expect(items[0]!.id).toBe(a);
+    expect(items[0]!.reinforce).toBe(1); // survivor absorbed the fold
+    // And the text stays findable (single row now).
+    expect(repo.findMemoryItemByText(1, 'Едем на Бали')!.id).toBe(a);
+  });
+
   it('edits a fact in place, keeping its id and reinforcement history', async () => {
     const repo = await freshRepo();
     const id = repo.insertPinned(1, 'Итого 5 человек');

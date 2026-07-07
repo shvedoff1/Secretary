@@ -101,26 +101,29 @@ describe('onVoice reaction lifecycle', () => {
     expect(react).toHaveBeenNthCalledWith(2, []);
   });
 
-  it('marks then clears an ignored group voice note, without calling the assistant', async () => {
+  it('answers an unaddressed group voice note as if it pinged the bot', async () => {
+    // The core change: a plain group voice note that neither names the bot nor
+    // looks like an expense used to be ignored silently. Now every voice note is
+    // treated as addressed, so the assistant is always called and answers.
     mockEnabled.mockReturnValue(true);
     mockTranscribe.mockResolvedValue('просто болтаю');
     mockAddressed.mockReturnValue(false);
-    mockRoute.mockReturnValue('ignore');
+    mockRun.mockResolvedValue('replied');
 
     const { ctx, react } = fakeCtx();
     await onVoice(ctx);
 
+    expect(mockRun).toHaveBeenCalledOnce();
+    expect(mockRun.mock.calls[0]?.[1]).toMatchObject({ addressed: true, source: 'voice' });
+    // ✍️ ack set up front, then cleared once it turned into a plain reply.
     expect(react).toHaveBeenNthCalledWith(1, WRITING);
     expect(react).toHaveBeenNthCalledWith(2, []);
-    expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it('answers a by-name question even when routing would ignore it', async () => {
+  it('answers a by-name question without special routing', async () => {
     mockEnabled.mockReturnValue(true);
     mockTranscribe.mockResolvedValue('Скай, какая погода?');
     mockAddressed.mockReturnValue(false);
-    mockRoute.mockReturnValue('ignore'); // not an expense, not @-addressed
-    mockByName.mockReturnValue(true); // …but it names the bot with a question
     mockRun.mockResolvedValue('replied');
 
     const { ctx } = fakeCtx();
@@ -251,7 +254,9 @@ describe('onVoice reply to a photo (spoken receipt split)', () => {
     const [, photos, caption, addressed] = mockPhoto.mock.calls[0]!;
     expect(photos).toBe(photo);
     expect(caption).toBe('бургер у меня, креветки у Ивана');
-    expect(addressed).toBe(false); // silent unless it really is an expense
+    // Every voice note is now addressed, so the receipt handler responds instead
+    // of staying silent — matching the text ping-a-photo path in onMessage.
+    expect(addressed).toBe(true);
     // Must NOT fall through to the plain-text routing path.
     expect(mockRoute).not.toHaveBeenCalled();
     expect(mockRun).not.toHaveBeenCalled();
@@ -270,9 +275,8 @@ describe('onVoice reply to a photo (spoken receipt split)', () => {
     expect(caption).toContain('бургер у меня, октопс у шведа');
   });
 
-  it('treats it as addressed when the transcript names the bot with a request', async () => {
+  it('always treats a voice reply to a photo as addressed', async () => {
     mockAddressed.mockReturnValue(false);
-    mockByName.mockReturnValue(true); // «Скай, посчитай …»
     const { ctx } = voiceReplyToPhotoCtx('Скай, посчитай чек, бургер у меня');
 
     await onVoice(ctx);

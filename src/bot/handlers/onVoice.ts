@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
-import { isAddressed, routeMessage, addressesBotByName } from '../triggers.js';
+import { isAddressed } from '../triggers.js';
 import { runAndRespond, senderName } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
 import { learnMemoryFromMessage } from '../flows/memory.js';
@@ -61,9 +61,11 @@ async function dmTranscriptToAdmin(ctx: Context, transcript: string): Promise<vo
 
 /**
  * Voice messages: download the audio, transcribe it, then feed the transcript
- * into the same path as a typed message. In groups the bot transcribes every
- * voice note and routes the transcript like text — acting only when addressed
- * or when it looks like an expense, staying silent otherwise.
+ * into the same path as a typed message. Every voice note is treated as a message
+ * addressed TO the bot — exactly as if the transcript had been typed with a ping —
+ * so the bot always responds to what was said (an expense still becomes a preview,
+ * anything else a normal reply). It no longer stays silent on notes that don't name
+ * the bot or look like a spend.
  *
  * We mark every (transcribable) voice note with a ✍️ reaction up front and clear
  * it unless the note turned into a recorded expense, so the chat gets a light
@@ -73,6 +75,10 @@ export async function onVoice(ctx: Context): Promise<void> {
   const voice = ctx.message?.voice;
   if (!voice || !ctx.chat || !ctx.from) return;
 
+  // Whether the user was clearly, directly talking to us (DM / @mention / reply to
+  // the bot). The voice CONTENT is always answered now (see below), but the
+  // "couldn't hear you" edge-case replies stay gated on this so a failed or empty
+  // voice note in a group doesn't fire an error message at everyone.
   const addressed = isAddressed(ctx);
 
   if (!isTranscriptionEnabled()) {
@@ -125,41 +131,31 @@ export async function onVoice(ctx: Context): Promise<void> {
   // are in the picture, the voice says who had what. Feed BOTH the photo and the
   // transcript to the receipt handler (mirroring the text «reply to a photo» path in
   // onMessage) instead of routing the transcript as standalone text: on its own it
-  // carries no numbers, wouldn't look like an expense, and would be silently ignored
-  // (exactly the "ничего не происходит" the user hit). Keep the photo's original
+  // carries no numbers and wouldn't look like an expense. Keep the photo's original
   // caption too — it may hold the real instruction («Скай, на меня Ивана и Антона»).
-  // handleReceiptPhoto still shows the preview even when unaddressed if it really is
-  // an expense, and stays silent otherwise, so a stray voice reply to a random photo
-  // costs only a wasted model call, never noise.
+  // Passed as addressed (like every voice note), matching the text ping-a-photo path
+  // in onMessage, so the receipt handler shows its preview/answer rather than staying
+  // silent.
   const replyTo = ctx.message!.reply_to_message;
   if (replyTo?.photo && replyTo.photo.length > 0) {
-    const addressed = isAddressed(ctx) || addressesBotByName(transcript);
     const caption = replyTo.caption ? `${replyTo.caption}\n\n${transcript}` : transcript;
     // The ✍️ was just a "heard you" ack; the receipt handler owns the UI from here
     // (its own 👀 while working, then a preview), so drop our mark before delegating.
     await clearWriting(ctx);
-    await handleReceiptPhoto(ctx, replyTo.photo, caption, addressed);
+    await handleReceiptPhoto(ctx, replyTo.photo, caption, true);
     return;
   }
 
-  // Route the transcript exactly like a text message: addressed → process,
-  // looks-like-expense → silent auto-expense, otherwise ignore. A voice note
-  // can't @mention or reply, so also treat a by-name question to the bot
-  // ("Скай, какая погода?") as addressed and answer it.
-  let decision = routeMessage(ctx, transcript);
-  if (decision !== 'process' && addressesBotByName(transcript)) {
-    decision = 'process';
-  }
-  if (decision === 'ignore') {
-    await clearWriting(ctx);
-    return;
-  }
-
+  // Every voice note is treated as a message addressed to the bot — the same as a
+  // text message that pings it. We no longer route/ignore transcripts by whether
+  // they name the bot or look like an expense: the bot always responds to what was
+  // said (an expense still becomes a preview, anything else a normal reply).
+  //
   // We own the reaction here (✍️ already set), so tell runAndRespond not to
   // manage its own 👀 indicator. Keep ✍️ only when an expense was drafted.
   const outcome = await runAndRespond(ctx, {
     userContent: transcript,
-    addressed: decision === 'process',
+    addressed: true,
     source: 'voice',
     historyText: `[голос] ${transcript}`,
     manageReaction: false,

@@ -24,7 +24,8 @@ import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
-import { getTimezone, setTimezone } from '../../db/repos/chatSettings.repo.js';
+import { getTimezone, setTimezone, getPersonaId } from '../../db/repos/chatSettings.repo.js';
+import { personaStyleFor } from '../../llm/prompts.js';
 import {
   createTask,
   listTasks,
@@ -397,6 +398,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           items: u.items.map((i) => ({ content: i.content })),
         })),
         memoryPersona: memorySel.persona.map((i) => ({ content: i.content })),
+        personaStyle: personaStyleFor(getPersonaId(chatId) ?? cfg.DEFAULT_PERSONA),
         senderName: senderName(ctx),
         timezone: getTimezone(chatId),
         splidConnected: !!chatCfg?.provider_group_id,
@@ -601,6 +603,7 @@ async function rewordPendingInner(
     {
       defaultCurrency: chatCfg.default_currency,
       members: members.map((m) => ({ name: m.name, initials: m.initials })),
+      personaStyle: personaStyleFor(getPersonaId(chatId) ?? cfg.DEFAULT_PERSONA),
       senderName: senderName(ctx),
       timezone: getTimezone(chatId),
       splidConnected: !!chatCfg.provider_group_id,

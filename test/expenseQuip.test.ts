@@ -33,20 +33,20 @@ describe('expenseQuip', () => {
     vi.unstubAllGlobals();
   });
 
-  it('isExpenseQuipEnabled needs a key and is ON by default', async () => {
-    setEnv({ OPENAI_API_KEY: undefined });
+  it('isExpenseQuipEnabled needs a key and is OFF by default (opt-in flavor)', async () => {
+    setEnv({ OPENAI_API_KEY: undefined, ENABLE_EXPENSE_QUIP: 'true' });
     let mod = await import('../src/llm/expenseQuip.js');
-    expect(mod.isExpenseQuipEnabled()).toBe(false); // no key
+    expect(mod.isExpenseQuipEnabled()).toBe(false); // no key, even when enabled
 
     vi.resetModules();
     setEnv({ OPENAI_API_KEY: 'sk-test' });
     mod = await import('../src/llm/expenseQuip.js');
-    expect(mod.isExpenseQuipEnabled()).toBe(true); // default true + key
+    expect(mod.isExpenseQuipEnabled()).toBe(false); // default OFF now, even with a key
 
     vi.resetModules();
-    setEnv({ OPENAI_API_KEY: 'sk-test', ENABLE_EXPENSE_QUIP: 'false' });
+    setEnv({ OPENAI_API_KEY: 'sk-test', ENABLE_EXPENSE_QUIP: 'true' });
     mod = await import('../src/llm/expenseQuip.js');
-    expect(mod.isExpenseQuipEnabled()).toBe(false); // explicitly off
+    expect(mod.isExpenseQuipEnabled()).toBe(true); // explicitly on + key
   });
 
   it('returns null without calling the API when disabled', async () => {
@@ -68,7 +68,7 @@ describe('expenseQuip', () => {
   });
 
   it('posts the summary and returns the trimmed joke', async () => {
-    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_HUMOR_MODEL: 'gpt-5-mini' });
+    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_HUMOR_MODEL: 'gpt-5-mini', ENABLE_EXPENSE_QUIP: 'true' });
     const fetchMock = vi.fn(async () => completion('  ну ты и шопоголик бро 🤙  '));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -87,7 +87,7 @@ describe('expenseQuip', () => {
   });
 
   it('omits reasoning_effort when OPENAI_REASONING_EFFORT=none', async () => {
-    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_REASONING_EFFORT: 'none' });
+    setEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_REASONING_EFFORT: 'none', ENABLE_EXPENSE_QUIP: 'true' });
     const fetchMock = vi.fn(async () => completion('joke'));
     vi.stubGlobal('fetch', fetchMock);
     const { expenseQuip } = await import('../src/llm/expenseQuip.js');

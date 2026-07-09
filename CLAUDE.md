@@ -122,7 +122,22 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   them into `dist/`. Per-chat data is keyed by `chat_id`; not every chat has a
   `chat_config` row (only Splid-linked ones), so chat-wide settings live in `chat_settings`.
 - LLM cost: the stable prefix (tool schemas + system prompt) is prompt-cached via
-  `cache_control` in `assistant.ts`. Keep `SYSTEM_PROMPT` static so the cache holds.
+  `cache_control` in `assistant.ts`. The system prompt is assembled by `buildSystemPrompt`
+  (`src/llm/prompts.ts`) from a NEUTRAL `CORE_PROMPT` plus opt-in skill FRAGMENTS (e.g.
+  `SURF_FRAGMENT`, appended only when `ENABLE_SURF`); the result is memoized in
+  `assistant.ts` so the cache still holds (deployment config is static). Keep `CORE_PROMPT`
+  and the fragments static — do NOT interpolate per-chat data into them.
+- Persona/voice is per-chat and layered, NOT baked into the core prompt. Presets live in
+  `src/persona/presets.ts` (`neutral` default, `chill`, `formal`, + forker's own); a chat
+  picks one with `/style <id>` (`src/bot/commands/style.ts`), stored in
+  `chat_settings.persona_id` (migration 013). The selected preset's `style` text is injected
+  into the context block's "Voice & style" section (via the `personaStyle` arg / `personaStyleFor`),
+  so switching voices is instant and cache-safe. `DEFAULT_PERSONA` sets the fleet default.
+  This is distinct from the admin `/persona` command, which promotes a memory item into the
+  per-chat `persona` scope (free-form voice tweaks that stack on top of the preset).
+- Fork-friendly defaults: all "flavor" ships OFF (`ENABLE_SURF`, `ENABLE_EXPENSE_QUIP`,
+  `ENABLE_CHIME`, `ENABLE_LEXICON`, `ENABLE_HUMOR` default `false`), so a fresh fork is a
+  clean neutral secretary; extras are opt-in via env + `/style`.
 - Model is configurable via `ANTHROPIC_MODEL` (default `claude-sonnet-5`). The assistant
   call sends `thinking: {type: 'disabled'}` explicitly: on Sonnet 5 adaptive thinking turns
   ON by default when `thinking` is omitted, which would add latency to every tool-routing

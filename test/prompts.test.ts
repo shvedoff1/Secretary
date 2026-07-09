@@ -1,101 +1,143 @@
 import { describe, it, expect } from 'vitest';
-import { SYSTEM_PROMPT, buildContextBlock } from '../src/llm/prompts.js';
+import {
+  CORE_PROMPT,
+  SURF_FRAGMENT,
+  buildSystemPrompt,
+  buildContextBlock,
+  personaStyleFor,
+} from '../src/llm/prompts.js';
+import { getPreset } from '../src/persona/presets.js';
 
 // Guard the web-search guidance so it can't be silently dropped (the model only
 // searches when the prompt tells it to — there's no deterministic trigger).
-describe('SYSTEM_PROMPT web-search guidance', () => {
+describe('CORE_PROMPT web-search guidance', () => {
   it('tells the model to always search when explicitly asked', () => {
-    expect(SYSTEM_PROMPT).toContain('web_search');
+    expect(CORE_PROMPT).toContain('web_search');
     // An explicit request must force a search ("ALWAYS call web_search ...").
-    expect(SYSTEM_PROMPT).toMatch(/ALWAYS call `?web_search/);
-    expect(SYSTEM_PROMPT.toLowerCase()).toContain('загугли');
+    expect(CORE_PROMPT).toMatch(/ALWAYS call `?web_search/);
+    expect(CORE_PROMPT.toLowerCase()).toContain('загугли');
   });
 });
 
 // Slang now rides ONLY on the OpenAI humorizer, not Claude — Claude gets clean
 // history/context. Guard that the lexicon block is gone from the model's prompt
 // so it can't silently creep back in.
-describe('SYSTEM_PROMPT no longer carries the chat lexicon', () => {
+describe('CORE_PROMPT no longer carries the chat lexicon', () => {
   it('does not reference a "Chat lexicon" block (slang moved to the humorizer)', () => {
-    expect(SYSTEM_PROMPT).not.toContain('Chat lexicon');
+    expect(CORE_PROMPT).not.toContain('Chat lexicon');
   });
 });
 
-describe('SYSTEM_PROMPT memory guidance', () => {
+describe('CORE_PROMPT memory guidance', () => {
   it('tells the model about the chat-memory and per-person sections', () => {
-    expect(SYSTEM_PROMPT).toContain('Chat memory');
-    expect(SYSTEM_PROMPT).toContain('About <name>');
+    expect(CORE_PROMPT).toContain('Chat memory');
+    expect(CORE_PROMPT).toContain('About <name>');
   });
 
   it('tells the model to follow the voice/style section', () => {
-    expect(SYSTEM_PROMPT).toContain('Voice & style');
+    expect(CORE_PROMPT).toContain('Voice & style');
   });
 
   it('tells the model to override contradictions via replaces, after one pushback', () => {
-    expect(SYSTEM_PROMPT).toContain('replaces');
-    expect(SYSTEM_PROMPT).toMatch(/push back ONCE/);
-    expect(SYSTEM_PROMPT).toContain('edit_memory');
-  });
-
-  it('carves the written-memory exception into the accept-facts rule', () => {
-    // A plain factual correction is still accepted, but a contradiction of WRITTEN
-    // memory may earn one pushback — guard that the carve-out is present.
-    expect(SYSTEM_PROMPT).toMatch(/WRITTEN in the chat memory/);
+    expect(CORE_PROMPT).toContain('replaces');
+    expect(CORE_PROMPT).toMatch(/push back ONCE/);
+    expect(CORE_PROMPT).toContain('edit_memory');
   });
 });
 
 // A receipt with items belonging to different people must split into several
 // expenses, and "everyone except X" must be expanded from the roster — both were
 // the cases the bot used to fluff, so guard the guidance against silent removal.
-describe('SYSTEM_PROMPT receipt-splitting guidance', () => {
+describe('CORE_PROMPT receipt-splitting guidance', () => {
   it('tells the model to emit several record_expense calls per group', () => {
-    expect(SYSTEM_PROMPT).toContain('GROUPS');
-    expect(SYSTEM_PROMPT).toMatch(/SEVERAL\s+`?record_expense/);
+    expect(CORE_PROMPT).toContain('GROUPS');
+    expect(CORE_PROMPT).toMatch(/SEVERAL\s+`?record_expense/);
   });
 
   it('tells the model to expand "everyone except X" from the roster', () => {
-    expect(SYSTEM_PROMPT).toContain('EXCEPT');
+    expect(CORE_PROMPT).toContain('EXCEPT');
   });
 
   // The sender often names themselves in the third person by name/nickname and
   // mixes it with "я"/"у меня" («Андрей это швед, платил я»); the model used to
   // spawn a phantom member and stall over who paid. Guard the self-reference note.
   it('tells the model to fold the sender\'s own name/nickname into "я"', () => {
-    expect(SYSTEM_PROMPT).toContain('SELF-REFERENCE');
-    expect(SYSTEM_PROMPT).toMatch(/third person/);
+    expect(CORE_PROMPT).toContain('SELF-REFERENCE');
+    expect(CORE_PROMPT).toMatch(/third person/);
   });
 });
 
-// The bot used to instantly agree with any pushback. It should now defend its own
-// take 1-2 times before conceding — but ONLY for opinions/banter, never for facts
-// or task data (reminder times, expense amounts, who splits). Guard both halves so
-// the resistance can't creep into factual corrections or get silently dropped.
-describe('SYSTEM_PROMPT argument-resistance guidance', () => {
-  it('tells the model to hold its position for 1-2 rounds before conceding', () => {
-    expect(SYSTEM_PROMPT).toContain('Standing your ground');
-    expect(SYSTEM_PROMPT).toMatch(/1-2 rounds/);
-    expect(SYSTEM_PROMPT).toMatch(/do NOT\s+instantly cave/);
+// Surf is now an OPTIONAL skill fragment, appended only when ENABLE_SURF is on. The
+// neutral core must NOT describe surf, so a fresh fork's model never sees it.
+describe('buildSystemPrompt surf fragment gating', () => {
+  it('keeps surf out of the neutral core', () => {
+    expect(CORE_PROMPT).not.toContain('surf_forecast');
+    expect(CORE_PROMPT.toLowerCase()).not.toContain('wave');
   });
 
-  it('scopes resistance to opinions only — never facts or task data', () => {
-    expect(SYSTEM_PROMPT).toMatch(/ONLY for opinions/);
-    expect(SYSTEM_PROMPT).toMatch(/NEVER argue about task data/);
-    // A corrected fact must be accepted, not argued.
-    expect(SYSTEM_PROMPT).toMatch(/corrects a FACT/);
+  it('omits the surf fragment when disabled', () => {
+    const prompt = buildSystemPrompt({ enableSurf: false });
+    expect(prompt).not.toContain('surf_forecast');
+    expect(prompt).toBe(CORE_PROMPT);
+  });
+
+  it('appends the surf fragment when enabled', () => {
+    const prompt = buildSystemPrompt({ enableSurf: true });
+    expect(prompt).toContain(SURF_FRAGMENT);
+    expect(prompt).toContain('surf_forecast');
+    expect(prompt).toContain('TIDES MATTER');
+  });
+});
+
+// The chill preset carries the "have a bit of backbone" banter behavior that used
+// to be baked into the core prompt. It must NOT be in the neutral core, and it must
+// still scope resistance to opinions only, never facts/task data.
+describe('persona presets: chill backbone', () => {
+  it('moves the backbone banter out of the neutral core', () => {
+    expect(CORE_PROMPT).not.toContain('backbone');
+    expect(CORE_PROMPT).not.toMatch(/Standing your ground/i);
+  });
+
+  it('gives the chill preset backbone that never argues facts or task data', () => {
+    const chill = getPreset('chill')!;
+    expect(chill.style).toMatch(/backbone/i);
+    expect(chill.style).toMatch(/1-2 rounds/);
+    expect(chill.style).toMatch(/NEVER for facts/);
+  });
+
+  it('keeps the neutral preset styleless (uses the core baseline voice)', () => {
+    expect(getPreset('neutral')!.style).toBe('');
+  });
+});
+
+describe('personaStyleFor', () => {
+  it('resolves a known preset id to its style text', () => {
+    expect(personaStyleFor('chill')).toMatch(/chill mate/i);
+    expect(personaStyleFor('formal')).toMatch(/professional/i);
+  });
+
+  it('returns empty for the neutral preset', () => {
+    expect(personaStyleFor('neutral')).toBe('');
+  });
+
+  it('falls back to neutral for an unknown or missing id', () => {
+    expect(personaStyleFor('does-not-exist')).toBe('');
+    expect(personaStyleFor(null)).toBe('');
+    expect(personaStyleFor(undefined)).toBe('');
   });
 });
 
 // The bot mixed people up in groups and @-tagged the wrong person. Guard the
 // guidance that explains the "Name: message" labelling and forbids @-mentions.
-describe('SYSTEM_PROMPT name & mention guidance', () => {
+describe('CORE_PROMPT name & mention guidance', () => {
   it('explains that each message is prefixed with its author name', () => {
-    expect(SYSTEM_PROMPT).toContain("Who's talking");
-    expect(SYSTEM_PROMPT).toMatch(/prefixed with its author'?s name/);
+    expect(CORE_PROMPT).toContain("Who's talking");
+    expect(CORE_PROMPT).toMatch(/prefixed with its author'?s name/);
   });
 
   it('forbids @-tagging so it never pings the wrong person', () => {
-    expect(SYSTEM_PROMPT).toMatch(/@-tag|@-mention/);
-    expect(SYSTEM_PROMPT).toContain('WRONG person');
+    expect(CORE_PROMPT).toMatch(/@-tag|@-mention/);
+    expect(CORE_PROMPT).toContain('WRONG person');
   });
 });
 
@@ -161,5 +203,22 @@ describe('buildContextBlock memory sections', () => {
     expect(out).toContain('- говори как серфер, эмодзи 🤙 уместны');
     // Style comes before the factual chat memory.
     expect(out.indexOf('Voice & style')).toBeLessThan(out.indexOf('Chat memory'));
+  });
+
+  it('renders the selected persona style at the top of the voice section', () => {
+    const out = buildContextBlock({
+      ...base,
+      personaStyle: personaStyleFor('chill'),
+      memoryPersona: [{ content: 'зови всех «капитан»' }],
+    });
+    expect(out).toContain('Voice & style for this chat');
+    expect(out).toMatch(/chill mate/i);
+    // The preset baseline comes before the chat-curated tweak.
+    expect(out.indexOf('chill mate')).toBeLessThan(out.indexOf('зови всех'));
+  });
+
+  it('shows no voice section for the neutral persona with no curated style', () => {
+    const out = buildContextBlock({ ...base, personaStyle: personaStyleFor('neutral') });
+    expect(out).not.toContain('Voice & style');
   });
 });

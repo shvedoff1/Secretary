@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
-import { SYSTEM_PROMPT, buildContextBlock } from './prompts.js';
+import { buildSystemPrompt, buildContextBlock } from './prompts.js';
 import {
   buildTools,
   RECORD_EXPENSE_TOOL,
@@ -66,6 +66,8 @@ export interface AssistantContext {
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   /** Voice/style directives for this chat (how to talk here), kept apart from facts. */
   memoryPersona?: { content: string }[];
+  /** Selected persona preset's baseline voice text (empty for the neutral preset). */
+  personaStyle?: string;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -105,6 +107,19 @@ export type AssistantResult =
   | { kind: 'text'; text: string; scheduled?: boolean; humorizable?: boolean };
 
 const MAX_ITERATIONS = 6;
+
+// The system prompt is assembled from the neutral core plus enabled skill fragments.
+// Deployment config is static, so memoize per surf-flag value: the string must stay
+// stable across calls for the prompt cache (cache_control below) to keep hitting.
+const systemPromptCache = new Map<boolean, string>();
+function cachedSystemPrompt(enableSurf: boolean): string {
+  let prompt = systemPromptCache.get(enableSurf);
+  if (prompt === undefined) {
+    prompt = buildSystemPrompt({ enableSurf });
+    systemPromptCache.set(enableSurf, prompt);
+  }
+  return prompt;
+}
 
 /**
  * Turn stored conversation history into a valid Anthropic `messages` prefix.
@@ -175,7 +190,10 @@ export async function runAssistant(
     memoryChat: ctx.memoryChat ?? [],
     memoryUsers: ctx.memoryUsers ?? [],
     memoryPersona: ctx.memoryPersona ?? [],
+    personaStyle: ctx.personaStyle,
   });
+
+  const systemPrompt = cachedSystemPrompt(cfg.ENABLE_SURF);
 
   let scheduled = false;
   // Tracks whether any tool ran this turn. A plain-chat answer (no tools) is the
@@ -218,7 +236,7 @@ export async function runAssistant(
       // the system block caches both tool schemas + system prompt). Re-reads cost
       // ~0.1x: this is the main lever against per-call token cost.
       system: [
-        { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
       ],
       tools,
       messages,

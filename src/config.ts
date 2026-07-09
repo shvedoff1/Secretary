@@ -54,7 +54,7 @@ const ConfigSchema = z.object({
   // preview. It carries no expense data (the preview/confirm flow is untouched),
   // so it can never corrupt amounts/names. Needs OPENAI_API_KEY; reuses
   // OPENAI_HUMOR_MODEL. On by default — best-effort, never blocks the expense.
-  ENABLE_EXPENSE_QUIP: boolish.default(true),
+  ENABLE_EXPENSE_QUIP: boolish.default(false),
   DEFAULT_CURRENCY: z
     .string()
     .length(3)
@@ -73,11 +73,13 @@ const ConfigSchema = z.object({
   // yesterday's tangent expire on its own.
   CONVERSATION_HISTORY_MAX_AGE_HOURS: z.coerce.number().int().positive().default(12),
   ENABLE_WEB_SEARCH: boolish.default(true),
-  // surf_forecast tool (Open-Meteo marine API; no key needed).
-  ENABLE_SURF: boolish.default(true),
+  // surf_forecast tool (Open-Meteo marine API; no key needed). Optional skill —
+  // OFF by default so a fresh fork stays a neutral secretary; turn on to enable it.
+  ENABLE_SURF: boolish.default(false),
   // Lexicon learning: passively buffer chat messages and, in batches, extract the
   // slang / distorted word-forms the group uses so the assistant talks like them.
-  ENABLE_LEXICON: boolish.default(true),
+  // OFF by default (it only surfaces via the humorizer, which is also off) — opt in.
+  ENABLE_LEXICON: boolish.default(false),
   // Cheap model used only for the lexicon extraction batches (not the main chat).
   ANTHROPIC_LEXICON_MODEL: z.string().default('claude-haiku-4-5-20251001'),
   // Fire an extraction batch once this many messages have buffered...
@@ -119,6 +121,10 @@ const ConfigSchema = z.object({
   MEMORY_CONTEXT_PERSONA: z.coerce.number().int().positive().default(20),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
+  // Default persona preset (voice/style) for chats that haven't picked one with
+  // /style. Must be a preset id from src/persona/presets.ts ('neutral' | 'chill' |
+  // 'formal' out of the box). An unknown id falls back to 'neutral' at runtime.
+  DEFAULT_PERSONA: z.string().default('neutral'),
   // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't
   // addressed in, continuing the conversation by context as if it had been pinged.
   // To avoid butting into an active back-and-forth (and lagging behind), it does NOT
@@ -126,7 +132,7 @@ const ConfigSchema = z.object({
   // after the last message) and ONLY THEN rolls CHIME_PROBABILITY; a win calls the
   // LLM. Any new message resets the silence clock, so the roll only happens once the
   // chat has gone quiet.
-  ENABLE_CHIME: boolish.default(true),
+  ENABLE_CHIME: boolish.default(false),
   // Probability (0..1) the bot chimes in, rolled once the chat has gone quiet.
   CHIME_PROBABILITY: z.coerce.number().min(0).max(1).default(0.1),
   // Seconds of silence to wait before rolling for (and possibly sending) a chime.

@@ -57,6 +57,15 @@ describe('migration 010 memory backfill', () => {
          created_at INTEGER NOT NULL
        )`,
     );
+    // chat_settings exists since migration 005 (pre-v9), so a real v9 DB has it;
+    // later migrations alter it (013 adds persona_id), so recreate it here too.
+    db.exec(
+      `CREATE TABLE chat_settings (
+         chat_id    INTEGER PRIMARY KEY,
+         timezone   TEXT,
+         updated_at INTEGER NOT NULL
+       )`,
+    );
     db.prepare('INSERT INTO chat_memory (chat_id, content, updated_at) VALUES (?, ?, ?)').run(
       555,
       '- любит кофе\n- часовой пояс Bali',

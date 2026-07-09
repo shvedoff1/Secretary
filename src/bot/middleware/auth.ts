@@ -1,6 +1,7 @@
 import type { Context, NextFunction } from 'grammy';
 import { isApproved } from '../../db/repos/users.repo.js';
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
+import { t } from '../../i18n/index.js';
 
 const EXEMPT = /^\/(start|help|request)(@\w+)?\b/;
 
@@ -38,10 +39,8 @@ export async function authGate(ctx: Context, next: NextFunction): Promise<void> 
 
   // Block silently in groups; nudge in private chats.
   if (ctx.chat?.type === 'private') {
-    await ctx.reply(
-      'Доступ закрыт. Отправьте /request, чтобы запросить доступ у администратора.',
-    );
+    await ctx.reply(t('auth.denied'));
   } else if (ctx.callbackQuery) {
-    await ctx.answerCallbackQuery({ text: 'Нет доступа.' });
+    await ctx.answerCallbackQuery({ text: t('auth.noAccess') });
   }
 }

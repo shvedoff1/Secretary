@@ -138,6 +138,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
 - Fork-friendly defaults: all "flavor" ships OFF (`ENABLE_SURF`, `ENABLE_EXPENSE_QUIP`,
   `ENABLE_CHIME`, `ENABLE_LEXICON`, `ENABLE_HUMOR` default `false`), so a fresh fork is a
   clean neutral secretary; extras are opt-in via env + `/style`.
+- i18n: the bot's OWN fixed strings (command replies, errors, previews, help) go through
+  `t('ns.key', {params})` from `src/i18n/` and are keyed per namespace in
+  `src/i18n/catalogs/*.ts` (each exports `<ns>Ru`/`<ns>En`, `en` typed against the `ru`
+  key set). `BOT_LOCALE` (default `en`) picks the locale; the `ru` catalog reproduces the
+  ORIGINAL wording verbatim, so `BOT_LOCALE=ru` is byte-identical to pre-i18n. The
+  assistant's GENERATED replies still mirror the user's language via the prompt — do NOT
+  route model-facing prompt/tool text or input-matching keyword lists through `t()`.
+  `test/i18n.test.ts` guards ru/en key + placeholder parity.
 - Model is configurable via `ANTHROPIC_MODEL` (default `claude-sonnet-5`). The assistant
   call sends `thinking: {type: 'disabled'}` explicitly: on Sonnet 5 adaptive thinking turns
   ON by default when `thinking` is omitted, which would add latency to every tool-routing

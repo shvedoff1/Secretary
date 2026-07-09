@@ -30,16 +30,17 @@ import { reconcileMemory, type ReconcilePlan } from '../../llm/reconcile.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { replyLong } from '../../util/telegramText.js';
+import { t } from '../../i18n/index.js';
 
 /** Gate: supreme admin only, and only in a private chat (other chats' data must
  * not leak into a group). Returns false (and replies) if not allowed. */
 async function ensureAdminDM(ctx: Context): Promise<boolean> {
   if (!ctx.from || !isAdmin(ctx.from.id)) {
-    if (ctx.chat?.type === 'private') await ctx.reply('Команда только для администратора.');
+    if (ctx.chat?.type === 'private') await ctx.reply(t('admin.adminOnly'));
     return false;
   }
   if (ctx.chat?.type !== 'private') {
-    await ctx.reply('Админ-команды по чатам работают только в личке со мной.');
+    await ctx.reply(t('admin.adminDmOnly'));
     return false;
   }
   return true;
@@ -74,16 +75,20 @@ export async function cmdChats(ctx: Context): Promise<void> {
   if (!(await ensureAdminDM(ctx))) return;
   const chats = listChatConfigs();
   if (chats.length === 0) {
-    await ctx.reply('Пока нет настроенных чатов. Бота добавляют в группу и зовут /group там, либо настрой отсюда: /setgroup <chatId> <код>.');
+    await ctx.reply(t('admin.noChatsConfigured'));
     return;
   }
   const lines = chats.map((c) => {
     const group = c.provider_group_id ? '✓' : '✗';
-    return `• ${c.title ?? '(без названия)'} — id ${c.chat_id}\n  ${c.provider_name}:${group} · ${c.default_currency}`;
+    return t('admin.chatsListLine', {
+      title: c.title ?? t('admin.untitled'),
+      chatId: c.chat_id,
+      provider: c.provider_name,
+      group,
+      currency: c.default_currency,
+    });
   });
-  await ctx.reply(
-    [`Чаты (${chats.length}):`, ...lines, '', 'Детали: /chat <chatId>'].join('\n'),
-  );
+  await ctx.reply(t('admin.chatsList', { count: chats.length, lines: lines.join('\n') }));
 }
 
 // --- /chat <id> : full detail ----------------------------------------------
@@ -92,7 +97,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
   if (!(await ensureAdminDM(ctx))) return;
   const id = parseChatId(args(ctx));
   if (id === null) {
-    await ctx.reply('Использование: /chat <chatId>');
+    await ctx.reply(t('admin.chatUsage'));
     return;
   }
   // A chat_config row exists only for Splid-linked chats, but the bot learns
@@ -111,10 +116,12 @@ export async function cmdChat(ctx: Context): Promise<void> {
     ? members
         .map((m) => {
           const tg = linkedBy.get(m.id);
-          return `   - ${m.name}${tg ? ` ↔ tg:${tg}` : ' (не привязан)'}`;
+          return tg
+            ? t('admin.rosterLinked', { name: m.name, tg })
+            : t('admin.rosterUnlinked', { name: m.name });
         })
         .join('\n')
-    : '   (нет / группа не подключена)';
+    : t('admin.rosterEmpty');
 
   const memItems = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
   const memory = memItems.length
@@ -125,32 +132,30 @@ export async function cmdChat(ctx: Context): Promise<void> {
           return `   ${i + 1}. ${tag}${it.content}${who}`;
         })
         .join('\n')
-    : '(пусто)';
+    : t('admin.empty');
 
   const slangCount = getLexicon(id).length;
-  const slangLine = slangCount ? `сленг: ${slangCount} словечек (/slang ${id})` : 'сленг: (пусто)';
+  const slangLine = slangCount
+    ? t('admin.slangLine', { count: slangCount, id })
+    : t('admin.slangEmpty');
 
   const provider = cfg
-    ? `${cfg.provider_name} (group ${cfg.provider_group_id ?? '—'})`
-    : 'не настроен (не подключён к Splid)';
+    ? t('admin.providerConfigured', { name: cfg.provider_name, group: cfg.provider_group_id ?? '—' })
+    : t('admin.providerNotConfigured');
 
   // Memory/roster are open-ended, so chunk to stay under Telegram's 4096 cap —
   // a large chat would otherwise 400 and look like the command did nothing.
   await replyLong(
     ctx,
-    [
-      `Чат: ${cfg?.title ?? '(без названия)'}`,
-      `id: ${id}`,
-      `провайдер: ${provider}`,
-      `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
-      `участники:`,
+    t('admin.chatDetail', {
+      title: cfg?.title ?? t('admin.untitled'),
+      id,
+      provider,
+      currency: cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY,
       roster,
-      `память:`,
       memory,
       slangLine,
-      ``,
-      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /editmemory ${id} <N> <текст> · /dedupememory ${id} · /reconcile ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
-    ].join('\n'),
+    }),
   );
 }
 
@@ -161,7 +166,7 @@ export async function cmdSetGroup(ctx: Context): Promise<void> {
   const [idTok, code] = headTail(args(ctx));
   const id = parseChatId(idTok);
   if (id === null || !code) {
-    await ctx.reply('Использование: /setgroup <chatId> <код-приглашения Splid>');
+    await ctx.reply(t('admin.setGroupUsage'));
     return;
   }
   const provider = getProvider('splid');
@@ -170,7 +175,7 @@ export async function cmdSetGroup(ctx: Context): Promise<void> {
     groupId = (await provider.connect(code)).groupId;
   } catch (err) {
     const msg = err instanceof ProviderError ? err.message : String(err);
-    await ctx.reply(`Не удалось подключиться к Splid: ${msg}`);
+    await ctx.reply(t('admin.splidConnectFailed', { msg }));
     return;
   }
   setProviderGroup({
@@ -182,7 +187,7 @@ export async function cmdSetGroup(ctx: Context): Promise<void> {
     createdBy: ctx.from!.id,
   });
   const count = (await membersOf('splid', groupId)).length;
-  await ctx.reply(`✅ Чат ${id} подключён к Splid (${count} участников).`);
+  await ctx.reply(t('admin.setGroupOk', { id, count }));
 }
 
 // --- /setcurrency <id> <CUR> ------------------------------------------------
@@ -192,15 +197,15 @@ export async function cmdSetCurrency(ctx: Context): Promise<void> {
   const [idTok, cur] = headTail(args(ctx));
   const id = parseChatId(idTok);
   if (id === null || !/^[A-Za-z]{3}$/.test(cur)) {
-    await ctx.reply('Использование: /setcurrency <chatId> <ISO4217, напр. EUR>');
+    await ctx.reply(t('admin.setCurrencyUsage'));
     return;
   }
   if (!getChatConfig(id)) {
-    await ctx.reply(`Чат ${id} не настроен — сначала /setgroup ${id} <код>.`);
+    await ctx.reply(t('admin.chatNotConfigured', { id }));
     return;
   }
   setDefaultCurrency(id, cur);
-  await ctx.reply(`✅ Валюта чата ${id} → ${cur.toUpperCase()}.`);
+  await ctx.reply(t('admin.setCurrencyOk', { id, cur: cur.toUpperCase() }));
 }
 
 // --- memory ----------------------------------------------------------------
@@ -210,13 +215,13 @@ export async function cmdSetMemory(ctx: Context): Promise<void> {
   const [idTok, text] = headTail(args(ctx));
   const id = parseChatId(idTok);
   if (id === null || !text) {
-    await ctx.reply('Использование: /setmemory <chatId> <текст> (заменяет память чата)');
+    await ctx.reply(t('admin.setMemoryUsage'));
     return;
   }
   // "Replace" the chat's memory: wipe stored items and pin this one note.
   clearMemoryItems(id);
   insertPinned(id, text);
-  await ctx.reply(`🧠 Память чата ${id} перезаписана.`);
+  await ctx.reply(t('admin.setMemoryOk', { id }));
 }
 
 export async function cmdAddMemory(ctx: Context): Promise<void> {
@@ -224,23 +229,23 @@ export async function cmdAddMemory(ctx: Context): Promise<void> {
   const [idTok, text] = headTail(args(ctx));
   const id = parseChatId(idTok);
   if (id === null || !text) {
-    await ctx.reply('Использование: /addmemory <chatId> <текст>');
+    await ctx.reply(t('admin.addMemoryUsage'));
     return;
   }
   insertPinned(id, text);
-  await ctx.reply(`🧠 Добавил в память чата ${id}.`);
+  await ctx.reply(t('admin.addMemoryOk', { id }));
 }
 
 export async function cmdClearMemory(ctx: Context): Promise<void> {
   if (!(await ensureAdminDM(ctx))) return;
   const id = parseChatId(args(ctx));
   if (id === null) {
-    await ctx.reply('Использование: /clearmemory <chatId>');
+    await ctx.reply(t('admin.clearMemoryUsage'));
     return;
   }
   clearMemoryItems(id);
   clearTurns(id);
-  await ctx.reply(`🧹 Память и история диалога чата ${id} очищены.`);
+  await ctx.reply(t('admin.clearMemoryOk', { id }));
 }
 
 /**
@@ -254,10 +259,7 @@ export async function cmdPersona(ctx: Context): Promise<void> {
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
   if (id === null || !rest) {
-    await ctx.reply(
-      'Использование: /persona <chatId> <N> (перенести пункт #N из /chat в стиль) ' +
-        'или /persona <chatId> <текст> (добавить новую стилевую строку).',
-    );
+    await ctx.reply(t('admin.personaUsage'));
     return;
   }
   // A bare integer targets an existing item by its /chat index; anything else is text.
@@ -266,19 +268,19 @@ export async function cmdPersona(ctx: Context): Promise<void> {
     const items = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
     const target = items[n - 1];
     if (!target) {
-      await ctx.reply(`Нет пункта №${n} в памяти чата ${id}. Список: /chat ${id}`);
+      await ctx.reply(t('admin.noMemoryItem', { n, id }));
       return;
     }
     if (target.scope === 'persona') {
-      await ctx.reply(`Пункт №${n} уже в стиле (🎭).`);
+      await ctx.reply(t('admin.personaAlreadyStyle', { n }));
       return;
     }
     const moved = setItemScope(id, target.id, 'persona');
-    await ctx.reply(`🎭 Перенёс в стиль чата ${id}: ${moved ?? target.content}`);
+    await ctx.reply(t('admin.personaMoved', { id, content: moved ?? target.content }));
     return;
   }
   insertPinned(id, rest, { scope: 'persona' });
-  await ctx.reply(`🎭 Добавил в стиль чата ${id}.`);
+  await ctx.reply(t('admin.personaAdded', { id }));
 }
 
 /**
@@ -292,17 +294,17 @@ export async function cmdEditMemory(ctx: Context): Promise<void> {
   const [nTok, text] = headTail(restA);
   const n = Number(nTok);
   if (id === null || !Number.isInteger(n) || n < 1 || !text) {
-    await ctx.reply('Использование: /editmemory <chatId> <N> <новый текст>');
+    await ctx.reply(t('admin.editMemoryUsage'));
     return;
   }
   const items = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
   const target = items[n - 1];
   if (!target) {
-    await ctx.reply(`Нет пункта №${n} в памяти чата ${id}. Список: /chat ${id}`);
+    await ctx.reply(t('admin.noMemoryItem', { n, id }));
     return;
   }
   const old = editMemoryItemContent(id, target.id, text);
-  await ctx.reply(`✏️ Пункт №${n} чата ${id}: «${old ?? target.content}» → «${text}».`);
+  await ctx.reply(t('admin.editMemoryOk', { n, id, old: old ?? target.content, text }));
 }
 
 // A reconciliation plan awaiting the admin's `apply`, per chat. In-memory and
@@ -322,35 +324,35 @@ export async function cmdReconcile(ctx: Context): Promise<void> {
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
   if (id === null) {
-    await ctx.reply('Использование: /reconcile <chatId> (превью), затем /reconcile <chatId> apply');
+    await ctx.reply(t('admin.reconcileUsage'));
     return;
   }
 
   if (rest.trim().toLowerCase() === 'apply') {
     const plan = pendingReconcile.get(id);
     if (!plan) {
-      await ctx.reply(`Нет готового плана для ${id}. Сначала /reconcile ${id} для превью.`);
+      await ctx.reply(t('admin.reconcileNoPlan', { id }));
       return;
     }
     const { edited, deleted } = applyReconcilePlan(id, plan);
     pendingReconcile.delete(id);
-    await ctx.reply(`✅ Применил к чату ${id}: убрал ${deleted}, поправил ${edited}. Глянь /chat ${id}.`);
+    await ctx.reply(t('admin.reconcileApplied', { id, deleted, edited }));
     return;
   }
 
   const items = getAllItems(id);
   if (items.length === 0) {
-    await ctx.reply(`Память чата ${id} пуста — чистить нечего.`);
+    await ctx.reply(t('admin.reconcileEmpty', { id }));
     return;
   }
-  await ctx.reply('🧠 Думаю над противоречиями… (это займёт пару секунд)');
+  await ctx.reply(t('admin.reconcileThinking'));
   const plan = await reconcileMemory(items);
   if (plan === null) {
-    await ctx.reply('⚠️ Не смог обратиться к ИИ. Попробуй ещё раз чуть позже.');
+    await ctx.reply(t('admin.reconcileAiFailed'));
     return;
   }
   if (plan.deletes.length === 0 && plan.edits.length === 0) {
-    await ctx.reply('Явных противоречий не нашёл. 🤙');
+    await ctx.reply(t('admin.reconcileNoConflicts'));
     return;
   }
 
@@ -359,17 +361,29 @@ export async function cmdReconcile(ctx: Context): Promise<void> {
   const lines: string[] = [];
   for (const e of plan.edits) {
     const it = byId.get(e.id);
-    if (it) lines.push(`✏️ «${it.content}» → «${e.content}»${e.reason ? ` — ${e.reason}` : ''}`);
+    if (it)
+      lines.push(
+        t('admin.reconcileEditLine', {
+          old: it.content,
+          new: e.content,
+          reason: e.reason ? ` — ${e.reason}` : '',
+        }),
+      );
   }
   for (const d of plan.deletes) {
     const it = byId.get(d.id);
-    if (it) lines.push(`🗑 «${it.content}»${d.reason ? ` — ${d.reason}` : ''}`);
+    if (it)
+      lines.push(
+        t('admin.reconcileDeleteLine', {
+          content: it.content,
+          reason: d.reason ? ` — ${d.reason}` : '',
+        }),
+      );
   }
   pendingReconcile.set(id, plan);
   await replyLong(
     ctx,
-    `Нашёл на чистку в чате ${id} (${lines.length}) — это ПРЕВЬЮ, ничего не тронул:\n\n` +
-      `${lines.join('\n')}\n\nПрименить: /reconcile ${id} apply`,
+    t('admin.reconcilePreview', { id, count: lines.length, lines: lines.join('\n') }),
   );
 }
 
@@ -378,14 +392,12 @@ export async function cmdDedupeMemory(ctx: Context): Promise<void> {
   if (!(await ensureAdminDM(ctx))) return;
   const id = parseChatId(args(ctx));
   if (id === null) {
-    await ctx.reply('Использование: /dedupememory <chatId>');
+    await ctx.reply(t('admin.dedupeUsage'));
     return;
   }
   const removed = dedupeMemory(id, loadConfig().MEMORY_HALFLIFE_DAYS);
   await ctx.reply(
-    removed > 0
-      ? `🧹 Схлопнул дубли в памяти чата ${id}: убрал ${removed}. Глянь /chat ${id}.`
-      : `Дублей в памяти чата ${id} не нашёл.`,
+    removed > 0 ? t('admin.dedupeOk', { id, removed }) : t('admin.dedupeNone', { id }),
   );
 }
 
@@ -398,12 +410,12 @@ export async function cmdSetLink(ctx: Context): Promise<void> {
   const id = parseChatId(idTok);
   const tgUserId = Number(tgTok);
   if (id === null || !Number.isInteger(tgUserId) || !query) {
-    await ctx.reply('Использование: /setlink <chatId> <tgUserId> <имя|инициалы участника Splid>');
+    await ctx.reply(t('admin.setLinkUsage'));
     return;
   }
   const cfg = getChatConfig(id);
   if (!cfg?.provider_group_id) {
-    await ctx.reply(`Чат ${id} не подключён к Splid (/setgroup ${id} <код>).`);
+    await ctx.reply(t('admin.chatNotLinked', { id }));
     return;
   }
   const members = await membersOf(cfg.provider_name, cfg.provider_group_id);
@@ -413,7 +425,7 @@ export async function cmdSetLink(ctx: Context): Promise<void> {
     members.find((m) => m.initials && normalizeName(m.initials) === q) ??
     members.find((m) => normalizeName(m.name).includes(q));
   if (!member) {
-    await ctx.reply(`Не нашёл участника «${query}» в Splid этого чата. /chat ${id}`);
+    await ctx.reply(t('admin.memberNotFound', { query, id }));
     return;
   }
   upsertMapping({
@@ -422,7 +434,7 @@ export async function cmdSetLink(ctx: Context): Promise<void> {
     providerMemberId: member.id,
     memberName: member.name,
   });
-  await ctx.reply(`🔗 В чате ${id}: tg:${tgUserId} ↔ ${member.name}.`);
+  await ctx.reply(t('admin.setLinkOk', { id, tgUserId, name: member.name }));
 }
 
 export async function cmdUnlink(ctx: Context): Promise<void> {
@@ -431,9 +443,9 @@ export async function cmdUnlink(ctx: Context): Promise<void> {
   const id = parseChatId(idTok);
   const tgUserId = Number(tgTok);
   if (id === null || !Number.isInteger(tgUserId)) {
-    await ctx.reply('Использование: /unlink <chatId> <tgUserId>');
+    await ctx.reply(t('admin.unlinkUsage'));
     return;
   }
   deleteMapping(id, tgUserId);
-  await ctx.reply(`🔓 В чате ${id} привязка tg:${tgUserId} удалена.`);
+  await ctx.reply(t('admin.unlinkOk', { id, tgUserId }));
 }

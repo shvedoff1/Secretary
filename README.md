@@ -91,6 +91,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `BOT_TOKEN` | yes | — | From @BotFather |
 | `ANTHROPIC_API_KEY` | yes | — | Claude API key |
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
+| `BOT_LOCALE` | no | `en` | Language of the bot's own fixed strings (command replies, errors, previews, help). The assistant's generated replies always mirror the user's language regardless. `ru` reproduces the original Russian wording verbatim. One of `en\|ru` |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5` | Model id (thinking is sent disabled, so the tone/latency profile matches Sonnet 4.6) |
 | `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
@@ -144,8 +145,12 @@ Then just talk:
 
 ## Personas & optional extras
 
-A fresh fork talks in a **neutral** voice and enables no flavor. Two dials let each
-deployment (and each chat) add personality without touching the core:
+A fresh fork talks in a **neutral** voice, in **English**, and enables no flavor.
+The bot's fixed UI strings are localized (`BOT_LOCALE=en|ru`; `ru` reproduces the
+original Russian wording) — the assistant's *generated* replies always mirror the
+user's own language regardless. Add a locale by extending `src/i18n/catalogs/`.
+Two more dials let each deployment (and each chat) add personality without touching
+the core:
 
 - **Personas (`/style`)** — pick a voice per chat. Presets live in code
   (`src/persona/presets.ts`): `neutral` (default), `chill` (laid-back, light slang,

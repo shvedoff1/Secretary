@@ -14,6 +14,7 @@ import { renderConfirmed, nameMapFromMembers } from './preview.js';
 import { clearEditTarget } from '../editTargets.js';
 import { takeQuip, clearQuip } from '../quipCache.js';
 import { logger } from '../../logger.js';
+import { t } from '../../i18n/index.js';
 
 /** Handles callback queries with the `e:` prefix (expense preview actions). */
 export async function handleExpenseCallback(ctx: Context): Promise<void> {
@@ -31,7 +32,7 @@ export async function handleExpenseCallback(ctx: Context): Promise<void> {
       return cancel(ctx, pendingId);
     case 'ed':
       await ctx.answerCallbackQuery({
-        text: 'Ответьте на это сообщение исправленным текстом — я пересоберу трату.',
+        text: t('confirm.editHint'),
         show_alert: false,
       });
       return;
@@ -47,8 +48,8 @@ async function cancel(ctx: Context, pendingId: string): Promise<void> {
   const pending = getPending(pendingId);
   if (pending) setStatus(pendingId, 'cancelled');
   clearQuip(pendingId); // drop the pre-generated joke for an abandoned preview
-  await ctx.answerCallbackQuery({ text: 'Отменено' });
-  await safeEdit(ctx, '❌ Отменено.');
+  await ctx.answerCallbackQuery({ text: t('confirm.cancelledToast') });
+  await safeEdit(ctx, t('confirm.cancelled'));
   if (ctx.chat) clearEditTarget(ctx.chat.id, ctx.callbackQuery!.message!.message_id);
 }
 
@@ -62,16 +63,16 @@ async function submit(
     : claimForConfirm(pendingId);
 
   if (!pending) {
-    await ctx.answerCallbackQuery({ text: 'Уже обработано.' });
+    await ctx.answerCallbackQuery({ text: t('confirm.alreadyProcessed') });
     return;
   }
   if (isRetry && pending.status !== 'confirmed') {
-    await ctx.answerCallbackQuery({ text: 'Нечего повторять.' });
+    await ctx.answerCallbackQuery({ text: t('confirm.nothingToRetry') });
     return;
   }
   if (pending.draft.unresolved.length > 0) {
     await ctx.answerCallbackQuery({
-      text: 'Сначала исправьте нераспознанных участников (✏️).',
+      text: t('confirm.fixUnresolvedFirst'),
       show_alert: true,
     });
     if (!isRetry) setStatus(pendingId, 'awaiting'); // allow re-tap after edit
@@ -80,11 +81,11 @@ async function submit(
 
   const cfg = getChatConfig(pending.chatId);
   if (!cfg?.provider_group_id) {
-    await ctx.answerCallbackQuery({ text: 'Чат не настроен (/group).', show_alert: true });
+    await ctx.answerCallbackQuery({ text: t('confirm.chatNotConfigured'), show_alert: true });
     return;
   }
 
-  await ctx.answerCallbackQuery({ text: 'Записываю…' });
+  await ctx.answerCallbackQuery({ text: t('confirm.recording') });
 
   try {
     const provider = getProvider(cfg.provider_name);
@@ -136,7 +137,7 @@ async function submit(
     });
     await safeEdit(
       ctx,
-      `⚠️ Не удалось записать: ${msg}${retriable ? '\nМожно повторить.' : ''}`,
+      t('confirm.submitFailed', { msg }) + (retriable ? t('confirm.canRetry') : ''),
       retriable ? previewKeyboard(pendingId, true) : undefined,
     );
   }

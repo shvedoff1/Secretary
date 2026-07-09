@@ -9,6 +9,7 @@ import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
 import { setTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
+import { t } from '../../i18n/index.js';
 
 // "Writing it down" marker. We react with ✍️ as soon as a voice note arrives, so
 // the chat sees it was heard; the mark stays only if it became an expense and is
@@ -45,14 +46,14 @@ async function dmTranscriptToAdmin(ctx: Context, transcript: string): Promise<vo
     const chatLabel =
       ctx.chat.type !== 'private' && 'title' in ctx.chat && ctx.chat.title
         ? ctx.chat.title
-        : 'личка';
+        : t('chat.dmChatLabel');
     const from = ctx.from
       ? [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') ||
         (ctx.from.username ? `@${ctx.from.username}` : `id ${ctx.from.id}`)
-      : 'кто-то';
+      : t('chat.someone');
     await ctx.api.sendMessage(
       adminId,
-      `🎤 Голосовое (${chatLabel}, ${from}) расшифровалось как:\n\n${transcript}`,
+      t('chat.voiceTranscriptDm', { chat: chatLabel, from, transcript }),
     );
   } catch (err) {
     logger.warn({ err }, 'failed to DM voice transcript to admin');
@@ -84,7 +85,7 @@ export async function onVoice(ctx: Context): Promise<void> {
   if (!isTranscriptionEnabled()) {
     // Only nag when the user is clearly talking to us; stay quiet in groups.
     if (addressed) {
-      await ctx.reply('Распознавание голоса не настроено. Напиши текстом, пожалуйста.');
+      await ctx.reply(t('chat.voiceNotConfigured'));
     }
     return;
   }
@@ -99,13 +100,13 @@ export async function onVoice(ctx: Context): Promise<void> {
   } catch (err) {
     logger.error({ err }, 'failed to transcribe voice message');
     await clearWriting(ctx);
-    if (addressed) await ctx.reply('Не смог распознать голосовое, попробуй ещё раз.');
+    if (addressed) await ctx.reply(t('chat.voiceTranscribeFailed'));
     return;
   }
 
   if (!transcript) {
     await clearWriting(ctx);
-    if (addressed) await ctx.reply('Не расслышал — в голосовом не было речи.');
+    if (addressed) await ctx.reply(t('chat.voiceNoSpeech'));
     return;
   }
 

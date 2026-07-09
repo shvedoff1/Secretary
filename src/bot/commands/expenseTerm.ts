@@ -4,6 +4,7 @@ import {
   addExpenseTerms,
   clearExpenseTerms,
 } from '../../db/repos/expenseTerm.repo.js';
+import { t } from '../../i18n/index.js';
 
 const CLEAR_ARGS = new Set(['clear', 'reset', 'очистить', 'сброс', 'забудь']);
 
@@ -21,38 +22,31 @@ export async function cmdTrata(ctx: Context): Promise<void> {
 
   if (CLEAR_ARGS.has(arg.toLowerCase())) {
     clearExpenseTerms(ctx.chat.id);
-    await ctx.reply('🧹 Выученный словарь трат очищен.');
+    await ctx.reply(t('trata.cleared'));
     return;
   }
 
   if (arg) {
     const terms = arg
       .split(/[,\n;]+/)
-      .map((t) => t.trim())
+      .map((s) => s.trim())
       .filter(Boolean);
     const added = addExpenseTerms(ctx.chat.id, terms, ctx.from?.id ?? null);
     if (added.length === 0) {
-      await ctx.reply('Уже знаю такие слова — ничего нового не добавил.');
+      await ctx.reply(t('trata.nothingNew'));
       return;
     }
-    const list = added.map((t) => `«${t}»`).join(', ');
-    await ctx.reply(`✍️ Добавил в словарь трат: ${list}.`);
+    const list = added.map((term) => `«${term}»`).join(', ');
+    await ctx.reply(t('trata.added', { list }));
     return;
   }
 
   const entries = listExpenseTerms(ctx.chat.id);
   if (entries.length === 0) {
-    await ctx.reply(
-      'Словарь трат пуст. Ответь на сообщение, которое я пропустил, и напиши ' +
-        '«запомни, это трата» — или добавь словом: /trata дошик, на бензин. ' +
-        '(Сброс: /trata clear)',
-    );
+    await ctx.reply(t('trata.empty'));
     return;
   }
 
   const lines = entries.map((e) => `• ${e.term}`);
-  await ctx.reply(
-    `💸 Слова, которые я считаю тратами:\n${lines.join('\n')}\n\n` +
-      'Добавить: /trata <слово>. Сброс: /trata clear',
-  );
+  await ctx.reply(t('trata.list', { list: lines.join('\n') }));
 }

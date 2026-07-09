@@ -1,20 +1,19 @@
 import type { Context } from 'grammy';
 import { getUser } from '../../db/repos/users.repo.js';
+import { t } from '../../i18n/index.js';
 
 export async function cmdStart(ctx: Context): Promise<void> {
   const uid = ctx.from?.id;
   const user = uid ? getUser(uid) : undefined;
-  const status = user?.status ?? 'не запрошен';
+  const status = user?.status ?? t('common.notRequested');
   const ready = user?.status === 'approved';
   await ctx.reply(
     [
-      'Привет! Я Secretary 🤝',
-      'Записываю общие траты в Splid и помогаю в чате (вопросы, заметки).',
+      t('start.greeting'),
+      t('start.intro'),
       '',
-      `Ваш статус доступа: ${status}.`,
-      ready
-        ? 'Готов к работе — наберите /help.'
-        : 'Отправьте /request, чтобы запросить доступ у администратора.',
+      t('start.status', { status }),
+      ready ? t('start.ready') : t('start.needRequest'),
     ].join('\n'),
   );
 }

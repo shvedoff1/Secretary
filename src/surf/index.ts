@@ -1,4 +1,5 @@
 import { logger } from '../logger.js';
+import { t } from '../i18n/index.js';
 import type { SurfForecastInput } from '../llm/schema.js';
 import { fetchSpotForecast, targetDate } from './openMeteo.js';
 import { formatForecastSummary } from './format.js';
@@ -20,7 +21,7 @@ export function makeSurfForecastHandler(): (input: SurfForecastInput) => Promise
       return formatForecastSummary(input.day, date, results);
     } catch (err) {
       logger.error({ err }, 'surf_forecast failed');
-      return 'Не получилось достать прогноз волн — попробуй ещё раз чуть позже.';
+      return t('surf.fetchFailed');
     }
   };
 }

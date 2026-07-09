@@ -5,7 +5,7 @@ import { migrate } from './db/migrate.js';
 import { closeDb } from './db/client.js';
 import { ensureAdmin } from './db/repos/users.repo.js';
 import { expireOld } from './db/repos/pending.repo.js';
-import { buildBot, BOT_COMMANDS } from './bot/bot.js';
+import { buildBot, botCommands } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
 import { flushStaleLexicons } from './bot/flows/lexicon.js';
 import { flushStaleMemories } from './bot/flows/memory.js';
@@ -87,7 +87,7 @@ async function main(): Promise<void> {
   try {
     const me = await bot.api.getMe();
     logger.info({ username: me.username }, 'bot started (concurrent long polling)');
-    await bot.api.setMyCommands(BOT_COMMANDS);
+    await bot.api.setMyCommands(botCommands());
   } catch (err) {
     logger.warn({ err }, 'could not set command menu');
   }

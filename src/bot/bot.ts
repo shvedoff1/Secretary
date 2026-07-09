@@ -1,6 +1,7 @@
 import { Bot } from 'grammy';
 import { sequentialize } from '@grammyjs/runner';
 import { logger } from '../logger.js';
+import { t } from '../i18n/index.js';
 import { authGate } from './middleware/auth.js';
 import { cmdStart } from './commands/start.js';
 import { cmdHelp } from './commands/help.js';
@@ -116,7 +117,7 @@ export function buildBot(token: string): Bot {
     const wasCommand = (err.ctx.message?.text ?? '').startsWith('/');
     if (wasCommand) {
       try {
-        await err.ctx.reply('⚠️ Не смог выполнить команду — что-то пошло не так.');
+        await err.ctx.reply(t('boterr.commandFailed'));
       } catch {
         /* nothing more we can do */
       }
@@ -126,22 +127,27 @@ export function buildBot(token: string): Bot {
   return bot;
 }
 
-export const BOT_COMMANDS = [
-  { command: 'help', description: 'Что я умею' },
-  { command: 'group', description: 'Подключить группу Splid' },
-  { command: 'members', description: 'Участники группы' },
-  { command: 'link', description: 'Привязать аккаунт к участнику Splid' },
-  { command: 'memory', description: 'Заметки чата' },
-  { command: 'remember', description: 'Добавить заметку' },
-  { command: 'forget', description: 'Забыть пункт (/forget N) или очистить всё' },
-  { command: 'tasks', description: 'Напоминания и регулярные задачи' },
-  { command: 'canceltask', description: 'Отменить задачу по id' },
-  { command: 'taskhumor', description: 'Юмор для задачи: /taskhumor <id> on|off' },
-  { command: 'poi', description: 'Список мест (кафе, достопримечательности, планы)' },
-  { command: 'delpoi', description: 'Удалить место по id' },
-  { command: 'slang', description: 'Словечки, которые я подхватил из чата' },
-  { command: 'trata', description: 'Слова, которые я считаю тратами' },
-  { command: 'style', description: 'Стиль общения: /style или /style <id>' },
-  { command: 'whoami', description: 'Кто я для бота' },
-  { command: 'request', description: 'Запросить доступ' },
-];
+// Command menu descriptions are resolved via `t()` at runtime (so they follow
+// `BOT_LOCALE`), hence a function rather than a `const` array. Consumed by
+// `src/index.ts` (`bot.api.setMyCommands(botCommands())`) at startup.
+export function botCommands() {
+  return [
+    { command: 'help', description: t('cmd.help') },
+    { command: 'group', description: t('cmd.group') },
+    { command: 'members', description: t('cmd.members') },
+    { command: 'link', description: t('cmd.link') },
+    { command: 'memory', description: t('cmd.memory') },
+    { command: 'remember', description: t('cmd.remember') },
+    { command: 'forget', description: t('cmd.forget') },
+    { command: 'tasks', description: t('cmd.tasks') },
+    { command: 'canceltask', description: t('cmd.canceltask') },
+    { command: 'taskhumor', description: t('cmd.taskhumor') },
+    { command: 'poi', description: t('cmd.poi') },
+    { command: 'delpoi', description: t('cmd.delpoi') },
+    { command: 'slang', description: t('cmd.slang') },
+    { command: 'trata', description: t('cmd.trata') },
+    { command: 'style', description: t('cmd.style') },
+    { command: 'whoami', description: t('cmd.whoami') },
+    { command: 'request', description: t('cmd.request') },
+  ];
+}

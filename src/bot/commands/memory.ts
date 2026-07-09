@@ -7,12 +7,13 @@ import {
 } from '../../db/repos/memoryItem.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { rememberNote } from '../flows/assist.js';
+import { t } from '../../i18n/index.js';
 
 export async function cmdMemory(ctx: Context): Promise<void> {
   if (!ctx.chat) return;
   const items = listMemoryItemsForDisplay(ctx.chat.id, loadConfig().MEMORY_HALFLIFE_DAYS);
   if (items.length === 0) {
-    await ctx.reply('Память чата пуста. Добавьте: /remember <текст>');
+    await ctx.reply(t('memory.empty'));
     return;
   }
   // 📌 marks a pinned (explicitly remembered) fact; 🎭 a voice/style directive;
@@ -24,21 +25,21 @@ export async function cmdMemory(ctx: Context): Promise<void> {
       return `${i + 1}. ${tag}${it.content}${who}`;
     })
     .join('\n');
-  await ctx.reply(
-    `🧠 Память чата:\n${body}\n\n` +
-      '📌 — закреплено (не забывается), 🎭 — стиль/повадки. Забыть один пункт: ' +
-      '/forget <номер>. Стереть всё (и историю диалога): /forget',
-  );
+  await ctx.reply(t('memory.list', { body }));
 }
 
 export async function cmdRemember(ctx: Context): Promise<void> {
   if (!ctx.chat) return;
   const note = ((ctx.match as string | undefined) ?? '').trim();
   if (!note) {
-    await ctx.reply('Использование: /remember <что запомнить>');
+    await ctx.reply(t('memory.remember.usage'));
     return;
   }
-  await ctx.reply(rememberNote(ctx.chat.id, note).replace(/^Запомнил\.$/, '🧠 Запомнил.'));
+  // rememberNote returns a localized confirmation; when it's the plain
+  // "remembered" acknowledgement (no override), decorate it with 🧠. Compare
+  // against the translated string so this works in every locale, not just ru.
+  const reply = rememberNote(ctx.chat.id, note);
+  await ctx.reply(reply === t('assist.remembered') ? `🧠 ${reply}` : reply);
 }
 
 export async function cmdForget(ctx: Context): Promise<void> {
@@ -51,24 +52,22 @@ export async function cmdForget(ctx: Context): Promise<void> {
   if (arg) {
     const n = Number(arg);
     if (!Number.isInteger(n) || n < 1) {
-      await ctx.reply(
-        'Использование: /forget <номер пункта из /memory> — или /forget без номера, чтобы стереть всё.',
-      );
+      await ctx.reply(t('memory.forget.usage'));
       return;
     }
     // Map the shown 1-based index back to a real row id via the same stable order.
     const items = listMemoryItemsForDisplay(ctx.chat.id, loadConfig().MEMORY_HALFLIFE_DAYS);
     const target = items[n - 1];
     if (!target) {
-      await ctx.reply(`Нет пункта №${n}. Посмотреть список: /memory`);
+      await ctx.reply(t('memory.forget.noItem', { n }));
       return;
     }
     const removed = removeMemoryItem(ctx.chat.id, target.id);
-    await ctx.reply(`🧹 Забыл: ${removed ?? target.content}`);
+    await ctx.reply(t('memory.forget.removed', { item: removed ?? target.content }));
     return;
   }
 
   clearMemoryItems(ctx.chat.id);
   clearTurns(ctx.chat.id);
-  await ctx.reply('🧹 Память и история диалога очищены.');
+  await ctx.reply(t('memory.forget.cleared'));
 }

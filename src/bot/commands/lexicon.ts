@@ -2,6 +2,7 @@ import type { Context } from 'grammy';
 import { getLexicon, clearLexicon } from '../../db/repos/lexicon.repo.js';
 import { isAdmin } from '../../db/repos/users.repo.js';
 import { replyLong } from '../../util/telegramText.js';
+import { t } from '../../i18n/index.js';
 
 const CLEAR_ARGS = new Set(['clear', 'reset', 'очистить', 'сброс', 'забудь']);
 
@@ -39,7 +40,7 @@ export async function cmdSlang(ctx: Context): Promise<void> {
   // one chat's slang while sitting in another would leak between chats, so gate it.
   const targetId = chatId ?? ctx.chat.id;
   if (chatId !== null && chatId !== ctx.chat.id && !isAdmin(ctx.from?.id ?? 0)) {
-    await ctx.reply('Чужой чат по id смотрит только администратор.');
+    await ctx.reply(t('slang.adminOnly'));
     return;
   }
 
@@ -48,16 +49,16 @@ export async function cmdSlang(ctx: Context): Promise<void> {
 
   if (CLEAR_ARGS.has(arg)) {
     clearLexicon(targetId);
-    await ctx.reply(forOther ? `🧹 Сленг чата ${targetId} очищен.` : '🧹 Выученный сленг очищен.');
+    await ctx.reply(
+      forOther ? t('slang.cleared.other', { chatId: targetId }) : t('slang.cleared.self'),
+    );
     return;
   }
 
   const entries = getLexicon(targetId);
   if (entries.length === 0) {
     await ctx.reply(
-      forOther
-        ? `У чата ${targetId} пока нет выученных словечек.`
-        : 'Пока не набрал ваших словечек — поболтайте, со временем подхвачу. (Сброс: /slang clear)',
+      forOther ? t('slang.empty.other', { chatId: targetId }) : t('slang.empty.self'),
     );
     return;
   }
@@ -65,8 +66,12 @@ export async function cmdSlang(ctx: Context): Promise<void> {
   const lines = entries.map((e) =>
     e.gloss ? `• ${e.term} — ${e.gloss} (×${e.frequency})` : `• ${e.term} (×${e.frequency})`,
   );
-  const header = forOther ? `🗣️ Словечки чата ${targetId}:` : '🗣️ Словечки чата:';
-  const footer = forOther ? `Сброс: /slang ${targetId} clear` : 'Сброс: /slang clear';
+  const header = forOther
+    ? t('slang.list.header.other', { chatId: targetId })
+    : t('slang.list.header.self');
+  const footer = forOther
+    ? t('slang.list.footer.other', { chatId: targetId })
+    : t('slang.list.footer.self');
   // The lexicon is unbounded, so this list can outgrow Telegram's 4096-char cap
   // in a chatty group — chunk it instead of letting the send silently 400.
   await replyLong(ctx, `${header}\n${lines.join('\n')}\n\n${footer}`);

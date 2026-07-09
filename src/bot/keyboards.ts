@@ -1,4 +1,5 @@
 import { InlineKeyboard } from 'grammy';
+import { t } from '../i18n/index.js';
 
 // Callback data scheme (kept short for Telegram's 64-byte limit):
 //   e:ok:<pendingId>   confirm
@@ -10,17 +11,17 @@ import { InlineKeyboard } from 'grammy';
 
 export function previewKeyboard(pendingId: string, retriable = false): InlineKeyboard {
   const kb = new InlineKeyboard()
-    .text('✅ Записать', `e:ok:${pendingId}`)
-    .text('✏️ Исправить', `e:ed:${pendingId}`)
-    .text('❌ Отмена', `e:no:${pendingId}`);
+    .text(t('kb.record'), `e:ok:${pendingId}`)
+    .text(t('kb.edit'), `e:ed:${pendingId}`)
+    .text(t('kb.cancel'), `e:no:${pendingId}`);
   if (retriable) {
-    kb.row().text('🔁 Повторить', `e:rt:${pendingId}`);
+    kb.row().text(t('kb.retry'), `e:rt:${pendingId}`);
   }
   return kb;
 }
 
 export function approvalKeyboard(tgUserId: number): InlineKeyboard {
   return new InlineKeyboard()
-    .text('✅ Approve', `u:ap:${tgUserId}`)
-    .text('❌ Deny', `u:dn:${tgUserId}`);
+    .text(t('kb.approve'), `u:ap:${tgUserId}`)
+    .text(t('kb.deny'), `u:dn:${tgUserId}`);
 }

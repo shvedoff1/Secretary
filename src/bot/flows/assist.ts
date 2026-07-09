@@ -59,6 +59,7 @@ import {
 import { previewKeyboard } from '../keyboards.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 import { looksLikeExpense } from '../../util/money.js';
+import { t } from '../../i18n/index.js';
 
 /**
  * Handle the `remember` tool / explicit "запомни …": pin the note, but keep recorded
@@ -69,7 +70,7 @@ import { looksLikeExpense } from '../../util/money.js';
  */
 export function rememberNote(chatId: number, note: string, replaces?: string[]): string {
   if (looksLikeExpense(note)) {
-    return 'Это похоже на трату — такое в память не пишу, для трат есть Splid. Если это правда трата — просто скажи её как трату, я оформлю. 🤙';
+    return t('assist.looksLikeExpense');
   }
   // Resolve EVERY superseded fact against the current (unmutated) state first, then
   // remove — otherwise an earlier removal could turn a later `replaces` entry that was
@@ -89,14 +90,14 @@ export function rememberNote(chatId: number, note: string, replaces?: string[]):
   }
   insertPinned(chatId, note);
 
-  if (requested.length === 0) return 'Запомнил.';
+  if (requested.length === 0) return t('assist.remembered');
   if (removed.length === 0) {
     // The override was asked for but nothing matched — say so, so a stale contradicting
     // fact doesn't silently survive alongside the new one under a "done" confirmation.
-    return `Записал: ${note}. Но старое, что нужно было заменить, не нашёл — глянь /memory, могло остаться противоречие.`;
+    return t('assist.rememberedNoMatch', { note });
   }
-  const tail = unresolved > 0 ? ' (часть старого не нашёл — глянь /memory)' : '';
-  return `Обновил — заменил «${removed.join('», «')}»${tail}. Теперь у меня записано: ${note}`;
+  const tail = unresolved > 0 ? t('assist.rememberedTail') : '';
+  return t('assist.rememberedReplaced', { removed: removed.join('», «'), tail, note });
 }
 
 /**
@@ -108,10 +109,10 @@ export function makeEditMemoryHandler(chatId: number): (input: EditMemoryInput) 
   return ({ find, replace }) => {
     const match = findMemoryItemByText(chatId, find);
     if (!match) {
-      return `Не нашёл в памяти «${find}». Глянь /memory — там точные формулировки, скажи какую менять.`;
+      return t('assist.editMemoryNotFound', { find });
     }
     editMemoryItemContent(chatId, match.id, replace);
-    return `Поправил: «${match.content}» → «${replace.trim()}». 🤙`;
+    return t('assist.editMemoryDone', { content: match.content, replace: replace.trim() });
   };
 }
 
@@ -207,18 +208,22 @@ export function makeScheduleTaskHandler(
   return (input) => {
     const tz = isValidTimezone(input.timezone) ? input.timezone : defaultTz;
     if (!isValidSchedule(input.cron, tz)) {
-      return 'Не понял расписание — уточни время (напр. «каждый день в 9 утра»).';
+      return t('assist.scheduleBadCron');
     }
     const next = nextRunMs(input.cron, tz);
     if (next === null) {
-      return 'Это расписание уже не сработает — уточни время.';
+      return t('assist.scheduleInPast');
     }
     setTimezone(chatId, tz);
     // Guard against re-creating a reminder that already exists (e.g. the original
     // request lingering in conversation history makes the model fire again).
     const dup = findDuplicate(listTasks(chatId), { cron: input.cron, title: input.title });
     if (dup) {
-      return `Это уже стоит — #${dup.id} «${dup.title}» (следующий запуск ${formatInTimezone(dup.nextRunAt, dup.timezone)}).`;
+      return t('assist.scheduleDuplicate', {
+        id: dup.id,
+        title: dup.title,
+        when: formatInTimezone(dup.nextRunAt, dup.timezone),
+      });
     }
     const id = createTask({
       chatId,
@@ -232,9 +237,16 @@ export function makeScheduleTaskHandler(
       nextRunAt: next,
     });
     const when = formatInTimezone(next, tz);
-    const kind = input.once ? 'Напоминание' : 'Регулярная задача';
-    const humorNote = input.humor ? ' 😂 с юмором' : '';
-    return `${kind} #${id} «${input.title}»${humorNote} создана. Первый запуск: ${when} (${tz}). Список: /tasks`;
+    const kind = input.once ? t('assist.taskKindOnce') : t('assist.taskKindRecurring');
+    const humorNote = input.humor ? t('assist.taskHumorNote') : '';
+    return t('assist.taskCreated', {
+      kind,
+      id,
+      title: input.title,
+      humorNote,
+      when,
+      tz,
+    });
   };
 }
 
@@ -251,10 +263,10 @@ export function makeLearnExpenseHandler(
   return (input) => {
     const added = addExpenseTerms(chatId, input.keywords, tgUserId);
     if (added.length === 0) {
-      return 'Уже знаю такие слова — ничего нового не добавил.';
+      return t('assist.learnExpenseNothingNew');
     }
-    const list = added.map((t) => `«${t}»`).join(', ');
-    return `Запомнил: сообщения со словами ${list} теперь считаю тратами. Список: /trata`;
+    const list = added.map((term) => `«${term}»`).join(', ');
+    return t('assist.learnExpenseDone', { list });
   };
 }
 
@@ -269,8 +281,8 @@ export function makeEditLexiconHandler(
   return ({ term, gloss }) => {
     const res = setGloss(chatId, term, gloss);
     return res.updated
-      ? `Готово — «${res.term}» теперь значит «${gloss.trim()}». 🤙`
-      : `Не нашёл «${term.trim()}» в словечках чата. Глянь /slang — там точные формы.`;
+      ? t('assist.editLexiconDone', { term: res.term, gloss: gloss.trim() })
+      : t('assist.editLexiconNotFound', { term: term.trim() });
   };
 }
 
@@ -293,7 +305,7 @@ export function makeAddPoiHandler(
       latitude: input.latitude,
       longitude: input.longitude,
     });
-    return `Добавил в места: ${poi.name}. Список: /poi`;
+    return t('assist.poiAdded', { name: poi.name });
   };
 }
 
@@ -428,9 +440,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       const status = (err as { status?: number })?.status;
       const overloaded = status === 529 || status === 503 || status === 429;
       await ctx.reply(
-        overloaded
-          ? '⚠️ ИИ сейчас перегружен (529). Я уже несколько раз перепробовал — дай ему минутку и повтори. 🤙'
-          : '⚠️ Не получилось обратиться к ИИ. Попробуй ещё раз чуть позже.',
+        overloaded ? t('assist.aiOverloaded') : t('assist.aiError'),
       );
     }
     return 'error';
@@ -438,10 +448,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
 
   if (result.kind === 'expense') {
     if (!chatCfg?.provider_group_id) {
-      await ctx.reply(
-        'Чтобы записывать траты в Splid, подключи группу: /group <код-приглашения>. ' +
-          'Это опционально — без него я и так помогу: напоминания, поиск, заметки. 🤙',
-      );
+      await ctx.reply(t('assist.connectSplid'));
       return 'replied';
     }
     const senderMapping = getMapping(chatId, tgUserId);
@@ -515,7 +522,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     ? await humorizeWithPreview(
         result.text,
         async (original) => {
-          await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
+          await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, t('assist.beforeOpenAi', { text: original }));
         },
         getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({ term: e.term, gloss: e.gloss })),
       )
@@ -565,14 +572,14 @@ async function rewordPendingInner(
   const tgUserId = ctx.from!.id;
   const pending = getPending(pendingId);
   if (!pending || pending.status !== 'awaiting') {
-    await ctx.reply('Это превью уже неактивно.');
+    await ctx.reply(t('assist.previewInactive'));
     return;
   }
 
   const cfg = loadConfig();
   const chatCfg = getChatConfig(chatId);
   if (!chatCfg?.provider_group_id) {
-    await ctx.reply('Сначала подключите группу Splid командой /group.');
+    await ctx.reply(t('assist.connectSplidReword'));
     return;
   }
 
@@ -637,9 +644,7 @@ async function rewordPendingInner(
   // expense the model returns (it's told to return the whole trade as one).
   const rewordInput = result.inputs[0];
   if (!rewordInput) {
-    await ctx.reply(
-      'Не понял правку. Можешь переписать трату целиком, напр.: «такси 500 за меня и Колю».',
-    );
+    await ctx.reply(t('assist.rewordNotUnderstood'));
     return;
   }
 

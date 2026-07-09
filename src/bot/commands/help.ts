@@ -1,43 +1,44 @@
 import type { Context } from 'grammy';
 import { isAdmin } from '../../db/repos/users.repo.js';
+import { t } from '../../i18n/index.js';
 
 export async function cmdHelp(ctx: Context): Promise<void> {
   const adminSection =
     ctx.from && isAdmin(ctx.from.id)
       ? [
           '',
-          'Админ (в личке):',
-          '/chats — список чатов; /chat <id> — детали',
-          '/setgroup <id> <код> · /setcurrency <id> <CUR>',
-          '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id>',
-          '/setlink <id> <tgUserId> <имя> · /unlink <id> <tgUserId>',
+          t('help.adminTitle'),
+          t('help.adminChats'),
+          t('help.adminSetgroup'),
+          t('help.adminSetmemory'),
+          t('help.adminSetlink'),
         ]
       : [];
   await ctx.reply(
     [
-      'Что я умею:',
-      '• Записывать траты: просто напишите «потратил 500 за такси за меня и Колю», пришлите голосовое или фото чека — я покажу превью с кнопками ✅/✏️/❌.',
-      '• Отвечать на вопросы (в группе — если упомянуть меня @ или ответить на моё сообщение).',
-      '• Напоминать и выполнять регулярные задачи: напиши «напомни завтра в 9 купить молоко» или «каждое утро ищи прогноз волн и кидай сюда».',
-      '• Хранить места: скажи «запиши это кафе, отличный кофе» или «добавь в места — смотровая, хочу сходить». Список с ссылками на Google Maps — /poi.',
+      t('help.canDo'),
+      t('help.featExpenses'),
+      t('help.featQuestions'),
+      t('help.featReminders'),
+      t('help.featPlaces'),
       '',
-      'Команды:',
-      '/group <код> — подключить группу Splid (по коду-приглашению)',
-      '/members — участники группы и их привязки',
-      '/link [в ответ на сообщение] <имя|инициалы> — привязать Telegram-аккаунт к участнику Splid',
-      '/memory — показать заметки чата',
-      '/remember <текст> — добавить заметку',
-      '/forget — очистить заметки',
-      '/tasks — список напоминаний и регулярных задач',
-      '/canceltask <id> — отменить задачу',
-      '/taskhumor <id> on|off — включить/выключить юмор для задачи',
-      '/poi — список мест (кафе, достопримечательности, планы) с ссылками на карту',
-      '/delpoi <id> — удалить место',
-      '/style — стиль общения в чате (/style <id> — выбрать: neutral, chill, formal)',
-      '/slang — словечки, которые я подхватил из чата (/slang clear — сбросить)',
-      '/trata — слова, которые я считаю тратами (ответь «запомни, это трата» на пропущенное сообщение)',
-      '/whoami — кто я для бота',
-      '/request — запросить доступ',
+      t('help.commandsTitle'),
+      t('help.cmdGroup'),
+      t('help.cmdMembers'),
+      t('help.cmdLink'),
+      t('help.cmdMemory'),
+      t('help.cmdRemember'),
+      t('help.cmdForget'),
+      t('help.cmdTasks'),
+      t('help.cmdCanceltask'),
+      t('help.cmdTaskhumor'),
+      t('help.cmdPoi'),
+      t('help.cmdDelpoi'),
+      t('help.cmdStyle'),
+      t('help.cmdSlang'),
+      t('help.cmdTrata'),
+      t('help.cmdWhoami'),
+      t('help.cmdRequest'),
       ...adminSection,
     ].join('\n'),
   );

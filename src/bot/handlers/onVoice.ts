@@ -9,29 +9,18 @@ import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
 import { setTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
+import { safeReact } from '../reactions.js';
 import { t } from '../../i18n/index.js';
 
 // "Writing it down" marker. We react with ✍️ as soon as a voice note arrives, so
 // the chat sees it was heard; the mark stays only if it became an expense and is
 // removed otherwise. Note: the valid Telegram reaction literal is the bare ✍
-// (U+270D), without the emoji variation selector.
+// (U+270D), without the emoji variation selector. Reactions are best-effort
+// (safeReact swallows failures).
 const WRITING = '✍' as const;
 
-async function setWriting(ctx: Context): Promise<void> {
-  try {
-    await ctx.react(WRITING);
-  } catch {
-    /* reactions are best-effort (disabled in chat, missing rights, …) */
-  }
-}
-
-async function clearWriting(ctx: Context): Promise<void> {
-  try {
-    await ctx.react([]);
-  } catch {
-    /* best-effort */
-  }
-}
+const setWriting = (ctx: Context): Promise<void> => safeReact(ctx, WRITING);
+const clearWriting = (ctx: Context): Promise<void> => safeReact(ctx, []);
 
 /**
  * Forward a voice transcript to the admin's DM so flaky transcriptions can be

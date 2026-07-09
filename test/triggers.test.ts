@@ -7,6 +7,8 @@ import {
   isMoneyContext,
   captionLooksLikeSharedExpense,
   mentionsBotByName,
+  mentionsBotViaEntity,
+  isFreshBotRequest,
 } from '../src/bot/triggers.js';
 import type { Context } from 'grammy';
 
@@ -100,6 +102,54 @@ describe('isAddressed', () => {
   it('false for plain group chatter', () => {
     const c = ctx({ chat: { type: 'group' }, message: { text: 'привет' } });
     expect(isAddressed(c)).toBe(false);
+  });
+});
+
+describe('mentionsBotViaEntity', () => {
+  it('true on an explicit @mention of the bot', () => {
+    const text = 'эй @SecretaryBot где корт';
+    const c = ctx({
+      message: { text, entities: [{ type: 'mention', offset: 3, length: 13 }] },
+    });
+    expect(mentionsBotViaEntity(c)).toBe(true);
+  });
+  it('true on a text_mention pointing at the bot', () => {
+    const c = ctx({
+      message: { text: 'Секретарь глянь', entities: [{ type: 'text_mention', offset: 0, length: 9, user: { id: 999 } }] },
+    });
+    expect(mentionsBotViaEntity(c)).toBe(true);
+  });
+  it('false for a bare reply with no mention entity', () => {
+    // Replying to the bot's preview is NOT an explicit mention — that distinction is
+    // what lets a bare "это Миша" correction be told apart from "@bot обнови прогноз".
+    const c = ctx({ message: { text: 'это Миша', reply_to_message: { from: { id: 999 } } } });
+    expect(mentionsBotViaEntity(c)).toBe(false);
+  });
+  it('false for an @mention of someone else', () => {
+    const text = 'эй @SomeoneElse';
+    const c = ctx({
+      message: { text, entities: [{ type: 'mention', offset: 3, length: 12 }] },
+    });
+    expect(mentionsBotViaEntity(c)).toBe(false);
+  });
+});
+
+describe('isFreshBotRequest', () => {
+  it('true when the reply @mentions the bot (a new ask, not a correction)', () => {
+    const text = '@SecretaryBot обнови прогноз по Бали';
+    const c = ctx({
+      message: { text, entities: [{ type: 'mention', offset: 0, length: 13 }] },
+    });
+    expect(isFreshBotRequest(c, text)).toBe(true);
+  });
+  it('true when the reply addresses the bot by name with a request', () => {
+    const c = ctx({ message: { text: 'Скай, обнови прогноз' } });
+    expect(isFreshBotRequest(c, 'Скай, обнови прогноз')).toBe(true);
+  });
+  it('false for a bare expense correction ("это Миша", "дели на всех")', () => {
+    expect(isFreshBotRequest(ctx({ message: { text: 'это Миша' } }), 'это Миша')).toBe(false);
+    expect(isFreshBotRequest(ctx({ message: { text: 'дели на всех' } }), 'дели на всех')).toBe(false);
+    expect(isFreshBotRequest(ctx({ message: { text: 'сумма 700' } }), 'сумма 700')).toBe(false);
   });
 });
 

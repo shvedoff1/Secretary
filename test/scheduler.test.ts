@@ -239,4 +239,33 @@ describe('runDueTasks humor toggle', () => {
     const lastUser = firstCall.messages[firstCall.messages.length - 1]!;
     expect(JSON.stringify(lastUser.content)).not.toContain('секретная болтовня');
   });
+
+  it('records the fired task post into conversation history for follow-ups', async () => {
+    // Regression: a recurring post ("⏰ Прогноз …") was sent but never stored, so a
+    // later «обнови прогноз» reached the assistant with no idea what was posted.
+    process.env.ENABLE_HUMOR = 'false';
+    const { scheduler } = await freshModules();
+    const repo = await import('../src/db/repos/scheduledTask.repo.js');
+    const convo = await import('../src/db/repos/conversation.repo.js');
+    repo.createTask({
+      chatId: 100,
+      tgUserId: 1,
+      title: 'Прогноз',
+      prompt: 'Дай прогноз',
+      cron: '0 9 * * *',
+      timezone: 'Europe/Lisbon',
+      once: true,
+      humor: false,
+      nextRunAt: 1,
+    });
+    responses = [textResponse('волны 1.2м в Чангу')];
+
+    await scheduler.runDueTasks(fakeBot([]));
+
+    const history = convo.recentTurns(100, 20);
+    expect(history).toHaveLength(1);
+    expect(history[0]!.role).toBe('assistant');
+    expect(history[0]!.content).toContain('⏰ Прогноз');
+    expect(history[0]!.content).toContain('волны 1.2м в Чангу');
+  });
 });

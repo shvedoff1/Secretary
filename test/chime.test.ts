@@ -21,7 +21,9 @@ async function load(env: Record<string, string> = {}): Promise<ChimeModule> {
   process.env.CHIME_QUIET_SECONDS = '60';
   process.env.CHIME_HOUR_SECONDS = '3600';
   process.env.CHIME_HOUR_PROBABILITY = '0';
-  delete process.env.ENABLE_CHIME;
+  // Chime is opt-in (OFF by default); enable it for the mechanics tests. A test that
+  // checks the disabled path passes ENABLE_CHIME:'false' in `env`, which wins below.
+  process.env.ENABLE_CHIME = 'true';
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   vi.resetModules();
   return import('../src/bot/flows/chime.js');

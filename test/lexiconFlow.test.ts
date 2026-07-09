@@ -15,6 +15,9 @@ async function load() {
   process.env.ADMIN_TELEGRAM_ID = '1';
   process.env.DATABASE_PATH = ':memory:';
   process.env.LEXICON_BATCH_SIZE = '2';
+  // Lexicon learning is opt-in (OFF by default); enable it for the mechanics tests
+  // unless a test set it explicitly (the "does nothing when disabled" case).
+  if (process.env.ENABLE_LEXICON === undefined) process.env.ENABLE_LEXICON = 'true';
   vi.resetModules();
   const { migrate } = await import('../src/db/migrate.js');
   migrate();

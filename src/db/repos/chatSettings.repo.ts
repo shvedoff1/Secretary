@@ -18,3 +18,23 @@ export function setTimezone(chatId: number, timezone: string): void {
     )
     .run(chatId, timezone);
 }
+
+/** The persona preset id this chat picked with /style, or null if it hasn't. */
+export function getPersonaId(chatId: number): string | null {
+  const row = getDb()
+    .prepare('SELECT persona_id FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { persona_id: string | null } | undefined;
+  return row?.persona_id ?? null;
+}
+
+/** Store (or clear, with null) this chat's persona preset id. Preserves timezone. */
+export function setPersonaId(chatId: number, personaId: string | null): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, persona_id, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         persona_id = excluded.persona_id, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, personaId);
+}

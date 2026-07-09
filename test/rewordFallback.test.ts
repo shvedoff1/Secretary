@@ -23,6 +23,8 @@ vi.mock('../src/core/registry.js', () => ({
 vi.mock('../src/db/repos/chatSettings.repo.js', () => ({
   getTimezone: vi.fn(() => 'UTC'),
   setTimezone: vi.fn(),
+  getPersonaId: vi.fn(() => null),
+  setPersonaId: vi.fn(),
 }));
 vi.mock('../src/util/richMessage.js', () => ({ sendRichMarkdown: vi.fn() }));
 vi.mock('../src/bot/flows/typing.js', () => ({

@@ -17,6 +17,8 @@ import { makeSurfForecastHandler } from './surf/index.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
+import { getPersonaId } from './db/repos/chatSettings.repo.js';
+import { personaStyleFor } from './llm/prompts.js';
 import { getMemoryForContext } from './db/repos/memoryItem.repo.js';
 import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
 import type { Member } from './core/types.js';
@@ -116,6 +118,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         memoryChat,
         memoryUsers,
         memoryPersona,
+        personaStyle: personaStyleFor(getPersonaId(task.chatId) ?? cfg.DEFAULT_PERSONA),
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: !!chatCfg?.provider_group_id,

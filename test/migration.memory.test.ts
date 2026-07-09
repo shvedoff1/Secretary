@@ -45,6 +45,18 @@ describe('migration 010 memory backfill', () => {
          created_at  INTEGER NOT NULL
        )`,
     );
+    // conversation_turn exists since migration 001; recreate it so migration 012
+    // (which adds sender_name to it) can run against this synthetic v9 DB.
+    db.exec(
+      `CREATE TABLE conversation_turn (
+         id         INTEGER PRIMARY KEY AUTOINCREMENT,
+         chat_id    INTEGER NOT NULL,
+         role       TEXT NOT NULL,
+         tg_user_id INTEGER,
+         content    TEXT NOT NULL,
+         created_at INTEGER NOT NULL
+       )`,
+    );
     db.prepare('INSERT INTO chat_memory (chat_id, content, updated_at) VALUES (?, ?, ?)').run(
       555,
       '- любит кофе\n- часовой пояс Bali',

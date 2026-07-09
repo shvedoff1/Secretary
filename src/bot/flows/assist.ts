@@ -527,7 +527,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   if (result.scheduled) return 'replied';
   // Record this conversational exchange (and only this) for future context.
   // Store what we actually sent (the humorized text) so history matches the chat.
-  addTurn({ chatId, role: 'user', tgUserId, content: args.historyText });
+  addTurn({ chatId, role: 'user', tgUserId, senderName: senderName(ctx), content: args.historyText });
   addTurn({ chatId, role: 'assistant', tgUserId: null, content: replyText });
   pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
   return 'replied';

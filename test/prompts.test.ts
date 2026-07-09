@@ -85,6 +85,20 @@ describe('SYSTEM_PROMPT argument-resistance guidance', () => {
   });
 });
 
+// The bot mixed people up in groups and @-tagged the wrong person. Guard the
+// guidance that explains the "Name: message" labelling and forbids @-mentions.
+describe('SYSTEM_PROMPT name & mention guidance', () => {
+  it('explains that each message is prefixed with its author name', () => {
+    expect(SYSTEM_PROMPT).toContain("Who's talking");
+    expect(SYSTEM_PROMPT).toMatch(/prefixed with its author'?s name/);
+  });
+
+  it('forbids @-tagging so it never pings the wrong person', () => {
+    expect(SYSTEM_PROMPT).toMatch(/@-tag|@-mention/);
+    expect(SYSTEM_PROMPT).toContain('WRONG person');
+  });
+});
+
 describe('buildContextBlock never carries slang', () => {
   const base = {
     defaultCurrency: 'EUR',

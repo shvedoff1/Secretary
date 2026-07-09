@@ -60,6 +60,21 @@ describe('conversation repo', () => {
     expect(repo.recentTurns(1, 20)).toHaveLength(4);
   });
 
+  it('stores and returns the sender name for user turns', async () => {
+    const { repo } = await fresh();
+    repo.addTurn({ chatId: 1, role: 'user', tgUserId: 7, senderName: 'Школяр', content: 'привет' });
+    repo.addTurn({ chatId: 1, role: 'assistant', tgUserId: null, content: 'здаров' });
+
+    const turns = repo.recentTurns(1, 20);
+    expect(turns.map((t) => t.senderName)).toEqual(['Школяр', null]);
+  });
+
+  it('leaves sender name null when not provided (legacy/assistant turns)', async () => {
+    const { repo } = await fresh();
+    repo.addTurn({ chatId: 1, role: 'user', tgUserId: 7, content: 'привет' });
+    expect(repo.recentTurns(1, 20)[0]!.senderName).toBeNull();
+  });
+
   it('keeps history per-chat and clears only the given chat', async () => {
     const { repo } = await fresh();
     repo.addTurn({ chatId: 1, role: 'user', tgUserId: 7, content: 'a' });

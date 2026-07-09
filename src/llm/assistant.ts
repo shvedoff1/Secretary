@@ -106,6 +106,36 @@ export type AssistantResult =
 
 const MAX_ITERATIONS = 6;
 
+/**
+ * Turn stored conversation history into a valid Anthropic `messages` prefix.
+ *
+ * The API is strict: the first message must be `user`, and roles must strictly
+ * alternate — two messages with the same role in a row is a hard error. Stored
+ * history is NOT guaranteed to satisfy that: a sliding-window/age cut can drop a
+ * user turn while keeping its assistant reply (leading assistant), and lone
+ * assistant posts with no preceding user turn — a fired scheduled/recurring task
+ * that the chat then replies to — can sit back-to-back (two assistants in a row).
+ *
+ * So we normalise instead of trusting the rows: skip any leading assistant turns,
+ * and merge consecutive same-role turns into one message. Exported for testing.
+ */
+export function historyToMessages(history: Turn[]): Anthropic.MessageParam[] {
+  const messages: Anthropic.MessageParam[] = [];
+  for (const turn of history) {
+    // The conversation must open on the user; drop assistant turns until one lands.
+    if (messages.length === 0 && turn.role !== 'user') continue;
+    const last = messages[messages.length - 1];
+    if (last && last.role === turn.role) {
+      // Two same-role turns in a row (e.g. two scheduled posts) — fold the second
+      // into the first so alternation holds. Stored content is always a string.
+      last.content = `${last.content as string}\n${turn.content}`;
+    } else {
+      messages.push({ role: turn.role, content: turn.content });
+    }
+  }
+  return messages;
+}
+
 export async function runAssistant(
   ctx: AssistantContext,
   handlers: AssistantHandlers,
@@ -143,10 +173,12 @@ export async function runAssistant(
   // only thing safe to hand to the tone-only humorizer downstream.
   let usedTool = false;
 
-  const messages: Anthropic.MessageParam[] = [];
-  for (const turn of ctx.history) {
-    messages.push({ role: turn.role, content: turn.content });
-  }
+  // Normalise stored history into a valid alternating prefix (first turn user, no
+  // two same-role turns in a row) before appending the current user message —
+  // otherwise a window cut or a lone scheduled-task post would make the API reject
+  // the whole request. The current turn below is always `user`, and normalised
+  // history always ends on `assistant` (or is empty), so the append stays alternating.
+  const messages: Anthropic.MessageParam[] = historyToMessages(ctx.history);
 
   const currentContent: Anthropic.ContentBlockParam[] = [
     { type: 'text', text: contextBlock },

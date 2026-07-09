@@ -18,6 +18,7 @@ import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
 import { getMemoryForContext } from './db/repos/memoryItem.repo.js';
+import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
 import type { Member } from './core/types.js';
 import type { Config } from './config.js';
 
@@ -172,7 +173,15 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
             )
           : result.text;
       const prefix = task.title ? `⏰ ${task.title}\n` : '';
-      await sendMarkdown(bot, task.chatId, prefix + text);
+      const posted = prefix + text;
+      await sendMarkdown(bot, task.chatId, posted);
+      // Record what the task posted into conversation history so a follow-up — a
+      // reply or a next-message «обнови прогноз» — has the context it refers to.
+      // Without this the chat sees the recurring post but the assistant doesn't,
+      // and answers blind. Stored as an assistant turn (no author); the history
+      // normaliser handles the lone/back-to-back assistant turns this creates.
+      addTurn({ chatId: task.chatId, role: 'assistant', tgUserId: null, content: posted });
+      pruneOld(task.chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
     }
   } catch (err) {
     logger.error({ err, taskId: task.id }, 'scheduled task run failed');

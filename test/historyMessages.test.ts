@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { historyToMessages } from '../src/llm/assistant.js';
 import type { Turn } from '../src/db/repos/conversation.repo.js';
 
-function turn(role: 'user' | 'assistant', content: string): Turn {
-  return { role, content, tgUserId: role === 'user' ? 1 : null, createdAt: 0 };
+function turn(role: 'user' | 'assistant', content: string, senderName: string | null = null): Turn {
+  return { role, content, senderName, tgUserId: role === 'user' ? 1 : null, createdAt: 0 };
 }
 
 describe('historyToMessages', () => {
@@ -13,6 +13,31 @@ describe('historyToMessages', () => {
       { role: 'user', content: 'привет' },
       { role: 'assistant', content: 'здорова' },
       { role: 'user', content: 'как дела' },
+    ]);
+  });
+
+  it('prefixes user turns with the author name so speakers stay distinct', () => {
+    const h = [
+      turn('user', 'погнали баклажанить', 'Школяр'),
+      turn('assistant', 'го'),
+      turn('user', 'йоу братуха', 'skyler white yo'),
+    ];
+    expect(historyToMessages(h)).toEqual([
+      { role: 'user', content: 'Школяр: погнали баклажанить' },
+      { role: 'assistant', content: 'го' },
+      { role: 'user', content: 'skyler white yo: йоу братуха' },
+    ]);
+  });
+
+  it('keeps both authors when folding two back-to-back user turns', () => {
+    // Two people speak before the bot replies — the turns fold into one user
+    // message, but each keeps its own "Name:" prefix so they stay attributable.
+    const h = [
+      turn('user', 'я плачу', 'Школяр'),
+      turn('user', 'а я нет', 'Скай'),
+    ];
+    expect(historyToMessages(h)).toEqual([
+      { role: 'user', content: 'Школяр: я плачу\nСкай: а я нет' },
     ]);
   });
 

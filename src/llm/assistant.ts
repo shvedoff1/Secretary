@@ -118,19 +118,28 @@ const MAX_ITERATIONS = 6;
  *
  * So we normalise instead of trusting the rows: skip any leading assistant turns,
  * and merge consecutive same-role turns into one message. Exported for testing.
+ *
+ * User turns are prefixed with their author's name ("Name: message") so the model
+ * can tell speakers apart in a group — without it the history is a flat run of
+ * "user" messages and the bot mixes people up (answers as if A said B's line).
  */
 export function historyToMessages(history: Turn[]): Anthropic.MessageParam[] {
   const messages: Anthropic.MessageParam[] = [];
   for (const turn of history) {
     // The conversation must open on the user; drop assistant turns until one lands.
     if (messages.length === 0 && turn.role !== 'user') continue;
+    const rendered =
+      turn.role === 'user' && turn.senderName
+        ? `${turn.senderName}: ${turn.content}`
+        : turn.content;
     const last = messages[messages.length - 1];
     if (last && last.role === turn.role) {
-      // Two same-role turns in a row (e.g. two scheduled posts) — fold the second
-      // into the first so alternation holds. Stored content is always a string.
-      last.content = `${last.content as string}\n${turn.content}`;
+      // Two same-role turns in a row (e.g. two scheduled posts, or two people
+      // speaking before we replied) — fold into the first so alternation holds.
+      // Each turn keeps its own "Name:" prefix so the authors stay distinct.
+      last.content = `${last.content as string}\n${rendered}`;
     } else {
-      messages.push({ role: turn.role, content: turn.content });
+      messages.push({ role: turn.role, content: rendered });
     }
   }
   return messages;
@@ -180,12 +189,16 @@ export async function runAssistant(
   // history always ends on `assistant` (or is empty), so the append stays alternating.
   const messages: Anthropic.MessageParam[] = historyToMessages(ctx.history);
 
+  // Label the current message with its sender the same way history turns are
+  // labelled ("Name: message"), so the model attributes it to the right person and
+  // never confuses the current speaker with someone named in the conversation.
   const currentContent: Anthropic.ContentBlockParam[] = [
     { type: 'text', text: contextBlock },
   ];
   if (typeof ctx.userContent === 'string') {
-    currentContent.push({ type: 'text', text: ctx.userContent });
+    currentContent.push({ type: 'text', text: `${ctx.senderName}: ${ctx.userContent}` });
   } else {
+    currentContent.push({ type: 'text', text: `${ctx.senderName}:` });
     currentContent.push(...ctx.userContent);
   }
   messages.push({ role: 'user', content: currentContent });

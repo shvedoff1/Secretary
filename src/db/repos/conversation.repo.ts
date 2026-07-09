@@ -5,6 +5,8 @@ export type TurnRole = 'user' | 'assistant';
 export interface Turn {
   role: TurnRole;
   tgUserId: number | null;
+  /** Author's display name (user turns), or null for assistant/legacy rows. */
+  senderName: string | null;
   content: string;
   createdAt: number;
 }
@@ -13,14 +15,16 @@ export function addTurn(args: {
   chatId: number;
   role: TurnRole;
   tgUserId: number | null;
+  /** Author's display name, so history can be rendered as "Name: message". */
+  senderName?: string | null;
   content: string;
 }): void {
   getDb()
     .prepare(
-      `INSERT INTO conversation_turn (chat_id, role, tg_user_id, content, created_at)
-       VALUES (?, ?, ?, ?, unixepoch() * 1000)`,
+      `INSERT INTO conversation_turn (chat_id, role, tg_user_id, sender_name, content, created_at)
+       VALUES (?, ?, ?, ?, ?, unixepoch() * 1000)`,
     )
-    .run(args.chatId, args.role, args.tgUserId, args.content);
+    .run(args.chatId, args.role, args.tgUserId, args.senderName ?? null, args.content);
 }
 
 /**
@@ -32,7 +36,7 @@ export function recentTurns(chatId: number, limit: number, maxAgeMs?: number): T
   const cutoff = maxAgeMs !== undefined ? Date.now() - maxAgeMs : null;
   const rows = getDb()
     .prepare(
-      `SELECT role, tg_user_id, content, created_at
+      `SELECT role, tg_user_id, sender_name, content, created_at
        FROM conversation_turn
        WHERE chat_id = ?
          AND (? IS NULL OR created_at >= ?)
@@ -42,6 +46,7 @@ export function recentTurns(chatId: number, limit: number, maxAgeMs?: number): T
     .all(chatId, cutoff, cutoff, limit) as {
     role: TurnRole;
     tg_user_id: number | null;
+    sender_name: string | null;
     content: string;
     created_at: number;
   }[];
@@ -49,6 +54,7 @@ export function recentTurns(chatId: number, limit: number, maxAgeMs?: number): T
     .map((r) => ({
       role: r.role,
       tgUserId: r.tg_user_id,
+      senderName: r.sender_name,
       content: r.content,
       createdAt: r.created_at,
     }))

@@ -192,6 +192,28 @@ describe('onMessage reply context', () => {
     expect(args.userContent).toContain('это была трата');
   });
 
+  it('names the author of the quoted message so the assistant attributes it right', async () => {
+    mockRoute.mockReturnValue('process');
+    const c = {
+      message: {
+        text: 'запомни, это трата',
+        reply_to_message: {
+          message_id: 77,
+          text: 'закинул 500 за бензин',
+          from: { first_name: 'Школяр' },
+        },
+      },
+      chat: { id: 1, type: 'group' },
+      from: { id: 2 },
+    } as unknown as Context;
+
+    await onMessage(c);
+
+    const args = mockRun.mock.calls[0]?.[1] as { userContent: string };
+    expect(args.userContent).toContain('В ответ на сообщение от Школяр');
+    expect(args.userContent).toContain('закинул 500 за бензин');
+  });
+
   it('passes plain text (no quote block) when replying to a voice we never transcribed', async () => {
     mockRoute.mockReturnValue('process');
     const c = {

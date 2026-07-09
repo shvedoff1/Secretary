@@ -81,9 +81,16 @@ export async function onMessage(ctx: Context): Promise<void> {
     replyTo?.text ??
     replyTo?.caption ??
     (replyTo ? getTranscript(ctx.chat.id, replyTo.message_id) : undefined);
+  // Name the author of the quoted message so the assistant attributes it correctly
+  // (and doesn't answer/tag the wrong person when acting on a reply).
+  const quotedAuthor = replyTo?.from
+    ? [replyTo.from.first_name, replyTo.from.last_name].filter(Boolean).join(' ') ||
+      (replyTo.from.username ? `@${replyTo.from.username}` : null)
+    : null;
+  const quotedLabel = quotedAuthor ? `сообщение от ${quotedAuthor}` : 'сообщение';
   const userContent =
     decision === 'process' && quoted
-      ? `[В ответ на сообщение: "${quoted}"]\n${text}`
+      ? `[В ответ на ${quotedLabel}: "${quoted}"]\n${text}`
       : text;
 
   await runAndRespond(ctx, {

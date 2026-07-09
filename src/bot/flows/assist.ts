@@ -1,11 +1,11 @@
 import type { Context } from 'grammy';
 import type Anthropic from '@anthropic-ai/sdk';
-import { loadConfig } from '../../config.js';
+import { loadConfig, type Config } from '../../config.js';
 import { logger } from '../../logger.js';
 import { getProvider } from '../../core/registry.js';
 import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
-import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
+import { runAssistant, type AssistantResult, type AssistantHandlers } from '../../llm/assistant.js';
 import { humorizeWithPreview, isHumorEnabled, classifyHumorDecision } from '../../llm/humorize.js';
 import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense } from '../../llm/schema.js';
@@ -57,6 +57,7 @@ import {
   type PendingSource,
 } from '../../db/repos/pending.repo.js';
 import { previewKeyboard } from '../keyboards.js';
+import { safeReact } from '../reactions.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 import { looksLikeExpense } from '../../util/money.js';
 import { t } from '../../i18n/index.js';
@@ -126,24 +127,11 @@ export function senderName(ctx: Context): string {
 }
 
 // "Thinking" indicator: react to the message we're processing, then clear it once
-// we're done. Reactions can fail (disabled in chat, missing rights) — never fatal.
+// we're done. Reactions are best-effort (safeReact swallows failures).
 const THINKING = '👀' as const;
 
-async function setThinking(ctx: Context): Promise<void> {
-  try {
-    await ctx.react(THINKING);
-  } catch {
-    /* reactions are best-effort */
-  }
-}
-
-async function clearThinking(ctx: Context): Promise<void> {
-  try {
-    await ctx.react([]);
-  } catch {
-    /* reactions are best-effort */
-  }
-}
+const setThinking = (ctx: Context): Promise<void> => safeReact(ctx, THINKING);
+const clearThinking = (ctx: Context): Promise<void> => safeReact(ctx, []);
 
 /**
  * Send an assistant reply using Telegram's native rich-message formatting so the
@@ -310,6 +298,30 @@ export function makeAddPoiHandler(
 }
 
 /**
+ * The full set of live tool handlers for a chat, wired to this chat/user. Shared by
+ * the live message flow and the reword flow so the tool→handler mapping lives in ONE
+ * place — adding a tool means updating this and the assistant's dispatch table, not
+ * every `runAssistant` call site. (The scheduler builds its own map: firing tasks
+ * noop the write-tools so a reminder can't spawn more reminders.)
+ */
+export function makeChatHandlers(
+  chatId: number,
+  tgUserId: number,
+  cfg: Config,
+): AssistantHandlers {
+  return {
+    remember: (input) => rememberNote(chatId, input.note, input.replaces),
+    editMemory: makeEditMemoryHandler(chatId),
+    learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
+    editLexicon: makeEditLexiconHandler(chatId),
+    scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+    surfForecast: makeSurfForecastHandler(),
+    addPoi: makeAddPoiHandler(chatId, tgUserId),
+    spendingReport: makeSpendingReportHandler(chatId),
+  };
+}
+
+/**
  * What `runAndRespond` did with a message, so callers (e.g. the voice handler)
  * can react accordingly: an expense was drafted, a text reply was sent, nothing
  * was sent (silent auto-expense scan), or the assistant call failed.
@@ -423,16 +435,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         history,
         userContent: args.userContent,
       },
-      {
-        remember: (input) => rememberNote(chatId, input.note, input.replaces),
-        editMemory: makeEditMemoryHandler(chatId),
-        learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
-        editLexicon: makeEditLexiconHandler(chatId),
-        scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
-        surfForecast: makeSurfForecastHandler(),
-        addPoi: makeAddPoiHandler(chatId, tgUserId),
-        spendingReport: makeSpendingReportHandler(chatId),
-      },
+      makeChatHandlers(chatId, tgUserId, cfg),
     );
   } catch (err) {
     logger.error({ err }, 'assistant call failed');
@@ -617,16 +620,7 @@ async function rewordPendingInner(
       history: [],
       userContent: correctionContent,
     },
-    {
-      remember: (input) => rememberNote(chatId, input.note, input.replaces),
-      editMemory: makeEditMemoryHandler(chatId),
-      learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
-      editLexicon: makeEditLexiconHandler(chatId),
-      scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
-      surfForecast: makeSurfForecastHandler(),
-      addPoi: makeAddPoiHandler(chatId, tgUserId),
-      spendingReport: makeSpendingReportHandler(chatId),
-    },
+    makeChatHandlers(chatId, tgUserId, cfg),
   );
 
   // The reply to a preview usually corrects the trade — but it may turn out to be a

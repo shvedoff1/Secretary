@@ -37,6 +37,7 @@ import {
   type SpendingReportInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
+import type { ZodTypeAny } from 'zod';
 
 export interface AssistantContext {
   defaultCurrency: string;
@@ -107,6 +108,59 @@ export type AssistantResult =
   | { kind: 'text'; text: string; scheduled?: boolean; humorizable?: boolean };
 
 const MAX_ITERATIONS = 6;
+
+/**
+ * One dispatchable tool: how to validate its input, which handler to call, and the
+ * fallback message when the model's arguments don't parse. `record_expense` and
+ * `spending_report` are NOT here — they short-circuit the loop earlier (a preview /
+ * verbatim report) instead of feeding a tool_result back to the model. `scheduled`
+ * flags the reminder tool so the caller can keep that turn out of chat history.
+ */
+interface ToolRoute {
+  schema: ZodTypeAny;
+  fallback: string;
+  scheduled?: boolean;
+  handle: (input: unknown, handlers: AssistantHandlers) => string | Promise<string>;
+}
+
+const TOOL_ROUTES: Record<string, ToolRoute> = {
+  [REMEMBER_TOOL]: {
+    schema: RememberZ,
+    fallback: 'Could not parse the note.',
+    handle: (i, h) => h.remember(i as RememberInput),
+  },
+  [EDIT_MEMORY_TOOL]: {
+    schema: EditMemoryZ,
+    fallback: 'Could not parse the memory edit.',
+    handle: (i, h) => h.editMemory(i as EditMemoryInput),
+  },
+  [LEARN_EXPENSE_TOOL]: {
+    schema: LearnExpenseZ,
+    fallback: 'Could not parse the expense keywords.',
+    handle: (i, h) => h.learnExpense(i as LearnExpenseInput),
+  },
+  [EDIT_LEXICON_TOOL]: {
+    schema: EditLexiconZ,
+    fallback: 'Could not parse the slang edit.',
+    handle: (i, h) => h.editLexicon(i as EditLexiconInput),
+  },
+  [SCHEDULE_TASK_TOOL]: {
+    schema: ScheduleTaskZ,
+    fallback: 'Could not parse the task.',
+    scheduled: true,
+    handle: (i, h) => h.scheduleTask(i as ScheduleTaskInput),
+  },
+  [SURF_FORECAST_TOOL]: {
+    schema: SurfForecastZ,
+    fallback: 'Could not parse the forecast request.',
+    handle: (i, h) => h.surfForecast(i as SurfForecastInput),
+  },
+  [ADD_POI_TOOL]: {
+    schema: AddPoiZ,
+    fallback: 'Could not parse the place.',
+    handle: (i, h) => h.addPoi(i as AddPoiInput),
+  },
+};
 
 // The system prompt is assembled from the neutral core plus enabled skill fragments.
 // Deployment config is static, so memoize per surf-flag value: the string must stay
@@ -310,110 +364,32 @@ export async function runAssistant(
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of res.content) {
         if (block.type !== 'tool_use') continue;
-        if (block.name === REMEMBER_TOOL) {
-          const parsed = RememberZ.safeParse(block.input);
-          const confirmation = parsed.success
-            ? handlers.remember(parsed.data)
-            : 'Could not parse the note.';
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: confirmation,
-            is_error: !parsed.success,
-          });
-        } else if (block.name === EDIT_MEMORY_TOOL) {
-          const parsed = EditMemoryZ.safeParse(block.input);
-          if (!parsed.success) {
-            logger.warn({ err: parsed.error }, 'edit_memory input failed validation');
-          }
-          const confirmation = parsed.success
-            ? handlers.editMemory(parsed.data)
-            : 'Could not parse the memory edit.';
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: confirmation,
-            is_error: !parsed.success,
-          });
-        } else if (block.name === LEARN_EXPENSE_TOOL) {
-          const parsed = LearnExpenseZ.safeParse(block.input);
-          if (!parsed.success) {
-            logger.warn({ err: parsed.error }, 'learn_expense_pattern input failed validation');
-          }
-          const confirmation = parsed.success
-            ? handlers.learnExpense(parsed.data)
-            : 'Could not parse the expense keywords.';
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: confirmation,
-            is_error: !parsed.success,
-          });
-        } else if (block.name === EDIT_LEXICON_TOOL) {
-          const parsed = EditLexiconZ.safeParse(block.input);
-          if (!parsed.success) {
-            logger.warn({ err: parsed.error }, 'edit_lexicon input failed validation');
-          }
-          const confirmation = parsed.success
-            ? handlers.editLexicon(parsed.data)
-            : 'Could not parse the slang edit.';
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: confirmation,
-            is_error: !parsed.success,
-          });
-        } else if (block.name === SCHEDULE_TASK_TOOL) {
-          scheduled = true;
-          const parsed = ScheduleTaskZ.safeParse(block.input);
-          if (!parsed.success) {
-            logger.warn({ err: parsed.error }, 'schedule_task input failed validation');
-          }
-          const confirmation = parsed.success
-            ? handlers.scheduleTask(parsed.data)
-            : 'Could not parse the task.';
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: confirmation,
-            is_error: !parsed.success,
-          });
-        } else if (block.name === SURF_FORECAST_TOOL) {
-          const parsed = SurfForecastZ.safeParse(block.input);
-          if (!parsed.success) {
-            logger.warn({ err: parsed.error }, 'surf_forecast input failed validation');
-          }
-          const confirmation = parsed.success
-            ? await handlers.surfForecast(parsed.data)
-            : 'Could not parse the forecast request.';
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: confirmation,
-            is_error: !parsed.success,
-          });
-        } else if (block.name === ADD_POI_TOOL) {
-          const parsed = AddPoiZ.safeParse(block.input);
-          if (!parsed.success) {
-            logger.warn({ err: parsed.error }, 'add_poi input failed validation');
-          }
-          const confirmation = parsed.success
-            ? handlers.addPoi(parsed.data)
-            : 'Could not parse the place.';
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: confirmation,
-            is_error: !parsed.success,
-          });
-        } else {
+        const route = TOOL_ROUTES[block.name];
+        if (!route) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
             content: 'Not handled.',
             is_error: true,
           });
+          continue;
         }
+        // The reminder tool marks the turn scheduled even if its args don't parse,
+        // matching the original behaviour (the caller keeps it out of history).
+        if (route.scheduled) scheduled = true;
+        const parsed = route.schema.safeParse(block.input);
+        if (!parsed.success) {
+          logger.warn({ err: parsed.error, tool: block.name }, 'tool input failed validation');
+        }
+        const confirmation = parsed.success
+          ? await route.handle(parsed.data, handlers)
+          : route.fallback;
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: confirmation,
+          is_error: !parsed.success,
+        });
       }
       if (toolResults.length === 0) break;
       messages.push({ role: 'user', content: toolResults });

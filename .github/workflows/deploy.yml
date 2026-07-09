@@ -89,7 +89,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,BOT_LOCALE,DEFAULT_PERSONA,ENABLE_SURF,ENABLE_CHIME,ENABLE_LEXICON,ENABLE_EXPENSE_QUIP
           script: |
             set -euo pipefail
 
@@ -143,6 +143,28 @@ jobs:
             if [ -n "${OPENAI_HUMOR_TIMEOUT_MS:-}" ]; then
               echo "OPENAI_HUMOR_TIMEOUT_MS=$OPENAI_HUMOR_TIMEOUT_MS" >> .env
             fi
+            # Locale, persona and opt-in skill flags. All ship OFF/neutral/en by
+            # default (a fresh fork is a clean neutral secretary); set the matching
+            # GitHub repo Variables to restore a customised deployment. Only written
+            # when set, so an empty value falls through to the in-app fork default.
+            if [ -n "${BOT_LOCALE:-}" ]; then
+              echo "BOT_LOCALE=$BOT_LOCALE" >> .env
+            fi
+            if [ -n "${DEFAULT_PERSONA:-}" ]; then
+              echo "DEFAULT_PERSONA=$DEFAULT_PERSONA" >> .env
+            fi
+            if [ -n "${ENABLE_SURF:-}" ]; then
+              echo "ENABLE_SURF=$ENABLE_SURF" >> .env
+            fi
+            if [ -n "${ENABLE_CHIME:-}" ]; then
+              echo "ENABLE_CHIME=$ENABLE_CHIME" >> .env
+            fi
+            if [ -n "${ENABLE_LEXICON:-}" ]; then
+              echo "ENABLE_LEXICON=$ENABLE_LEXICON" >> .env
+            fi
+            if [ -n "${ENABLE_EXPENSE_QUIP:-}" ]; then
+              echo "ENABLE_EXPENSE_QUIP=$ENABLE_EXPENSE_QUIP" >> .env
+            fi
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export BOT_IMAGE="$DEPLOY_IMAGE"
@@ -176,3 +198,11 @@ jobs:
           OPENAI_HUMOR_MODEL: ${{ secrets.OPENAI_HUMOR_MODEL || vars.OPENAI_HUMOR_MODEL }}
           OPENAI_REASONING_EFFORT: ${{ secrets.OPENAI_REASONING_EFFORT || vars.OPENAI_REASONING_EFFORT }}
           OPENAI_HUMOR_TIMEOUT_MS: ${{ secrets.OPENAI_HUMOR_TIMEOUT_MS || vars.OPENAI_HUMOR_TIMEOUT_MS }}
+          # Locale / persona / opt-in skills. Set these repo Variables to customise a
+          # deployment; unset → the in-app fork defaults (en, neutral, flavor off).
+          BOT_LOCALE: ${{ vars.BOT_LOCALE }}
+          DEFAULT_PERSONA: ${{ vars.DEFAULT_PERSONA }}
+          ENABLE_SURF: ${{ vars.ENABLE_SURF }}
+          ENABLE_CHIME: ${{ vars.ENABLE_CHIME }}
+          ENABLE_LEXICON: ${{ vars.ENABLE_LEXICON }}
+          ENABLE_EXPENSE_QUIP: ${{ vars.ENABLE_EXPENSE_QUIP }}

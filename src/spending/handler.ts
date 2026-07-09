@@ -1,5 +1,6 @@
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
+import { t } from '../i18n/index.js';
 import { getProvider } from '../core/registry.js';
 import { getChatConfig } from '../db/repos/chatConfig.repo.js';
 import { getTimezone } from '../db/repos/chatSettings.repo.js';
@@ -33,7 +34,7 @@ export function makeSpendingReportHandler(
     const cfg = loadConfig();
     const cc = getChatConfig(chatId);
     if (!cc?.provider_group_id) {
-      return 'Группа Splid не подключена — нечего считать. Подключите: /group <код>.';
+      return t('spending.noGroup');
     }
     const tz = getTimezone(chatId) ?? input.timezone ?? cfg.DEFAULT_TIMEZONE;
     const provider = getProvider(cc.provider_name);
@@ -54,7 +55,7 @@ export function makeSpendingReportHandler(
         const records = filterByKeywords(all, input.filterKeywords ?? []);
         // Append the category to the period header, e.g. "24 июня на «еду»".
         const periodLabel = input.filterLabel
-          ? `${resolved.label} на «${input.filterLabel}»`
+          ? t('spending.periodWithFilter', { label: resolved.label, filterLabel: input.filterLabel })
           : resolved.label;
         sections.push(
           formatSpendingReport(aggregate(records), names, { periodLabel }),
@@ -76,7 +77,7 @@ export function makeSpendingReportHandler(
       return humorizeOrOriginal(sections.join('\n\n'), lexicon);
     } catch (err) {
       logger.error({ err, chatId }, 'spending_report failed');
-      return 'Не удалось собрать отчёт — Splid не ответил. Попробуйте чуть позже.';
+      return t('spending.reportFailed');
     }
   };
 }

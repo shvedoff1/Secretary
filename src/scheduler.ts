@@ -1,6 +1,7 @@
 import type { Bot } from 'grammy';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
+import { t } from './i18n/index.js';
 import { runAssistant } from './llm/assistant.js';
 import {
   dueTasks,
@@ -163,7 +164,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
               async (original) => {
                 await bot.api.sendMessage(
                   cfg.ADMIN_TELEGRAM_ID,
-                  `🔬 До OpenAI (⏰ ${task.title}):\n\n${original}`,
+                  t('sched.beforeOpenAI', { title: task.title, original }),
                 );
               },
               // Slang now lives on the humorizer (not Claude), so a humour task
@@ -175,7 +176,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
               })),
             )
           : result.text;
-      const prefix = task.title ? `⏰ ${task.title}\n` : '';
+      const prefix = task.title ? t('sched.taskTitlePrefix', { title: task.title }) : '';
       const posted = prefix + text;
       await sendMarkdown(bot, task.chatId, posted);
       // Record what the task posted into conversation history so a follow-up — a

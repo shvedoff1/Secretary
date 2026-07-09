@@ -6,6 +6,7 @@ import {
   setStatus,
   type UserStatus,
 } from '../../db/repos/users.repo.js';
+import { t } from '../../i18n/index.js';
 
 async function decide(
   ctx: Context,
@@ -13,16 +14,16 @@ async function decide(
   arg: string | undefined,
 ): Promise<void> {
   if (!ctx.from || !isAdmin(ctx.from.id)) {
-    await ctx.reply('Только администратор может это делать.');
+    await ctx.reply(t('approve.adminOnly'));
     return;
   }
   const id = Number((arg ?? '').trim());
   if (!Number.isInteger(id) || id <= 0) {
-    await ctx.reply('Использование: /approve <telegram_id> или /deny <telegram_id>');
+    await ctx.reply(t('approve.usage'));
     return;
   }
   setStatus(id, status, ctx.from.id);
-  await ctx.reply(`Готово: пользователь ${id} → ${status}.`);
+  await ctx.reply(t('approve.done', { id, status }));
   await notifyUser(ctx, id, status);
 }
 
@@ -37,7 +38,7 @@ export async function cmdDeny(ctx: Context): Promise<void> {
 /** Callback handler for the inline Approve/Deny buttons (prefix `u:`). */
 export async function handleUserCallback(ctx: Context): Promise<void> {
   if (!ctx.from || !isAdmin(ctx.from.id)) {
-    await ctx.answerCallbackQuery({ text: 'Только администратор.' });
+    await ctx.answerCallbackQuery({ text: t('approve.adminOnlyShort') });
     return;
   }
   const parts = (ctx.callbackQuery?.data ?? '').split(':');
@@ -50,13 +51,15 @@ export async function handleUserCallback(ctx: Context): Promise<void> {
   const status: UserStatus = action === 'ap' ? 'approved' : 'denied';
   setStatus(id, status, ctx.from.id);
   await ctx.answerCallbackQuery({
-    text: status === 'approved' ? 'Одобрено' : 'Отклонено',
+    text: status === 'approved' ? t('approve.cbApproved') : t('approve.cbDenied'),
   });
   const user = getUser(id);
   const label = user?.display_name ?? id;
   try {
     await ctx.editMessageText(
-      `${status === 'approved' ? '✅ Одобрен' : '❌ Отклонён'}: ${label} (${id})`,
+      status === 'approved'
+        ? t('approve.editApproved', { label, id })
+        : t('approve.editDenied', { label, id }),
     );
   } catch {
     /* message may be too old to edit */
@@ -70,9 +73,7 @@ async function notifyUser(
   status: UserStatus,
 ): Promise<void> {
   const text =
-    status === 'approved'
-      ? '✅ Доступ открыт! Наберите /help.'
-      : '❌ В доступе отказано.';
+    status === 'approved' ? t('approve.granted') : t('approve.denied');
   try {
     await ctx.api.sendMessage(id, text);
   } catch (err) {

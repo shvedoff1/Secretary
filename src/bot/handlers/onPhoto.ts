@@ -10,6 +10,7 @@ import {
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
 import { runAndRespond } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
+import { t } from '../../i18n/index.js';
 
 export async function onPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message?.photo;
@@ -51,7 +52,7 @@ export async function handleReceiptPhoto(
   const chatCfg = getChatConfig(ctx.chat.id);
   if (!chatCfg?.provider_group_id) {
     if (addressed) {
-      await ctx.reply('Подключите группу Splid командой /group <код>, чтобы я разбирал чеки.');
+      await ctx.reply(t('chat.connectGroupForReceipts'));
     }
     return;
   }
@@ -62,7 +63,7 @@ export async function handleReceiptPhoto(
     base64 = (await downloadTelegramFile(ctx, largest.file_id)).toString('base64');
   } catch (err) {
     logger.error({ err }, 'failed to download receipt photo');
-    if (addressed) await ctx.reply('Не смог скачать фото чека, попробуйте ещё раз.');
+    if (addressed) await ctx.reply(t('chat.receiptDownloadFailed'));
     return;
   }
 

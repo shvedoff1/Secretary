@@ -6,6 +6,7 @@ import { previewKeyboard } from '../keyboards.js';
 import { setEditTarget } from '../editTargets.js';
 import { setQuip } from '../quipCache.js';
 import { expenseQuip } from '../../llm/expenseQuip.js';
+import { t } from '../../i18n/index.js';
 
 /**
  * Generate the expense's comic riff in the BACKGROUND and stash it by pendingId,
@@ -29,23 +30,23 @@ export function renderDraft(
   roster?: string[],
 ): string {
   const lines: string[] = [];
-  lines.push(`🧾 ${draft.title}`);
-  lines.push(`💰 ${formatMoney(draft.amountMinor, draft.currency)}`);
+  lines.push(t('preview.title', { title: draft.title }));
+  lines.push(t('preview.amount', { amount: formatMoney(draft.amountMinor, draft.currency) }));
 
   const payerNames = draft.payers.map((p) => nameOf(p.memberId)).join(', ');
-  lines.push(`👤 Платил: ${payerNames || '—'}`);
-  lines.push(`👥 Делим на: ${describeProfiteers(draft.profiteers, nameOf)}`);
+  lines.push(t('preview.paidBy', { names: payerNames || '—' }));
+  lines.push(t('preview.splitAmong', { who: describeProfiteers(draft.profiteers, nameOf) }));
 
   if (draft.unresolved.length > 0) {
-    lines.push(`⚠️ Не распознаны: ${draft.unresolved.join(', ')}`);
+    lines.push(t('preview.unresolved', { names: draft.unresolved.join(', ') }));
     if (roster && roster.length > 0) {
-      lines.push(`Участники группы: ${roster.join(', ')}`);
+      lines.push(t('preview.roster', { names: roster.join(', ') }));
     }
-    lines.push('✏️ Ответь на это сообщение и уточни, кто это (напр. «это Миша»).');
+    lines.push(t('preview.clarifyHint'));
   }
-  if (draft.notes) lines.push(`📝 ${draft.notes}`);
+  if (draft.notes) lines.push(t('preview.notes', { notes: draft.notes }));
   if (draft.confidence < 0.6) {
-    lines.push(`🤔 Не очень уверен (${Math.round(draft.confidence * 100)}%) — проверьте.`);
+    lines.push(t('preview.lowConfidence', { pct: Math.round(draft.confidence * 100) }));
   }
   return lines.join('\n');
 }
@@ -66,13 +67,13 @@ export function renderConfirmed(
   providerName: string,
   quip?: string | null,
 ): string {
-  const lines = [`✅ Записано в ${providerName}`];
-  lines.push(`🧾 ${draft.title}`);
-  lines.push(`💰 ${formatMoney(draft.amountMinor, draft.currency)}`);
+  const lines = [t('confirm.recorded', { provider: providerName })];
+  lines.push(t('preview.title', { title: draft.title }));
+  lines.push(t('preview.amount', { amount: formatMoney(draft.amountMinor, draft.currency) }));
   const payerNames = draft.payers.map((p) => nameOf(p.memberId)).join(', ');
-  lines.push(`👤 Платил: ${payerNames || '—'}`);
-  lines.push(`👥 Делим на: ${describeProfiteers(draft.profiteers, nameOf)}`);
-  if (draft.notes) lines.push(`📝 ${draft.notes}`);
+  lines.push(t('preview.paidBy', { names: payerNames || '—' }));
+  lines.push(t('preview.splitAmong', { who: describeProfiteers(draft.profiteers, nameOf) }));
+  if (draft.notes) lines.push(t('preview.notes', { notes: draft.notes }));
   const text = lines.join('\n');
   return quip?.trim() ? `${text}\n\n${quip.trim()}` : text;
 }
@@ -87,7 +88,7 @@ function describeProfiteers(
   return profiteers
     .map((p) => {
       const name = nameOf(p.memberId);
-      if (p.amount != null) return `${name} (фикс.)`;
+      if (p.amount != null) return t('preview.profiteerFixed', { name });
       if (p.share != null) return `${name} (${Math.round(p.share * 100)}%)`;
       return name;
     })

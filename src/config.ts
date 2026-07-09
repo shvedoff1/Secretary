@@ -12,6 +12,12 @@ const ConfigSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
 
+  // Language for the bot's own FIXED strings (command replies, errors, previews,
+  // help). The assistant's generated replies always mirror the user's language
+  // regardless; this only controls the hardcoded UI text. 'ru' reproduces the
+  // original wording verbatim; 'en' is the fork-friendly default.
+  BOT_LOCALE: z.enum(['en', 'ru']).default('en'),
+
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
   // Speech-to-text for voice messages. Optional: without a key, voice notes are
   // ignored (we never transcribe). OpenAI's audio API is called over plain HTTP,

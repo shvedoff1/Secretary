@@ -7,12 +7,13 @@ import {
   setProviderGroup,
   setChatTitle,
 } from '../../db/repos/chatConfig.repo.js';
+import { t } from '../../i18n/index.js';
 
 export async function cmdGroup(ctx: Context): Promise<void> {
   if (!ctx.chat || !ctx.from) return;
   const code = ((ctx.match as string | undefined) ?? '').trim();
   if (!code) {
-    await ctx.reply('Использование: /group <код-приглашения Splid>');
+    await ctx.reply(t('group.usage'));
     return;
   }
 
@@ -23,7 +24,7 @@ export async function cmdGroup(ctx: Context): Promise<void> {
     groupId = conn.groupId;
   } catch (err) {
     const msg = err instanceof ProviderError ? err.message : String(err);
-    await ctx.reply(`Не удалось подключиться к Splid: ${msg}`);
+    await ctx.reply(t('group.connectFailed', { msg }));
     return;
   }
 
@@ -44,7 +45,5 @@ export async function cmdGroup(ctx: Context): Promise<void> {
   } catch {
     /* non-fatal */
   }
-  await ctx.reply(
-    `✅ Подключено к группе Splid (${count} участников).\nДальше: /members и /link, чтобы связать Telegram-аккаунты с участниками.`,
-  );
+  await ctx.reply(t('group.connected', { count }));
 }

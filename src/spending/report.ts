@@ -10,6 +10,7 @@ import type {
 } from '../core/types.js';
 import { formatMoney } from '../util/money.js';
 import { previousDateStr, startOfZonedDayMs, zonedDayRange, zonedParts } from '../util/day.js';
+import { t, currentLocale, intlLocaleTag } from '../i18n/index.js';
 
 export interface SpendingRangeInput {
   /** Inclusive start day (YYYY-MM-DD, chat-local), or null. */
@@ -26,10 +27,10 @@ export interface ResolvedSpending {
   label: string;
 }
 
-/** Format one local calendar day as "24 июня" in the given timezone. */
+/** Format one local calendar day (e.g. "24 июня" / "June 24") in the given timezone. */
 function humanDay(dateStr: string, tz: string): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
+    return new Intl.DateTimeFormat(intlLocaleTag(), {
       timeZone: tz,
       day: 'numeric',
       month: 'long',
@@ -129,7 +130,7 @@ export function aggregate(records: ExpenseRecord[]): SpendingAggregate {
     }
     if (!top || r.amountMinor > top.amountMinor) {
       top = {
-        title: r.title?.trim() || 'без названия',
+        title: r.title?.trim() || t('spending.untitled'),
         amountMinor: r.amountMinor,
         currency: r.currency,
       };
@@ -143,7 +144,13 @@ export function aggregate(records: ExpenseRecord[]): SpendingAggregate {
   return { count: records.length, totals, payers, top };
 }
 
-function ruPlural(n: number, forms: [string, string, string]): string {
+/**
+ * Pick the right plural form for `n`. Russian has three forms (one / few / many)
+ * chosen by its mod-10/mod-100 rules; English (and other locales) use the simple
+ * singular/plural split (n === 1 → forms[0], else forms[1]).
+ */
+function pluralForm(n: number, forms: [string, string, string]): string {
+  if (currentLocale() !== 'ru') return n === 1 ? forms[0] : forms[1];
   const mod10 = n % 10;
   const mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return forms[0];
@@ -169,25 +176,32 @@ export function formatSpendingReport(
   opts: { periodLabel: string },
 ): string {
   if (agg.count === 0) {
-    return `За ${opts.periodLabel} никто ничего не потратил — кошельки целы.`;
+    return t('spending.nothingSpent', { periodLabel: opts.periodLabel });
   }
 
   const lines: string[] = [];
-  lines.push(`💸 Траты за ${opts.periodLabel}`);
-  const tratPlural = ruPlural(agg.count, ['трата', 'траты', 'трат']);
-  lines.push(`Всего: ${formatTotals(agg.totals)} (${agg.count} ${tratPlural})`);
+  lines.push(t('spending.spendingHeader', { periodLabel: opts.periodLabel }));
+  const tratPlural = pluralForm(agg.count, [
+    t('spending.expenseOne'),
+    t('spending.expenseFew'),
+    t('spending.expenseMany'),
+  ]);
+  lines.push(t('spending.total', { totals: formatTotals(agg.totals), count: agg.count, plural: tratPlural }));
 
   if (agg.payers.length > 0) {
-    lines.push('Платили:');
+    lines.push(t('spending.paidBy'));
     for (const p of agg.payers) {
-      const name = names.get(p.memberId) ?? 'кто-то';
+      const name = names.get(p.memberId) ?? t('spending.someone');
       lines.push(`• ${name} — ${formatTotals(p.totals)}`);
     }
   }
 
   if (agg.top) {
     lines.push(
-      `Крупнейшая: «${agg.top.title}» — ${formatMoney(agg.top.amountMinor, agg.top.currency)}`,
+      t('spending.largest', {
+        title: agg.top.title,
+        amount: formatMoney(agg.top.amountMinor, agg.top.currency),
+      }),
     );
   }
 
@@ -199,11 +213,11 @@ export function formatBalances(
   summary: BalanceSummary,
   names: Map<string, string>,
 ): string {
-  const name = (id: string): string => names.get(id) ?? 'кто-то';
+  const name = (id: string): string => names.get(id) ?? t('spending.someone');
   if (summary.settlements.length === 0) {
-    return 'Все в расчёте — никто никому не должен 🎉';
+    return t('spending.allSettled');
   }
-  const lines = ['💰 Кто кому должен:'];
+  const lines = [t('spending.whoOwes')];
   for (const s of summary.settlements) {
     lines.push(
       `• ${name(s.fromId)} → ${name(s.toId)}: ${formatMoney(s.amountMinor, summary.currency)}`,

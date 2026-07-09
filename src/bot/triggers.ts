@@ -77,7 +77,7 @@ const BOT_NAME =
 // «запиши/запомни трату», «добавь», «удали», «отметь», bare «трата/трату» — count
 // as a direct request so "Бот, это трата запомни" isn't dropped as chatter.
 const QUESTION_OR_REQUEST =
-  /[?？]|(?<![а-яёa-z])(что|чё|как|почему|зачем|когда|где|куда|откуда|сколько|какой|какая|какое|какие|кто|можешь|можно|подскажи|подскажешь|расскажи|расскажешь|напомни|запомни|запомните|запиши|запишите|добавь|добавьте|удали|удалите|отметь|отметьте|учти|учтите|трата|трату|траты|посчитай|скажи|покажи|what|how|why|when|where|who|which|can|could|would|tell|does)(?![а-яёa-z])/i;
+  /[?？]|(?<![а-яёa-z])(что|чё|как|почему|зачем|когда|где|куда|откуда|сколько|какой|какая|какое|какие|кто|можешь|можно|подскажи|подскажешь|расскажи|расскажешь|напомни|запомни|запомните|запиши|запишите|добавь|добавьте|удали|удалите|отметь|отметьте|учти|учтите|обнови|обновите|трата|трату|траты|посчитай|скажи|покажи|what|how|why|when|where|who|which|can|could|would|tell|update|does)(?![а-яёa-z])/i;
 
 /**
  * Does this text address the bot by name with a question or direct request?
@@ -122,16 +122,17 @@ export function captionLooksLikeSharedExpense(text: string): boolean {
   return SHARE_PHRASING.test(text) || SHARE_ON_ME.test(text);
 }
 
-/** Was the bot directly addressed (DM, @mention, or reply to its message)? */
-export function isAddressed(ctx: Context): boolean {
-  if (ctx.chat?.type === 'private') return true;
-
+/**
+ * Does the message explicitly @mention the bot (a `mention` or `text_mention`
+ * entity pointing at us)? This is a DELIBERATE ping — distinct from merely
+ * replying to one of the bot's messages — so it can tell "@bot обнови прогноз"
+ * (a fresh request) apart from a bare reply to a preview (a silent correction).
+ */
+export function mentionsBotViaEntity(ctx: Context): boolean {
   const msg = ctx.message;
   if (!msg) return false;
 
   const me = ctx.me;
-  if (msg.reply_to_message?.from?.id === me.id) return true;
-
   const text = msg.text ?? msg.caption ?? '';
   const entities = msg.entities ?? msg.caption_entities ?? [];
   for (const e of entities) {
@@ -142,6 +143,30 @@ export function isAddressed(ctx: Context): boolean {
     if (e.type === 'text_mention' && e.user?.id === me.id) return true;
   }
   return false;
+}
+
+/** Was the bot directly addressed (DM, @mention, or reply to its message)? */
+export function isAddressed(ctx: Context): boolean {
+  if (ctx.chat?.type === 'private') return true;
+
+  const msg = ctx.message;
+  if (!msg) return false;
+
+  if (msg.reply_to_message?.from?.id === ctx.me.id) return true;
+
+  return mentionsBotViaEntity(ctx);
+}
+
+/**
+ * Is this message a FRESH request to the bot rather than a silent expense
+ * correction? An explicit @mention ("@bot обнови прогноз") or a by-name
+ * question/request ("Скай, какая погода?") is a new ask; a bare "это Миша"
+ * reply to a preview is not. Used to keep a reply to an expense preview from
+ * being force-fed into the reword flow when the user is actually asking for
+ * something else entirely.
+ */
+export function isFreshBotRequest(ctx: Context, text: string): boolean {
+  return mentionsBotViaEntity(ctx) || addressesBotByName(text);
 }
 
 export type RouteDecision = 'process' | 'auto-expense' | 'ignore';

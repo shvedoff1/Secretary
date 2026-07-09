@@ -1,5 +1,10 @@
 import type { Context } from 'grammy';
-import { routeMessage, isAddressed, addressesBotByName } from '../triggers.js';
+import {
+  routeMessage,
+  isAddressed,
+  addressesBotByName,
+  isFreshBotRequest,
+} from '../triggers.js';
 import { getEditTarget } from '../editTargets.js';
 import { runAndRespond, rewordPending, senderName } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
@@ -26,9 +31,16 @@ export async function onMessage(ctx: Context): Promise<void> {
 
   const replyTo = ctx.message?.reply_to_message;
   if (replyTo) {
-    // Reword: a reply to a preview message re-parses the expense.
+    // Reword: a reply to a preview message re-parses the expense — but only when
+    // it's an actual correction. A reply that @mentions the bot or addresses it by
+    // name with a question/request ("@bot обнови прогноз по Бали") is a NEW ask, not
+    // an edit to the trade, so let it fall through to normal processing (full
+    // history/memory/tools) instead of being force-parsed as an expense and dying
+    // with "Не понял правку". Bare corrections ("это Миша", "дели на всех") aren't
+    // fresh requests, so they still reword. The reword flow itself also degrades
+    // gracefully now (answers a non-correction) as a backstop for this heuristic.
     const pendingId = getEditTarget(ctx.chat.id, replyTo.message_id);
-    if (pendingId) {
+    if (pendingId && !isFreshBotRequest(ctx, text)) {
       await rewordPending(ctx, pendingId, replyTo.message_id, text);
       return;
     }

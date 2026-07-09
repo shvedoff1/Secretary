@@ -588,12 +588,14 @@ async function rewordPendingInner(
   // from scratch (which would fail to look like a standalone expense).
   const currentSummary = renderDraft(pending.draft, nameMapFromMembers(members));
   const correctionContent =
-    `Это правка уже распознанной траты. Текущее превью:\n${currentSummary}\n\n` +
-    `Применни правку пользователя и верни ПОЛНУЮ трату через record_expense ` +
+    `Это ответ на превью уже распознанной траты. Текущее превью:\n${currentSummary}\n\n` +
+    `Если это ПРАВКА траты — применни её и верни ПОЛНУЮ трату через record_expense ` +
     `(сумма, валюта, кто платил, на кого делим). Если в превью или заметках (📝) ` +
     `перечислены позиции с ценами, а пользователь говорит кто что ел/заказал — ` +
     `посчитай неравное деление сам (splits с суммой на каждого) из этих цен и НЕ ` +
-    `проси цены, которые уже известны. Правка: "${correctionText}"`;
+    `проси цены, которые уже известны. НО если это вообще не про трату, а отдельный ` +
+    `вопрос или просьба (напр. «обнови прогноз», «откуда ты это взял») — просто ответь ` +
+    `на него (можно другим инструментом), не выдумывай трату. Сообщение: "${correctionText}"`;
 
   const result = await runAssistant(
     {
@@ -617,9 +619,20 @@ async function rewordPendingInner(
     },
   );
 
+  // The reply to a preview usually corrects the trade — but it may turn out to be a
+  // different request entirely (a question, a surf forecast, «откуда ты это берешь»).
+  // If the model answered instead of returning an expense, deliver that answer rather
+  // than dead-ending with "Не понял правку" — the reword flow is a graceful superset,
+  // not an expense-only trap.
+  if (result.kind !== 'expense') {
+    await replyMarkdown(ctx, result.text, {
+      reply_to_message_id: ctx.message?.message_id,
+    });
+    return;
+  }
   // A reword corrects ONE existing preview in place, so we apply just the first
   // expense the model returns (it's told to return the whole trade as one).
-  const rewordInput = result.kind === 'expense' ? result.inputs[0] : undefined;
+  const rewordInput = result.inputs[0];
   if (!rewordInput) {
     await ctx.reply(
       'Не понял правку. Можешь переписать трату целиком, напр.: «такси 500 за меня и Колю».',

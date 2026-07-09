@@ -5,6 +5,7 @@ vi.mock('../src/bot/triggers.js', () => ({
   routeMessage: vi.fn(),
   isAddressed: vi.fn(),
   addressesBotByName: vi.fn(),
+  isFreshBotRequest: vi.fn(),
 }));
 vi.mock('../src/bot/flows/assist.js', () => ({
   runAndRespond: vi.fn(),
@@ -29,20 +30,29 @@ vi.mock('../src/bot/handlers/onPhoto.js', () => ({
 }));
 
 import { onMessage } from '../src/bot/handlers/onMessage.js';
-import { routeMessage, addressesBotByName, isAddressed } from '../src/bot/triggers.js';
-import { runAndRespond } from '../src/bot/flows/assist.js';
+import {
+  routeMessage,
+  addressesBotByName,
+  isAddressed,
+  isFreshBotRequest,
+} from '../src/bot/triggers.js';
+import { runAndRespond, rewordPending } from '../src/bot/flows/assist.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
 import { recordChatMessage, armChime } from '../src/bot/flows/chime.js';
+import { getEditTarget } from '../src/bot/editTargets.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
 const mockAddressed = vi.mocked(isAddressed);
+const mockFresh = vi.mocked(isFreshBotRequest);
 const mockRun = vi.mocked(runAndRespond);
+const mockReword = vi.mocked(rewordPending);
 const mockLearn = vi.mocked(learnFromMessage);
 const mockPhoto = vi.mocked(handleReceiptPhoto);
 const mockRecord = vi.mocked(recordChatMessage);
 const mockChime = vi.mocked(armChime);
+const mockEditTarget = vi.mocked(getEditTarget);
 
 function ctx(text: string): Context {
   return {
@@ -56,6 +66,54 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockByName.mockReturnValue(false);
   mockAddressed.mockReturnValue(false);
+  mockFresh.mockReturnValue(false);
+  mockEditTarget.mockReturnValue(undefined);
+});
+
+function replyToPreview(text: string): Context {
+  return {
+    message: { text, reply_to_message: { message_id: 42, from: { id: 999 } } },
+    chat: { id: 1, type: 'group' },
+    from: { id: 2 },
+  } as unknown as Context;
+}
+
+describe('onMessage reply to an expense preview', () => {
+  it('rewords a bare correction reply ("это Миша")', async () => {
+    mockEditTarget.mockReturnValue('pending-1');
+    mockFresh.mockReturnValue(false); // not a fresh ask — an actual correction
+
+    await onMessage(replyToPreview('это Миша'));
+
+    expect(mockReword).toHaveBeenCalledOnce();
+    expect(mockReword.mock.calls[0]?.slice(1)).toEqual(['pending-1', 42, 'это Миша']);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('does NOT reword when the reply is a fresh request to the bot', async () => {
+    // Regression: replying to a stale preview with "@bot обнови прогноз по Бали" used
+    // to be force-parsed as an expense edit and die with "Не понял правку". It must
+    // instead reach the assistant as a normal request.
+    mockEditTarget.mockReturnValue('pending-1');
+    mockFresh.mockReturnValue(true);
+    mockRoute.mockReturnValue('process');
+
+    await onMessage(replyToPreview('@skyler_white_yo_bot обнови прогноз по Бали'));
+
+    expect(mockReword).not.toHaveBeenCalled();
+    expect(mockRun).toHaveBeenCalledOnce();
+    expect(mockRun.mock.calls[0]?.[1]).toMatchObject({ addressed: true });
+  });
+
+  it('does not touch the reword flow when there is no pending preview', async () => {
+    mockEditTarget.mockReturnValue(undefined);
+    mockRoute.mockReturnValue('process');
+
+    await onMessage(replyToPreview('просто ответ'));
+
+    expect(mockReword).not.toHaveBeenCalled();
+    expect(mockRun).toHaveBeenCalledOnce();
+  });
 });
 
 describe('onMessage by-name addressing', () => {

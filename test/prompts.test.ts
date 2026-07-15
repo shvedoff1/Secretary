@@ -174,11 +174,24 @@ describe('TUTOR_SYSTEM_PROMPT', () => {
     expect(TUTOR_SYSTEM_PROMPT).toContain('ПЕРЕПРОВЕРЯЙ');
   });
 
-  it('targets 9th-grade exam prep (ОГЭ) with math and physics', async () => {
+  it('covers the whole 9th-grade → first-year-college range, defaulting to 9th grade', async () => {
     const { TUTOR_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
     expect(TUTOR_SYSTEM_PROMPT).toContain('ОГЭ');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('ЕГЭ');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('техникума');
     expect(TUTOR_SYSTEM_PROMPT).toContain('математика');
     expect(TUTOR_SYSTEM_PROMPT).toContain('физика');
+    // Specialised college subjects are in scope too (the «музлитература» case).
+    expect(TUTOR_SYSTEM_PROMPT).toContain('музыкальная литература');
+    expect(TUTOR_SYSTEM_PROMPT).toMatch(/По умолчанию считай, что уровень —\s*9 класс/);
+  });
+
+  it('tells the model Telegram renders markdown — including real tables', async () => {
+    const { TUTOR_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('markdown-таблицы');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('|---|---|');
+    // But never LaTeX — Telegram doesn't render it.
+    expect(TUTOR_SYSTEM_PROMPT).toContain('Никакого LaTeX');
   });
 
   it('bans the secretary slang explicitly and never mentions surf/expenses', async () => {

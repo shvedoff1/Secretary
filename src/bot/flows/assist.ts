@@ -24,7 +24,7 @@ import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
-import { getTimezone, setTimezone } from '../../db/repos/chatSettings.repo.js';
+import { getTimezone, setTimezone, getChatMode } from '../../db/repos/chatSettings.repo.js';
 import {
   createTask,
   listTasks,
@@ -389,6 +389,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   try {
     result = await runAssistant(
       {
+        mode: getChatMode(chatId),
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat: memorySel.chat.map((i) => ({ content: i.content })),

@@ -111,6 +111,20 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `minimal` made the rewrite lazy (near-verbatim echoes); `none` omits the field for
   non-reasoning models. Both calls are also bounded by `OPENAI_HUMOR_TIMEOUT_MS` (default
   20s); the shared knobs live in `src/llm/openaiOptions.ts`.
+- Access control: default-deny `authGate` (`src/bot/middleware/auth.ts`) — only approved
+  users pass (configured groups are exempt). The admin manages the whitelist from the DM:
+  `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
+  for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
+  closes it; `/request` + inline approve buttons still work for inbound requests.
+- Chat modes (`chat_settings.mode`, admin `/mode <chatId> tutor|secretary`): `tutor` flips
+  a chat (typically a kid's DM; its chatId = their tg id) into an accuracy-first exam-prep
+  tutor for 9th grade (ОГЭ) — `TUTOR_SYSTEM_PROMPT` + minimal context block in
+  `src/llm/prompts.ts`, adaptive thinking with an 8192-token budget (the one place
+  reasoning is ON), tools cut to remember/edit_memory/schedule_task/web_search, and NO
+  humor/slang/chime/auto-reactions (assistant returns `humorizable:false`, onMessage skips
+  lexicon learning + chime, bot.ts skips auto-react). A photo in a tutor chat is a problem
+  to solve, not a receipt (`handleReceiptPhoto` skips the Splid gate). The scheduler passes
+  the mode too, so scheduled tasks in a tutor chat keep the persona.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

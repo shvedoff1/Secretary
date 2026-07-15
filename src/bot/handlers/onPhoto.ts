@@ -8,6 +8,7 @@ import {
   mentionsBotByName,
 } from '../triggers.js';
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
+import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { runAndRespond } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 
@@ -37,8 +38,10 @@ export async function onPhoto(ctx: Context): Promise<void> {
 }
 
 /**
- * Download a photo and run it through the assistant as a receipt. Shared by the
- * photo handler and the "reply to a photo with a ping" path in onMessage.
+ * Download a photo and run it through the assistant — as a receipt in secretary
+ * mode, or as a problem/exercise photo in tutor mode (a student photographs the
+ * task from a textbook, so no Splid gate there). Shared by the photo handler and
+ * the "reply to a photo with a ping" path in onMessage.
  */
 export async function handleReceiptPhoto(
   ctx: Context,
@@ -48,12 +51,15 @@ export async function handleReceiptPhoto(
 ): Promise<void> {
   if (!ctx.chat || photos.length === 0) return;
 
-  const chatCfg = getChatConfig(ctx.chat.id);
-  if (!chatCfg?.provider_group_id) {
-    if (addressed) {
-      await ctx.reply('Подключите группу Splid командой /group <код>, чтобы я разбирал чеки.');
+  const tutor = getChatMode(ctx.chat.id) === 'tutor';
+  if (!tutor) {
+    const chatCfg = getChatConfig(ctx.chat.id);
+    if (!chatCfg?.provider_group_id) {
+      if (addressed) {
+        await ctx.reply('Подключите группу Splid командой /group <код>, чтобы я разбирал чеки.');
+      }
+      return;
     }
-    return;
   }
 
   const largest = photos[photos.length - 1]!;
@@ -62,7 +68,7 @@ export async function handleReceiptPhoto(
     base64 = (await downloadTelegramFile(ctx, largest.file_id)).toString('base64');
   } catch (err) {
     logger.error({ err }, 'failed to download receipt photo');
-    if (addressed) await ctx.reply('Не смог скачать фото чека, попробуйте ещё раз.');
+    if (addressed) await ctx.reply('Не смог скачать фото, попробуйте ещё раз.');
     return;
   }
 
@@ -74,10 +80,11 @@ export async function handleReceiptPhoto(
   ];
   if (caption) blocks.push({ type: 'text', text: caption });
 
+  const tag = tutor ? '[фото]' : '[чек]';
   await runAndRespond(ctx, {
     userContent: blocks,
     addressed,
     source: 'photo',
-    historyText: caption ? `[чек] ${caption}` : '[чек]',
+    historyText: caption ? `${tag} ${caption}` : tag,
   });
 }

@@ -7,6 +7,8 @@ export async function cmdHelp(ctx: Context): Promise<void> {
       ? [
           '',
           'Админ (в личке):',
+          '/whitelist — кто имеет доступ; /allow <id> [имя] — открыть; /deny <id> — закрыть',
+          '/mode <chatId> tutor|secretary — режим чата (репетитор к экзаменам / обычный)',
           '/chats — список чатов; /chat <id> — детали',
           '/setgroup <id> <код> · /setcurrency <id> <CUR>',
           '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id>',

@@ -27,6 +27,7 @@ import {
   applyReconcilePlan,
 } from '../../db/repos/memoryItem.repo.js';
 import { reconcileMemory, type ReconcilePlan } from '../../llm/reconcile.js';
+import { getChatMode, setChatMode, type ChatMode } from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { replyLong } from '../../util/telegramText.js';
@@ -141,6 +142,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
     [
       `Чат: ${cfg?.title ?? '(без названия)'}`,
       `id: ${id}`,
+      `режим: ${MODE_LABEL[getChatMode(id)]} (сменить: /mode ${id} tutor|secretary)`,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
@@ -201,6 +203,43 @@ export async function cmdSetCurrency(ctx: Context): Promise<void> {
   }
   setDefaultCurrency(id, cur);
   await ctx.reply(`✅ Валюта чата ${id} → ${cur.toUpperCase()}.`);
+}
+
+// --- /mode <id> [tutor|secretary] : chat persona ------------------------------
+
+const MODE_LABEL: Record<ChatMode, string> = {
+  secretary: '🤙 секретарь (обычный ассистент)',
+  tutor: '🎓 репетитор (подготовка к экзаменам, точность, без юмора)',
+};
+
+/**
+ * `/mode <chatId>` shows the chat's persona; `/mode <chatId> tutor|secretary`
+ * switches it. For a personal chat the chatId is just the person's telegram id —
+ * so `/mode <kid_tg_id> tutor` turns the kid's DM with the bot into a strict
+ * exam-prep tutor.
+ */
+export async function cmdMode(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply(
+      'Использование: /mode <chatId> [tutor|secretary]\n' +
+        'Для лички chatId = telegram id человека (см. /whitelist).',
+    );
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (!want) {
+    await ctx.reply(`Режим чата ${id}: ${MODE_LABEL[getChatMode(id)]}`);
+    return;
+  }
+  if (want !== 'tutor' && want !== 'secretary') {
+    await ctx.reply('Режим бывает только tutor или secretary.');
+    return;
+  }
+  setChatMode(id, want);
+  await ctx.reply(`✅ Чат ${id} → ${MODE_LABEL[want]}.`);
 }
 
 // --- memory ----------------------------------------------------------------

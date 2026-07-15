@@ -13,6 +13,9 @@ export async function cmdWhoami(ctx: Context): Promise<void> {
       `username: ${u.username ? '@' + u.username : '—'}`,
       `роль: ${user?.role ?? 'user'}`,
       `статус: ${user?.status ?? 'не запрошен'}`,
+      // The chat id is what admin commands (/mode, /chat, /setgroup …) take —
+      // and for groups there is no other built-in way to learn it.
+      `чат: ${ctx.chat.id}`,
       `привязка в этом чате: ${mapping ? mapping.member_name : '—'}`,
     ].join('\n'),
   );

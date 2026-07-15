@@ -117,8 +117,10 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.
 - Chat modes (`chat_settings.mode`, admin `/mode <chatId> tutor|secretary`): `tutor` flips
-  a chat (typically a kid's DM; its chatId = their tg id) into an accuracy-first exam-prep
-  tutor for 9th grade (ОГЭ) — `TUTOR_SYSTEM_PROMPT` + minimal context block in
+  a chat (typically a kid's DM; its chatId = their tg id) into an accuracy-first study
+  tutor covering 9th grade (ОГЭ, the default level) through ЕГЭ up to first-year
+  university/college, incl. specialised subjects (музлитература etc.) —
+  `TUTOR_SYSTEM_PROMPT` + minimal context block in
   `src/llm/prompts.ts`, adaptive thinking with an 8192-token budget (the one place
   reasoning is ON), tools cut to remember/edit_memory/schedule_task/web_search, and NO
   humor/slang/chime/auto-reactions (assistant returns `humorizable:false`, onMessage skips

@@ -12,16 +12,21 @@ import { learnMemoryFromMessage } from '../flows/memory.js';
 import { recordChatMessage, armChime } from '../flows/chime.js';
 import { getTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
+import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 
 export async function onMessage(ctx: Context): Promise<void> {
   const text = ctx.message?.text;
   if (!text || !ctx.chat || !ctx.from) return;
   if (text.startsWith('/')) return; // commands handled elsewhere
 
+  // Tutor chats are strict study rooms: no slang learning (the tutor never speaks
+  // slang) and no spontaneous chime-ins — just question → precise answer.
+  const tutor = getChatMode(ctx.chat.id) === 'tutor';
+
   // Passively learn the chat's slang from every message — even ones we won't reply
   // to (that's the point: read the whole room). Fire-and-forget and best-effort, so
   // it never delays or breaks the reply below.
-  void learnFromMessage(ctx.chat.id, text);
+  if (!tutor) void learnFromMessage(ctx.chat.id, text);
   // Likewise build the chat's weighted long-term memory (durable facts about the
   // group and its people) from every message. Fire-and-forget and best-effort.
   void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), text);
@@ -66,7 +71,7 @@ export async function onMessage(ctx: Context): Promise<void> {
   if (decision === 'ignore') {
     // Not for us — start the silence countdown. If the chat then stays quiet for a
     // minute, the bot rolls the dice and may chime in to keep the conversation going.
-    armChime(ctx);
+    if (!tutor) armChime(ctx);
     return;
   }
 

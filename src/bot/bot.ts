@@ -6,6 +6,8 @@ import { cmdStart } from './commands/start.js';
 import { cmdHelp } from './commands/help.js';
 import { cmdRequest } from './commands/request.js';
 import { cmdApprove, cmdDeny, handleUserCallback } from './commands/approve.js';
+import { cmdWhitelist, cmdAllow } from './commands/whitelist.js';
+import { getChatMode } from '../db/repos/chatSettings.repo.js';
 import { cmdGroup } from './commands/group.js';
 import { cmdMembers } from './commands/members.js';
 import { cmdLink } from './commands/link.js';
@@ -29,6 +31,7 @@ import {
   cmdClearMemory,
   cmdSetLink,
   cmdUnlink,
+  cmdMode,
 } from './commands/admin.js';
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
@@ -59,7 +62,10 @@ export function buildBot(token: string): Bot {
     // Any new message (of any type) means the chat is active: cancel a pending
     // spontaneous chime so the bot only ever chimes into a genuine lull.
     if (ctx.chat?.id != null) cancelChime(ctx.chat.id);
-    await maybeAutoReact(ctx);
+    // No playful reactions in a tutor chat — it's a study room, not the group hang.
+    if (ctx.chat?.id == null || getChatMode(ctx.chat.id) !== 'tutor') {
+      await maybeAutoReact(ctx);
+    }
     await next();
   });
 
@@ -68,6 +74,8 @@ export function buildBot(token: string): Bot {
   bot.command('request', cmdRequest);
   bot.command('approve', cmdApprove);
   bot.command('deny', cmdDeny);
+  bot.command('whitelist', cmdWhitelist);
+  bot.command('allow', cmdAllow);
   bot.command('group', cmdGroup);
   bot.command('members', cmdMembers);
   bot.command('link', cmdLink);
@@ -97,6 +105,7 @@ export function buildBot(token: string): Bot {
   bot.command('clearmemory', cmdClearMemory);
   bot.command('setlink', cmdSetLink);
   bot.command('unlink', cmdUnlink);
+  bot.command('mode', cmdMode);
 
   bot.callbackQuery(/^u:/, handleUserCallback);
   bot.callbackQuery(/^e:/, handleExpenseCallback);

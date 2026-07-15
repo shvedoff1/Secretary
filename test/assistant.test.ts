@@ -241,3 +241,76 @@ describe('runAssistant expense extraction', () => {
     if (result.kind === 'text') expect(result.text).toContain('период');
   });
 });
+
+describe('runAssistant tutor mode', () => {
+  beforeEach(() => {
+    setEnv();
+    vi.resetModules();
+    createMock.mockClear();
+    responses = [];
+  });
+
+  function tutorCtx(userContent: string) {
+    return { ...baseCtx(userContent), mode: 'tutor' as const, splidConnected: true };
+  }
+
+  it('swaps in the tutor system prompt with adaptive thinking and a bigger budget', async () => {
+    responses = [textResponse('Ответ: 42')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(tutorCtx('реши: 6·7'), handlers);
+
+    const call = createMock.mock.calls[0]![0] as {
+      system: { text: string }[];
+      thinking: { type: string };
+      max_tokens: number;
+    };
+    // Accuracy over latency: tutor mode is the one place reasoning is wanted.
+    expect(call.thinking).toEqual({ type: 'adaptive' });
+    expect(call.max_tokens).toBeGreaterThan(2048);
+    expect(call.system[0]!.text).toContain('репетитор');
+    expect(call.system[0]!.text).not.toContain('surf');
+  });
+
+  it('drops secretary-only tools even when Splid is connected, keeps study tools', async () => {
+    responses = [textResponse('Ответ: 42')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(tutorCtx('реши: 6·7'), handlers);
+
+    const call = createMock.mock.calls[0]![0] as { tools: { name: string }[] };
+    const names = call.tools.map((t) => t.name);
+    for (const gone of ['record_expense', 'spending_report', 'surf_forecast', 'add_poi', 'learn_expense_pattern', 'edit_lexicon']) {
+      expect(names).not.toContain(gone);
+    }
+    for (const kept of ['remember', 'edit_memory', 'schedule_task']) {
+      expect(names).toContain(kept);
+    }
+  });
+
+  it('never marks a tutor answer as humorizable (precision must reach the user verbatim)', async () => {
+    responses = [textResponse('Ответ: 42')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const result = await runAssistant(tutorCtx('реши: 6·7'), handlers);
+
+    expect(result).toEqual({
+      kind: 'text',
+      text: 'Ответ: 42',
+      scheduled: false,
+      humorizable: false,
+    });
+  });
+
+  it('secretary mode still gets the chill prompt and disabled thinking (regression guard)', async () => {
+    responses = [textResponse('привет!')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(baseCtx('привет'), handlers);
+
+    const call = createMock.mock.calls[0]![0] as {
+      system: { text: string }[];
+      thinking: { type: string };
+      max_tokens: number;
+    };
+    expect(call.thinking).toEqual({ type: 'disabled' });
+    expect(call.max_tokens).toBe(2048);
+    expect(call.system[0]!.text).toContain('Secretary');
+  });
+});

@@ -28,6 +28,9 @@ vi.mock('../src/bot/editTargets.js', () => ({
 vi.mock('../src/bot/handlers/onPhoto.js', () => ({
   handleReceiptPhoto: vi.fn(),
 }));
+vi.mock('../src/db/repos/chatSettings.repo.js', () => ({
+  getChatMode: vi.fn(() => 'secretary'),
+}));
 
 import { onMessage } from '../src/bot/handlers/onMessage.js';
 import {
@@ -41,6 +44,7 @@ import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
 import { recordChatMessage, armChime } from '../src/bot/flows/chime.js';
 import { getEditTarget } from '../src/bot/editTargets.js';
+import { getChatMode } from '../src/db/repos/chatSettings.repo.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
@@ -53,6 +57,7 @@ const mockPhoto = vi.mocked(handleReceiptPhoto);
 const mockRecord = vi.mocked(recordChatMessage);
 const mockChime = vi.mocked(armChime);
 const mockEditTarget = vi.mocked(getEditTarget);
+const mockMode = vi.mocked(getChatMode);
 
 function ctx(text: string): Context {
   return {
@@ -68,6 +73,7 @@ beforeEach(() => {
   mockAddressed.mockReturnValue(false);
   mockFresh.mockReturnValue(false);
   mockEditTarget.mockReturnValue(undefined);
+  mockMode.mockReturnValue('secretary');
 });
 
 function replyToPreview(text: string): Context {
@@ -291,5 +297,36 @@ describe('onMessage reply to a photo', () => {
     await onMessage(c);
 
     expect(mockPhoto).not.toHaveBeenCalled();
+  });
+});
+
+describe('onMessage in tutor mode', () => {
+  it('does not feed messages to lexicon learning (the tutor never speaks slang)', async () => {
+    mockMode.mockReturnValue('tutor');
+    mockRoute.mockReturnValue('process');
+
+    await onMessage(ctx('реши задачу про скорость'));
+
+    expect(mockLearn).not.toHaveBeenCalled();
+    expect(mockRun).toHaveBeenCalledOnce();
+  });
+
+  it('never arms a spontaneous chime on ignored chatter', async () => {
+    mockMode.mockReturnValue('tutor');
+    mockRoute.mockReturnValue('ignore');
+
+    await onMessage(ctx('просто болтовня'));
+
+    expect(mockChime).not.toHaveBeenCalled();
+  });
+
+  it('secretary mode still learns lexicon and arms the chime (regression guard)', async () => {
+    mockMode.mockReturnValue('secretary');
+    mockRoute.mockReturnValue('ignore');
+
+    await onMessage(ctx('просто болтовня'));
+
+    expect(mockLearn).toHaveBeenCalledOnce();
+    expect(mockChime).toHaveBeenCalledOnce();
   });
 });

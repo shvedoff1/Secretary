@@ -2,7 +2,13 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
-import { SYSTEM_PROMPT, buildContextBlock } from './prompts.js';
+import {
+  SYSTEM_PROMPT,
+  TUTOR_SYSTEM_PROMPT,
+  buildContextBlock,
+  buildTutorContextBlock,
+} from './prompts.js';
+import type { ChatMode } from '../db/repos/chatSettings.repo.js';
 import {
   buildTools,
   RECORD_EXPENSE_TOOL,
@@ -39,6 +45,13 @@ import {
 import type { Turn } from '../db/repos/conversation.repo.js';
 
 export interface AssistantContext {
+  /**
+   * Chat persona. 'secretary' (default) is the usual chill assistant with the full
+   * toolset. 'tutor' is the accuracy-first exam-prep tutor: strict prompt, no
+   * expense/surf/poi/slang tools (memory, reminders and web search stay), adaptive
+   * thinking with a bigger token budget, and replies are never humorized.
+   */
+  mode?: ChatMode;
   defaultCurrency: string;
   members: { name: string; initials?: string }[];
   senderName: string;
@@ -151,31 +164,43 @@ export async function runAssistant(
 ): Promise<AssistantResult> {
   const cfg = loadConfig();
   const anthropic = getAnthropic();
+  const tutor = ctx.mode === 'tutor';
+  // Tutor mode keeps only what a study chat needs: memory (exam dates, weak
+  // topics), reminders (study schedule) and web search. Everything money/surf/
+  // slang-flavoured is off so the model can't wander back into secretary land.
   const tools = buildTools({
     enableWebSearch: cfg.ENABLE_WEB_SEARCH,
-    enableExpense: ctx.splidConnected,
+    enableExpense: !tutor && ctx.splidConnected,
     enableRemember: ctx.allowRemember !== false,
     enableMemoryEdit: ctx.allowRemember !== false,
-    enableExpenseLearning: ctx.allowExpenseLearning !== false,
-    enableLexiconEdit: ctx.allowLexiconEdit !== false,
+    enableExpenseLearning: !tutor && ctx.allowExpenseLearning !== false,
+    enableLexiconEdit: !tutor && ctx.allowLexiconEdit !== false,
     enableReminders: ctx.allowReminders !== false,
-    enableSurf: cfg.ENABLE_SURF,
-    enablePoi: ctx.allowPoi !== false,
-    enableSpending: ctx.splidConnected,
+    enableSurf: !tutor && cfg.ENABLE_SURF,
+    enablePoi: !tutor && ctx.allowPoi !== false,
+    enableSpending: !tutor && ctx.splidConnected,
   });
 
-  const contextBlock = buildContextBlock({
-    defaultCurrency: ctx.defaultCurrency,
-    members: ctx.members,
-    senderName: ctx.senderName,
-    timezone: ctx.timezone,
-    splidConnected: ctx.splidConnected,
-    activeReminders: ctx.activeReminders ?? [],
-    places: ctx.places ?? [],
-    memoryChat: ctx.memoryChat ?? [],
-    memoryUsers: ctx.memoryUsers ?? [],
-    memoryPersona: ctx.memoryPersona ?? [],
-  });
+  const contextBlock = tutor
+    ? buildTutorContextBlock({
+        senderName: ctx.senderName,
+        timezone: ctx.timezone,
+        activeReminders: ctx.activeReminders ?? [],
+        memoryChat: ctx.memoryChat ?? [],
+        memoryUsers: ctx.memoryUsers ?? [],
+      })
+    : buildContextBlock({
+        defaultCurrency: ctx.defaultCurrency,
+        members: ctx.members,
+        senderName: ctx.senderName,
+        timezone: ctx.timezone,
+        splidConnected: ctx.splidConnected,
+        activeReminders: ctx.activeReminders ?? [],
+        places: ctx.places ?? [],
+        memoryChat: ctx.memoryChat ?? [],
+        memoryUsers: ctx.memoryUsers ?? [],
+        memoryPersona: ctx.memoryPersona ?? [],
+      });
 
   let scheduled = false;
   // Tracks whether any tool ran this turn. A plain-chat answer (no tools) is the
@@ -206,19 +231,27 @@ export async function runAssistant(
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await anthropic.messages.create({
       model: cfg.ANTHROPIC_MODEL,
-      max_tokens: 2048,
-      // Keep thinking OFF explicitly. On Sonnet 5 (the default model) adaptive
-      // thinking turns ON whenever `thinking` is omitted — that would add latency
-      // to every tool-routing turn AND eat into the 2048-token budget (thinking
-      // counts against max_tokens), risking a truncated answer / tool-call JSON.
-      // Disabling keeps the snappy, budget-safe behaviour we had on Sonnet 4.6;
-      // it's a no-op on models where thinking was already off.
-      thinking: { type: 'disabled' },
+      // Tutor answers are long (step-by-step solutions) and adaptive thinking
+      // spends from the same budget, so tutor mode gets a much bigger cap.
+      max_tokens: tutor ? 8192 : 2048,
+      // Secretary keeps thinking OFF explicitly. On Sonnet 5 (the default model)
+      // adaptive thinking turns ON whenever `thinking` is omitted — that would add
+      // latency to every tool-routing turn AND eat into the 2048-token budget
+      // (thinking counts against max_tokens), risking a truncated answer /
+      // tool-call JSON. Disabling keeps the snappy behaviour we had on Sonnet 4.6.
+      // Tutor mode is the opposite trade: accuracy over latency — solving
+      // math/physics is exactly what thinking is for, so let the model reason.
+      thinking: { type: tutor ? 'adaptive' : 'disabled' },
       // Cache the stable prefix (tools render before system, so one breakpoint on
       // the system block caches both tool schemas + system prompt). Re-reads cost
-      // ~0.1x: this is the main lever against per-call token cost.
+      // ~0.1x: this is the main lever against per-call token cost. Tutor chats
+      // form their own (also static) cache prefix.
       system: [
-        { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+        {
+          type: 'text',
+          text: tutor ? TUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT,
+          cache_control: { type: 'ephemeral' },
+        },
       ],
       tools,
       messages,
@@ -415,7 +448,10 @@ export async function runAssistant(
       .map((b) => b.text)
       .join('')
       .trim();
-    return { kind: 'text', text: text || '…', scheduled, humorizable: !usedTool };
+    // Tutor answers are never humorizable: precision is the whole point of the
+    // mode, so the OpenAI tone pass must not touch them (this also covers the
+    // scheduler path, which trusts this flag).
+    return { kind: 'text', text: text || '…', scheduled, humorizable: !usedTool && !tutor };
   }
 
   return { kind: 'text', text: 'Что-то пошло не так, попробуй ещё раз.', scheduled };

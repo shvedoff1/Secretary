@@ -17,6 +17,7 @@ import { makeSurfForecastHandler } from './surf/index.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
+import { getChatMode } from './db/repos/chatSettings.repo.js';
 import { getMemoryForContext } from './db/repos/memoryItem.repo.js';
 import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
 import type { Member } from './core/types.js';
@@ -111,6 +112,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
 
     const result = await runAssistant(
       {
+        // A task fired in a tutor chat keeps the tutor persona (and its no-humor,
+        // reduced-tools behaviour) — e.g. a daily "порешай со мной задачи" ping.
+        mode: getChatMode(task.chatId),
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,

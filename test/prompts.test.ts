@@ -163,3 +163,60 @@ describe('buildContextBlock memory sections', () => {
     expect(out.indexOf('Voice & style')).toBeLessThan(out.indexOf('Chat memory'));
   });
 });
+
+// Tutor mode is the "no jokes, accuracy first" persona — guard both directions:
+// the tutor prompt must demand rigor and must NOT drag in the secretary vibe.
+describe('TUTOR_SYSTEM_PROMPT', () => {
+  it('demands step-by-step solutions with a final answer line and self-checking', async () => {
+    const { TUTOR_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('ПОШАГОВО');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('Ответ:');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('ПЕРЕПРОВЕРЯЙ');
+  });
+
+  it('targets 9th-grade exam prep (ОГЭ) with math and physics', async () => {
+    const { TUTOR_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('ОГЭ');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('математика');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('физика');
+  });
+
+  it('bans the secretary slang explicitly and never mentions surf/expenses', async () => {
+    const { TUTOR_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('БЕЗ сленга');
+    expect(TUTOR_SYSTEM_PROMPT.toLowerCase()).not.toContain('surf');
+    expect(TUTOR_SYSTEM_PROMPT.toLowerCase()).not.toContain('splid');
+    expect(TUTOR_SYSTEM_PROMPT).not.toContain('record_expense');
+  });
+
+  it('still points at the study-relevant tools (search, memory, reminders)', async () => {
+    const { TUTOR_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('web_search');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('remember');
+    expect(TUTOR_SYSTEM_PROMPT).toContain('schedule_task');
+  });
+});
+
+describe('buildTutorContextBlock', () => {
+  it('keeps time/timezone/sender/memory and drops the Splid-flavoured lines', async () => {
+    const { buildTutorContextBlock } = await import('../src/llm/prompts.js');
+    const block = buildTutorContextBlock({
+      senderName: 'Мелкий',
+      timezone: 'Europe/Moscow',
+      activeReminders: [{ id: 3, title: 'решать задачи', when: 'завтра 19:00' }],
+      memoryChat: [{ content: 'экзамен по физике 5 июня' }],
+      memoryUsers: [{ subject: 'Мелкий', items: [{ content: 'хромает на проценты' }] }],
+    });
+    expect(block).toContain('Current time (UTC):');
+    expect(block).toContain('Chat timezone: Europe/Moscow');
+    expect(block).toContain('Message sender (the student): Мелкий');
+    expect(block).toContain('#3 «решать задачи»');
+    expect(block).toContain('экзамен по физике 5 июня');
+    expect(block).toContain('About Мелкий');
+    // No secretary context leaks into the study room.
+    expect(block).not.toContain('Splid');
+    expect(block).not.toContain('Group members');
+    expect(block).not.toContain('currency');
+    expect(block).not.toContain('Saved places');
+  });
+});

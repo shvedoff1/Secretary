@@ -45,6 +45,15 @@ describe('migration 010 memory backfill', () => {
          created_at  INTEGER NOT NULL
        )`,
     );
+    // chat_settings exists since migration 005; recreate it so migration 013
+    // (which adds the mode column) can run against this synthetic v9 DB.
+    db.exec(
+      `CREATE TABLE chat_settings (
+         chat_id    INTEGER PRIMARY KEY,
+         timezone   TEXT,
+         updated_at INTEGER NOT NULL
+       )`,
+    );
     // conversation_turn exists since migration 001; recreate it so migration 012
     // (which adds sender_name to it) can run against this synthetic v9 DB.
     db.exec(

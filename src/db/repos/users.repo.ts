@@ -73,6 +73,43 @@ export function setStatus(
     .run(status, decidedBy, tgUserId);
 }
 
+/**
+ * Whitelist decision that works even for a user the bot has never seen — unlike
+ * `setStatus` (UPDATE-only, a silent no-op on an unknown id), this INSERTs the row
+ * when needed, so the admin can allow someone by id BEFORE they ever /request.
+ * An existing row keeps its role/username; only the decision (and, when given, a
+ * missing display name) is updated.
+ */
+export function upsertStatus(
+  tgUserId: number,
+  status: UserStatus,
+  decidedBy: number,
+  displayName?: string | null,
+): void {
+  getDb()
+    .prepare(
+      `INSERT INTO users (tg_user_id, display_name, role, status, decided_at, decided_by)
+       VALUES (?, ?, 'user', ?, unixepoch() * 1000, ?)
+       ON CONFLICT(tg_user_id) DO UPDATE SET
+         status = excluded.status,
+         decided_at = excluded.decided_at,
+         decided_by = excluded.decided_by,
+         display_name = COALESCE(excluded.display_name, users.display_name)`,
+    )
+    .run(tgUserId, displayName ?? null, status, decidedBy);
+}
+
+/** Every known user, approved first, then pending, then denied (newest first within). */
+export function listUsers(): UserRow[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM users
+       ORDER BY CASE status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+                COALESCE(decided_at, requested_at, 0) DESC`,
+    )
+    .all() as UserRow[];
+}
+
 export function listPending(): UserRow[] {
   return getDb()
     .prepare("SELECT * FROM users WHERE status = 'pending' ORDER BY requested_at")

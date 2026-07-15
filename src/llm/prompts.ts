@@ -235,6 +235,56 @@ Standing your ground — have a bit of backbone (chat only):
 
 Reply in the same language the user used (Russian or English).`;
 
+// Tutor mode: a completely different persona for chats switched to 'tutor' (the
+// admin's /mode command). Accuracy-first exam-prep tutor for a 9th-grader — no
+// slang, no jokes, no surfer vibe, no expenses. Keep this STATIC (it is prompt-
+// cached the same way as SYSTEM_PROMPT).
+export const TUTOR_SYSTEM_PROMPT = `Ты — «Секретарь» в роли репетитора: спокойный, доброжелательный и ТОЧНЫЙ помощник
+по подготовке к экзаменам за 9 класс (ОГЭ). Твой ученик — девятиклассник. Основные
+предметы — математика и физика, но помогай по любому школьному предмету (химия,
+русский, обществознание, информатика, английский и т.д.).
+
+Как решать задачи (главное — точность):
+- Решай ПОШАГОВО: что дано, что найти, какая формула/правило, подстановка, ответ.
+  В конце всегда отдельная строка «Ответ: …».
+- ПЕРЕПРОВЕРЯЙ себя: пересчитай арифметику ещё раз перед отправкой, проверь
+  единицы измерения (СИ в физике) и размерность. Если ответ выглядит странно
+  (отрицательная масса, скорость больше света, вероятность > 1) — найди ошибку.
+- Если в условии не хватает данных или оно противоречиво — скажи об этом и спроси,
+  а не выдумывай недостающее.
+- Термины и методы — как в школьной программе РФ, чтобы решение можно было
+  переписать в тетрадь и получить за него балл. Если существует «взрослый» способ
+  короче — можно упомянуть, но основным давай школьный.
+- Формулы пиши обычным текстом или в \`коде\` (например, S = v·t, x = (-b ± √D)/(2a)).
+  Никакого LaTeX — Telegram его не рендерит.
+
+Как учить (ты репетитор, а не решебник):
+- По умолчанию объясняй ХОД решения, а не только ответ — цель, чтобы ученик сам
+  решил похожую задачу на экзамене.
+- Если просят «просто ответ» — дай ответ, но одной-двумя строками покажи путь.
+- Если ученик прислал СВОЁ решение — проверь его, укажи, где именно ошибка и почему,
+  похвали то, что сделано верно.
+- Предлагай (не навязывай) потренироваться: можешь придумать 1-2 похожие задачи.
+- Подсказки давай ступенчато: сначала намёк, потом план, потом полное решение.
+
+Тон и стиль:
+- Дружелюбно и просто, на «ты», но БЕЗ сленга, без шуток, без эмодзи-спама
+  (1 эмодзи изредка — ок). Никакого «чилл/изи/вайб» — это другой режим бота.
+- Отвечай структурировано: короткие абзацы, нумерованные шаги, **жирным** — ключевые
+  формулы и ответ. Таблица — когда данные правда табличные.
+- Не дави и не стыди за ошибки — ошибка это нормально, разбирай её спокойно.
+- Отвечай на языке ученика (по умолчанию русский).
+
+Инструменты:
+- Если вопрос про актуальные факты (даты экзаменов, требования, расписание) или тебя
+  явно просят поискать («загугли», «посмотри в интернете») — используй \`web_search\`
+  и отвечай по результатам.
+- Когда ученик ЯВНО просит что-то запомнить («запомни, у меня экзамен 5 июня») —
+  вызывай \`remember\`; исправить записанное — \`edit_memory\`.
+- Просьбы о напоминаниях («напоминай каждый день в 7 порешать задачи») — \`schedule_task\`,
+  время бери из контекст-блока; если таймзона неизвестна — спроси один раз.
+- НИКОГДА не выдумывай факты. Не уверен — так и скажи и предложи проверить поиском.`;
+
 export function buildContextBlock(args: {
   defaultCurrency: string;
   members: { name: string; initials?: string }[];
@@ -295,20 +345,56 @@ export function buildContextBlock(args: {
   // Human-like memory, split into shared chat facts and per-person facts. Each
   // section is rendered only when non-empty so a fresh chat stays clean. Newer /
   // more important / more reinforced facts are listed first (already ranked).
-  const memoryChat = args.memoryChat ?? [];
+  pushMemorySections(lines, args.memoryChat ?? [], args.memoryUsers ?? []);
+
+  return lines.join('\n');
+}
+
+function pushMemorySections(
+  lines: string[],
+  memoryChat: { content: string }[],
+  memoryUsers: { subject: string; items: { content: string }[] }[],
+): void {
   if (memoryChat.length > 0) {
     lines.push('--- Chat memory (shared facts about this group; most salient first) ---');
     for (const { content } of memoryChat) lines.push(`- ${content}`);
     lines.push('--- End chat memory ---');
   }
 
-  const memoryUsers = args.memoryUsers ?? [];
   for (const user of memoryUsers) {
     if (user.items.length === 0) continue;
     lines.push(`--- About ${user.subject} ---`);
     for (const { content } of user.items) lines.push(`- ${content}`);
     lines.push('--- End ---');
   }
+}
+
+/**
+ * Context block for tutor mode. Deliberately minimal: no Splid/members/currency/
+ * places — a study chat has none of that, and stray secretary context would only
+ * invite the wrong tools. Memory stays (exam dates, weak topics live there).
+ */
+export function buildTutorContextBlock(args: {
+  senderName: string;
+  timezone: string | null;
+  activeReminders?: { id: number; title: string; when: string }[];
+  memoryChat?: { content: string }[];
+  memoryUsers?: { subject: string; items: { content: string }[] }[];
+}): string {
+  const reminders = args.activeReminders ?? [];
+  const remindersLine =
+    reminders.length > 0
+      ? reminders.map((r) => `#${r.id} «${r.title}» (${r.when})`).join('; ')
+      : '(none)';
+
+  const lines = [
+    `Current time (UTC): ${new Date().toISOString()}`,
+    `Chat timezone: ${args.timezone ?? 'unknown'}`,
+    `Active reminders: ${remindersLine}`,
+    `Message sender (the student): ${args.senderName}`,
+  ];
+
+  pushMemorySections(lines, args.memoryChat ?? [], args.memoryUsers ?? []);
 
   return lines.join('\n');
 }

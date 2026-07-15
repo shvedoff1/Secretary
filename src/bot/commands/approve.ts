@@ -3,7 +3,7 @@ import { logger } from '../../logger.js';
 import {
   getUser,
   isAdmin,
-  setStatus,
+  upsertStatus,
   type UserStatus,
 } from '../../db/repos/users.repo.js';
 
@@ -21,7 +21,9 @@ async function decide(
     await ctx.reply('Использование: /approve <telegram_id> или /deny <telegram_id>');
     return;
   }
-  setStatus(id, status, ctx.from.id);
+  // Upsert (not update): the admin may whitelist/deny an id the bot has never
+  // seen — the old UPDATE silently did nothing while replying "Готово".
+  upsertStatus(id, status, ctx.from.id);
   await ctx.reply(`Готово: пользователь ${id} → ${status}.`);
   await notifyUser(ctx, id, status);
 }
@@ -48,7 +50,7 @@ export async function handleUserCallback(ctx: Context): Promise<void> {
     return;
   }
   const status: UserStatus = action === 'ap' ? 'approved' : 'denied';
-  setStatus(id, status, ctx.from.id);
+  upsertStatus(id, status, ctx.from.id);
   await ctx.answerCallbackQuery({
     text: status === 'approved' ? 'Одобрено' : 'Отклонено',
   });

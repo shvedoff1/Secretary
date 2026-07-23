@@ -27,7 +27,13 @@ import {
   applyReconcilePlan,
 } from '../../db/repos/memoryItem.repo.js';
 import { reconcileMemory, type ReconcilePlan } from '../../llm/reconcile.js';
-import { getChatMode, setChatMode, type ChatMode } from '../../db/repos/chatSettings.repo.js';
+import {
+  getChatMode,
+  setChatMode,
+  isChatTrusted,
+  setChatTrusted,
+  type ChatMode,
+} from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { replyLong } from '../../util/telegramText.js';
@@ -143,6 +149,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       `Чат: ${cfg?.title ?? '(без названия)'}`,
       `id: ${id}`,
       `режим: ${MODE_LABEL[getChatMode(id)]} (сменить: /mode ${id} tutor|secretary|dota)`,
+      `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (/trust ${id} on|off)`,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
@@ -233,7 +240,8 @@ export async function cmdMode(ctx: Context): Promise<void> {
   }
   const want = rest.trim().toLowerCase();
   if (!want) {
-    await ctx.reply(`Режим чата ${id}: ${MODE_LABEL[getChatMode(id)]}`);
+    const trust = isChatTrusted(id) ? 'доверенный (доступ у всех участников)' : 'не доверенный';
+    await ctx.reply(`Режим чата ${id}: ${MODE_LABEL[getChatMode(id)]}\nДоступ: ${trust}`);
     return;
   }
   if (want !== 'tutor' && want !== 'secretary' && want !== 'dota') {
@@ -241,7 +249,49 @@ export async function cmdMode(ctx: Context): Promise<void> {
     return;
   }
   setChatMode(id, want);
-  await ctx.reply(`✅ Чат ${id} → ${MODE_LABEL[want]}.`);
+  // Setting a mode is an explicit admin act of configuring the chat — trust it,
+  // so a group switched to e.g. dota immediately works for every participant.
+  setChatTrusted(id, true);
+  await ctx.reply(
+    `✅ Чат ${id} → ${MODE_LABEL[want]}. Чат доверенный — доступ у всех участников ` +
+      `(закрыть: /trust ${id} off).`,
+  );
+}
+
+// --- /trust <id> [on|off] : whole-chat access ------------------------------
+
+/**
+ * `/trust <chatId>` shows whether the chat's participants pass the auth gate;
+ * `/trust <chatId> on|off` grants/revokes it. Picking a mode (buttons or /mode)
+ * already trusts a chat — this is the manual switch and the revoke lever.
+ */
+export async function cmdTrust(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /trust <chatId> [on|off]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (!want) {
+    await ctx.reply(
+      isChatTrusted(id)
+        ? `Чат ${id} доверенный — доступ у всех участников. Закрыть: /trust ${id} off`
+        : `Чат ${id} не доверенный — работают только люди из /whitelist. Открыть: /trust ${id} on`,
+    );
+    return;
+  }
+  if (want !== 'on' && want !== 'off') {
+    await ctx.reply('Использование: /trust <chatId> [on|off]');
+    return;
+  }
+  setChatTrusted(id, want === 'on');
+  await ctx.reply(
+    want === 'on'
+      ? `✅ Чат ${id} доверенный — доступ открыт всем его участникам.`
+      : `🚫 Чат ${id} больше не доверенный — доступ только по /whitelist (Splid-подключение, если есть, всё ещё даёт доступ).`,
+  );
 }
 
 // --- memory ----------------------------------------------------------------

@@ -33,10 +33,12 @@ import {
   cmdSetLink,
   cmdUnlink,
   cmdMode,
+  cmdTrust,
 } from './commands/admin.js';
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
 import { onVoice } from './handlers/onVoice.js';
+import { onBotMembership, handleModeCallback } from './handlers/onBotMembership.js';
 import { handleExpenseCallback } from './flows/confirm.js';
 import { maybeAutoReact } from './reactions.js';
 import { cancelChime } from './flows/chime.js';
@@ -52,6 +54,12 @@ export function buildBot(token: string): Bot {
   // keyed by chat id keeps each chat strictly in order while letting different chats
   // run in parallel. Must be the FIRST middleware so the whole chain is ordered.
   bot.use(sequentialize((ctx) => ctx.chat?.id.toString()));
+
+  // "Bot was added/removed" onboarding runs BEFORE the auth gate: the person
+  // adding the bot to a chat is usually not whitelisted, but the admin must
+  // still get the join notification (with the mode picker). The handler only
+  // ever DMs the admin, so it's safe in front of the gate.
+  bot.on('my_chat_member', onBotMembership);
 
   // Default-deny gate (lets /start, /help, /request through for everyone).
   bot.use(authGate);
@@ -108,9 +116,11 @@ export function buildBot(token: string): Bot {
   bot.command('setlink', cmdSetLink);
   bot.command('unlink', cmdUnlink);
   bot.command('mode', cmdMode);
+  bot.command('trust', cmdTrust);
 
   bot.callbackQuery(/^u:/, handleUserCallback);
   bot.callbackQuery(/^e:/, handleExpenseCallback);
+  bot.callbackQuery(/^m:/, handleModeCallback);
 
   bot.on('message:photo', onPhoto);
   bot.on('message:voice', onVoice);

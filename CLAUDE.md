@@ -112,7 +112,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   non-reasoning models. Both calls are also bounded by `OPENAI_HUMOR_TIMEOUT_MS` (default
   20s); the shared knobs live in `src/llm/openaiOptions.ts`.
 - Access control: default-deny `authGate` (`src/bot/middleware/auth.ts`) — only approved
-  users pass (configured groups are exempt). The admin manages the whitelist from the DM:
+  users pass. Two whole-chat exemptions: a Splid-connected group, and a chat the admin
+  explicitly TRUSTED (`chat_settings.trusted`). Trust is granted by picking a mode from
+  the "bot was added" DM notification (`src/bot/handlers/onBotMembership.ts` — a
+  `my_chat_member` handler registered BEFORE the gate, so the join event from an
+  unapproved adder still reaches the admin; buttons `m:*` set mode+trust and greet the
+  chat in persona) or by `/mode` (setting a mode trusts the chat), and is managed with
+  `/trust <chatId> on|off`. Removal of the bot from a chat auto-revokes trust. The admin
+  manages the per-user whitelist from the DM:
   `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.

@@ -7,6 +7,10 @@ import { InlineKeyboard } from 'grammy';
 //   e:rt:<pendingId>   retry submit
 //   u:ap:<tgUserId>    approve user
 //   u:dn:<tgUserId>    deny user
+//   m:d:<chatId>       set chat mode dota (+trust)
+//   m:s:<chatId>       set chat mode secretary (+trust)
+//   m:t:<chatId>       set chat mode tutor (+trust)
+//   m:x:<chatId>       ignore chat (leave untrusted)
 
 export function previewKeyboard(pendingId: string, retriable = false): InlineKeyboard {
   const kb = new InlineKeyboard()
@@ -23,4 +27,15 @@ export function approvalKeyboard(tgUserId: number): InlineKeyboard {
   return new InlineKeyboard()
     .text('✅ Approve', `u:ap:${tgUserId}`)
     .text('❌ Deny', `u:dn:${tgUserId}`);
+}
+
+/** Mode picker on the "bot was added to a chat" admin DM. Picking a mode also
+ *  TRUSTS the chat (participants pass the auth gate); ignore leaves it silent. */
+export function modeKeyboard(chatId: number): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('🎮 Дота', `m:d:${chatId}`)
+    .text('🤙 Секретарь', `m:s:${chatId}`)
+    .text('🎓 Репетитор', `m:t:${chatId}`)
+    .row()
+    .text('🚫 Игнорить', `m:x:${chatId}`);
 }

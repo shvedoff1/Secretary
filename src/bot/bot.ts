@@ -17,6 +17,7 @@ import { cmdTasks, cmdCancelTask, cmdTaskHumor } from './commands/tasks.js';
 import { cmdPoi, cmdDelPoi } from './commands/poi.js';
 import { cmdSlang } from './commands/lexicon.js';
 import { cmdTrata } from './commands/expenseTerm.js';
+import { cmdPing } from './commands/ping.js';
 import {
   cmdChats,
   cmdChat,
@@ -90,6 +91,7 @@ export function buildBot(token: string): Bot {
   bot.command('delpoi', cmdDelPoi);
   bot.command('slang', cmdSlang);
   bot.command('trata', cmdTrata);
+  bot.command('ping', cmdPing);
 
   // Admin-only chat administration (private chat with the bot).
   bot.command('chats', cmdChats);
@@ -148,6 +150,7 @@ export const BOT_COMMANDS = [
   { command: 'delpoi', description: 'Удалить место по id' },
   { command: 'slang', description: 'Словечки, которые я подхватил из чата' },
   { command: 'trata', description: 'Слова, которые я считаю тратами' },
+  { command: 'ping', description: 'Пингануть состав (/ping show — глянуть без пинга)' },
   { command: 'whoami', description: 'Кто я для бота' },
   { command: 'request', description: 'Запросить доступ' },
 ];

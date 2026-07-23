@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { RecordExpenseZ, RememberZ, EditMemoryZ, toParsedExpense } from '../src/llm/schema.js';
+import {
+  RecordExpenseZ,
+  RememberZ,
+  EditMemoryZ,
+  EditPingListZ,
+  toParsedExpense,
+} from '../src/llm/schema.js';
 
 describe('RememberZ', () => {
   it('accepts a bare note (replaces optional)', () => {
@@ -39,6 +45,31 @@ function parse(over: Record<string, unknown> = {}) {
     ...over,
   });
 }
+
+describe('EditPingListZ', () => {
+  it('accepts add/remove with several members and a null (default) list', () => {
+    const add = EditPingListZ.safeParse({
+      action: 'add',
+      list: null,
+      members: ['@vasya', '@petya'],
+    });
+    expect(add.success).toBe(true);
+    const rm = EditPingListZ.safeParse({ action: 'remove', list: 'стак', members: ['@vasya'] });
+    expect(rm.success).toBe(true);
+  });
+
+  it('rejects unknown actions, empty member lists and empty member strings', () => {
+    expect(
+      EditPingListZ.safeParse({ action: 'rename', list: null, members: ['@x'] }).success,
+    ).toBe(false);
+    expect(EditPingListZ.safeParse({ action: 'add', list: null, members: [] }).success).toBe(
+      false,
+    );
+    expect(
+      EditPingListZ.safeParse({ action: 'add', list: null, members: [''] }).success,
+    ).toBe(false);
+  });
+});
 
 describe('RecordExpenseZ + toParsedExpense', () => {
   it('normalizes currency and keeps the hints', () => {

@@ -65,6 +65,7 @@ function expenseResponse(
 const handlers = {
   remember: () => 'Запомнил.',
   editMemory: () => 'Поправил.',
+  editPingList: () => 'Добавил в пинг.',
   scheduleTask: () => 'ok',
   surfForecast: async () => 'forecast',
   addPoi: () => 'added',
@@ -127,6 +128,30 @@ describe('runAssistant humorizable flag', () => {
     expect(result.kind).toBe('text');
     if (result.kind === 'text') {
       expect(result.humorizable).toBe(false);
+    }
+  });
+
+  it('routes a worded roster edit (several members at once) to the edit_ping_list handler', async () => {
+    responses = [
+      toolResponse('edit_ping_list', {
+        action: 'add',
+        list: null,
+        members: ['@vasya', '@petya'],
+      }),
+      textResponse('Записал обоих в пинг.'),
+    ];
+    const spy = vi.fn(() => 'Добавил в «dota»: vasya, petya. Теперь в составе 2.');
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const result = await runAssistant(
+      baseCtx('добавь @vasya и @petya в основной пинг'),
+      { ...handlers, editPingList: spy },
+    );
+
+    expect(spy).toHaveBeenCalledWith({ action: 'add', list: null, members: ['@vasya', '@petya'] });
+    expect(result.kind).toBe('text');
+    if (result.kind === 'text') {
+      expect(result.text).toBe('Записал обоих в пинг.');
+      expect(result.humorizable).toBe(false); // tool answer stays verbatim
     }
   });
 });
@@ -278,7 +303,7 @@ describe('runAssistant tutor mode', () => {
 
     const call = createMock.mock.calls[0]![0] as { tools: { name: string }[] };
     const names = call.tools.map((t) => t.name);
-    for (const gone of ['record_expense', 'spending_report', 'surf_forecast', 'add_poi', 'learn_expense_pattern', 'edit_lexicon']) {
+    for (const gone of ['record_expense', 'spending_report', 'surf_forecast', 'add_poi', 'learn_expense_pattern', 'edit_lexicon', 'edit_ping_list']) {
       expect(names).not.toContain(gone);
     }
     for (const kept of ['remember', 'edit_memory', 'schedule_task']) {

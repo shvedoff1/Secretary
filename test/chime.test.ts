@@ -24,6 +24,10 @@ async function load(env: Record<string, string> = {}): Promise<ChimeModule> {
   delete process.env.ENABLE_CHIME;
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   vi.resetModules();
+  // fireChime reads the chat's mode (dota chats get the tactic instruction), so
+  // the chat_settings table must exist even for the plain scheduling tests.
+  const { migrate } = await import('../src/db/migrate.js');
+  migrate();
   return import('../src/bot/flows/chime.js');
 }
 
@@ -38,10 +42,12 @@ beforeEach(() => {
   runMock.mockClear();
   vi.useFakeTimers();
 });
-afterEach(() => {
+afterEach(async () => {
   vi.runOnlyPendingTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  const { closeDb } = await import('../src/db/client.js');
+  closeDb();
   for (const k of [
     'CHIME_PROBABILITY',
     'CHIME_QUIET_SECONDS',
@@ -151,6 +157,34 @@ describe('chime scheduling', () => {
     chime.armChime(ctx(99)); // armed but buffer empty
     await vi.advanceTimersByTimeAsync(QUIET_MS);
     expect(runMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('chime persona (dota mode)', () => {
+  it('in a dota chat the chime instruction demands a concrete Dota tactic', async () => {
+    const chime = await load();
+    const { setChatMode } = await import('../src/db/repos/chatSettings.repo.js');
+    setChatMode(1, 'dota');
+    chime.recordChatMessage(1, 'Аня', 'ну и катка была вчера');
+    chime.armChime(ctx());
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+
+    expect(runMock).toHaveBeenCalledOnce();
+    const { userContent } = runMock.mock.calls[0]![1] as { userContent: string };
+    expect(userContent).toContain('Dota 2');
+    expect(userContent).toMatch(/тактику/);
+    // The revive framing stays — it's still a chime, just with a lesson attached.
+    expect(userContent).toContain('рофл');
+  });
+
+  it('a secretary chat gets the plain revive with no dota tactic', async () => {
+    const chime = await load();
+    chime.recordChatMessage(1, 'Аня', 'ну и катка была вчера');
+    chime.armChime(ctx());
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+
+    const { userContent } = runMock.mock.calls[0]![1] as { userContent: string };
+    expect(userContent).not.toContain('Dota 2');
   });
 });
 

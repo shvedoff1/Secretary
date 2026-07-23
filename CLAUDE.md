@@ -116,7 +116,30 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.
-- Chat modes (`chat_settings.mode`, admin `/mode <chatId> tutor|secretary`): `tutor` flips
+- Chat modes (`chat_settings.mode`, admin `/mode <chatId> tutor|secretary|dota`): `dota`
+  keeps the FULL secretary feature set (memory, humor, slang, chime, reminders, tools) but
+  swaps the persona for a schoolkid who fancies himself a Dota 2 teacher —
+  `DOTA_SYSTEM_PROMPT` is a static persona-override suffix on top of `SYSTEM_PROMPT`
+  (so behaviour rules are shared and the string stays prompt-cacheable), the OpenAI
+  humorizer gets a matching `persona: 'dota'` variant (schoolkid-sensei rewrite instead of
+  the surfer), and the chime in a dota chat is told to weave ONE concrete Dota tactic into
+  its revive quip (see `fireChime`). The mode also ships the deterministic `/ping` roll
+  call: named per-chat ping lists (`ping_list_entry`, `src/db/repos/pingList.repo.ts`) —
+  `/ping` pings the default «dota» list, `/ping <список>` a named one, edited via
+  `/ping add|del [список] @ник …`, `/ping lists`, `/ping clear [список]`; `/ping show
+  [список]` is the dry run — it renders the roster with zero-width-space-defanged
+  mentions (`defangMention`) so nobody gets notified (lists output is defanged too).
+  The ping is NOT an LLM call (must fire instantly/reliably): a canned schoolkid-sensei
+  opener plus plain-text @usernames (which is what actually notifies in Telegram),
+  followed by a SECOND message — an absurd "lesson" GENERATED per ping
+  (`src/llm/pingLesson.ts`: main model, recent chatter from the chime's ring buffer as
+  context, the canned `PING_LESSONS` pool embedded in the prompt as tone references and
+  used as the deterministic fallback; output is @-defanged). Rosters can
+  also be edited in plain words («добавь @vasya в основной пинг», multiple at once) via
+  the `edit_ping_list` tool (any non-tutor chat, off for scheduled runs; its handler
+  strips @ from confirmations so the model's reply can't re-ping people). The command
+  works in any chat regardless of mode; the mode drives only persona/chime/humor.
+  `tutor` flips
   a chat (typically a kid's DM; its chatId = their tg id) into an accuracy-first exam-prep
   tutor for 9th grade (ОГЭ) — `TUTOR_SYSTEM_PROMPT` + minimal context block in
   `src/llm/prompts.ts`, adaptive thinking with an 8192-token budget (the one place

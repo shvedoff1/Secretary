@@ -22,15 +22,18 @@ export function setTimezone(chatId: number, timezone: string): void {
 /**
  * How the assistant behaves in this chat. 'secretary' is the default chill
  * assistant; 'tutor' is the strict accuracy-first study tutor (no humor/slang,
- * no expense/surf skills — just precise dialogue and problem solving).
+ * no expense/surf skills — just precise dialogue and problem solving); 'dota' is
+ * the full secretary feature set (memory, humor, slang, chime) with a different
+ * persona — a schoolkid who fancies himself a Dota 2 teacher — plus the /dota
+ * ping-list roll call.
  */
-export type ChatMode = 'secretary' | 'tutor';
+export type ChatMode = 'secretary' | 'tutor' | 'dota';
 
 export function getChatMode(chatId: number): ChatMode {
   const row = getDb()
     .prepare('SELECT mode FROM chat_settings WHERE chat_id = ?')
     .get(chatId) as { mode: string | null } | undefined;
-  return row?.mode === 'tutor' ? 'tutor' : 'secretary';
+  return row?.mode === 'tutor' || row?.mode === 'dota' ? row.mode : 'secretary';
 }
 
 export function setChatMode(chatId: number, mode: ChatMode): void {

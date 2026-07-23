@@ -40,8 +40,15 @@ import type {
   ScheduleTaskInput,
   AddPoiInput,
   EditLexiconInput,
+  EditPingListInput,
   EditMemoryInput,
 } from '../../llm/schema.js';
+import {
+  DEFAULT_PING_LIST,
+  addPingMembers,
+  removePingMembers,
+  getPingList,
+} from '../../db/repos/pingList.repo.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -274,6 +281,37 @@ export function makeEditLexiconHandler(
 }
 
 /**
+ * Build the `edit_ping_list` handler for a chat — the "добавь @vasya в основной
+ * пинг" flow. Adds/removes members on a /ping roster and returns a short
+ * confirmation. Names in the confirmation are given WITHOUT the @ so the model's
+ * reply can't accidentally ping the people it just talks about.
+ */
+export function makeEditPingListHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: EditPingListInput) => string {
+  return ({ action, list, members }) => {
+    const name = list?.trim().toLowerCase() || DEFAULT_PING_LIST;
+    const plain = (xs: string[]) => xs.map((m) => m.replace(/^@/, '')).join(', ');
+    const pingCmd = name === DEFAULT_PING_LIST ? '/ping' : `/ping ${name}`;
+    if (action === 'add') {
+      const added = addPingMembers(chatId, name, members, tgUserId);
+      const total = getPingList(chatId, name).length;
+      if (added.length === 0) {
+        return `Все названные уже в составе «${name}» (${total} чел.). Глянуть: /ping show${name === DEFAULT_PING_LIST ? '' : ` ${name}`}`;
+      }
+      return `Добавил в «${name}»: ${plain(added)}. Теперь в составе ${total}. Пинг: ${pingCmd}`;
+    }
+    const removed = removePingMembers(chatId, name, members);
+    if (removed.length === 0) {
+      return `Никого из названных в списке «${name}» не нашёл. Состав: /ping show${name === DEFAULT_PING_LIST ? '' : ` ${name}`}`;
+    }
+    const total = getPingList(chatId, name).length;
+    return `Убрал из «${name}»: ${plain(removed)}. Осталось ${total}.`;
+  };
+}
+
+/**
  * Build the `add_poi` handler for a chat: persists the place and returns a short
  * human confirmation the assistant relays back.
  */
@@ -385,11 +423,12 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
   });
 
+  const mode = getChatMode(chatId);
   let result: AssistantResult;
   try {
     result = await runAssistant(
       {
-        mode: getChatMode(chatId),
+        mode,
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat: memorySel.chat.map((i) => ({ content: i.content })),
@@ -415,6 +454,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         editMemory: makeEditMemoryHandler(chatId),
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         editLexicon: makeEditLexiconHandler(chatId),
+        editPingList: makeEditPingListHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
@@ -517,6 +557,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
         },
         getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({ term: e.term, gloss: e.gloss })),
+        // The tone pass must speak the chat's persona: a dota chat gets the
+        // schoolkid-sensei rewrite, not the surfer one.
+        mode === 'dota' ? 'dota' : 'surfer',
       )
     : result.text;
 
@@ -613,6 +656,7 @@ async function rewordPendingInner(
       editMemory: makeEditMemoryHandler(chatId),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       editLexicon: makeEditLexiconHandler(chatId),
+      editPingList: makeEditPingListHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),

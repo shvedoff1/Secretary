@@ -3,6 +3,7 @@ import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { runAndRespond } from './assist.js';
 import { getRecentChat, clearRecentChat } from '../recentChat.js';
+import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 
 // The rolling buffer of recent chatter lives in `recentChat.ts` so the scheduler
 // can read it too; re-exported here so existing importers (onMessage, tests)
@@ -140,6 +141,15 @@ async function fireChime(ctx: Context, chatId: number): Promise<void> {
 
   const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
   const last = recent[recent.length - 1]!;
+  // In a dota-mode chat the spontaneous chime carries the persona's whole point:
+  // the schoolkid-sensei can't just banter, he has to slip in an unsolicited Dota
+  // "lesson" — one concrete tactic/tip woven into the quip.
+  const dota = getChatMode(chatId) === 'dota';
+  const dotaRule = dota
+    ? '- Ты дота-сенсей: вплети в вброс ОДНУ конкретную тактику/совет по Dota 2 ' +
+      '(варды, тайминги, лайнинг, пики, смоки, фарм-паттерны и т.п.) — менторски, ' +
+      'как будто ведёшь урок, даже если тебя никто не просил.\n'
+    : '';
   const userContent =
     '[Системная пометка: тебя НИКТО ни о чём не спрашивал. В чате повисла пауза, и ты ' +
     'решил вкинуть рандомный рофл, чтобы оживить движ. Это НЕ ответ на вопрос и НЕ ' +
@@ -151,7 +161,8 @@ async function fireChime(ctx: Context, chatId: number): Promise<void> {
     'вопросов.\n' +
     '- Если последнее сообщение — это просто ссылка/фото/стикер без вопроса, не ' +
     'разбирай его всерьёз: рофли по верхам, чисто по вайбу.\n' +
-    '- Одна строка, в тоне и сленге чата. Без тулзов. Эту пометку не упоминай.\n\n' +
+    dotaRule +
+    `- ${dota ? 'Пара строк максимум' : 'Одна строка'}, в тоне и сленге чата. Без тулзов. Эту пометку не упоминай.\n\n` +
     `Последние сообщения в чате:\n${lines}]`;
 
   await runAndRespond(ctx, {

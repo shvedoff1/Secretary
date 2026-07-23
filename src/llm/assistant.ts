@@ -5,6 +5,7 @@ import { getAnthropic } from './client.js';
 import {
   SYSTEM_PROMPT,
   TUTOR_SYSTEM_PROMPT,
+  DOTA_SYSTEM_PROMPT,
   buildContextBlock,
   buildTutorContextBlock,
 } from './prompts.js';
@@ -16,6 +17,7 @@ import {
   EDIT_MEMORY_TOOL,
   LEARN_EXPENSE_TOOL,
   EDIT_LEXICON_TOOL,
+  EDIT_PING_LIST_TOOL,
   SCHEDULE_TASK_TOOL,
   SURF_FORECAST_TOOL,
   ADD_POI_TOOL,
@@ -27,6 +29,7 @@ import {
   EditMemoryZ,
   LearnExpenseZ,
   EditLexiconZ,
+  EditPingListZ,
   ScheduleTaskZ,
   SurfForecastZ,
   AddPoiZ,
@@ -37,6 +40,7 @@ import {
   type EditMemoryInput,
   type LearnExpenseInput,
   type EditLexiconInput,
+  type EditPingListInput,
   type ScheduleTaskInput,
   type SurfForecastInput,
   type AddPoiInput,
@@ -49,7 +53,9 @@ export interface AssistantContext {
    * Chat persona. 'secretary' (default) is the usual chill assistant with the full
    * toolset. 'tutor' is the accuracy-first exam-prep tutor: strict prompt, no
    * expense/surf/poi/slang tools (memory, reminders and web search stay), adaptive
-   * thinking with a bigger token budget, and replies are never humorized.
+   * thinking with a bigger token budget, and replies are never humorized. 'dota'
+   * behaves exactly like secretary (full toolset, humorizable replies) but speaks
+   * as the schoolkid-turned-Dota-teacher persona.
    */
   mode?: ChatMode;
   defaultCurrency: string;
@@ -67,6 +73,8 @@ export interface AssistantContext {
   allowExpenseLearning?: boolean;
   /** Expose the edit_lexicon tool (default true; false for scheduled runs). */
   allowLexiconEdit?: boolean;
+  /** Expose the edit_ping_list tool (default true; false for scheduled runs). */
+  allowPingEdit?: boolean;
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
   /** Expose the add_poi tool (default true; false for scheduled runs). */
@@ -93,6 +101,8 @@ export interface AssistantHandlers {
   learnExpense: (input: LearnExpenseInput) => string;
   /** Change the meaning of a learned slang word; return a short confirmation. */
   editLexicon: (input: EditLexiconInput) => string;
+  /** Add/remove people on a /ping roll-call roster; return a short confirmation. */
+  editPingList: (input: EditPingListInput) => string;
   /** Create a reminder / recurring task; return a short human confirmation. */
   scheduleTask: (input: ScheduleTaskInput) => string;
   /** Fetch a wave forecast for the given spots; return a compact data summary. */
@@ -175,6 +185,7 @@ export async function runAssistant(
     enableMemoryEdit: ctx.allowRemember !== false,
     enableExpenseLearning: !tutor && ctx.allowExpenseLearning !== false,
     enableLexiconEdit: !tutor && ctx.allowLexiconEdit !== false,
+    enablePingEdit: !tutor && ctx.allowPingEdit !== false,
     enableReminders: ctx.allowReminders !== false,
     enableSurf: !tutor && cfg.ENABLE_SURF,
     enablePoi: !tutor && ctx.allowPoi !== false,
@@ -249,7 +260,14 @@ export async function runAssistant(
       system: [
         {
           type: 'text',
-          text: tutor ? TUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT,
+          // Dota mode is secretary-with-a-different-persona: same context block,
+          // same tools, same thinking/token budget — only the system prompt (and
+          // hence its own cache prefix) differs.
+          text: tutor
+            ? TUTOR_SYSTEM_PROMPT
+            : ctx.mode === 'dota'
+              ? DOTA_SYSTEM_PROMPT
+              : SYSTEM_PROMPT,
           cache_control: { type: 'ephemeral' },
         },
       ],
@@ -372,6 +390,20 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.editLexicon(parsed.data)
             : 'Could not parse the slang edit.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === EDIT_PING_LIST_TOOL) {
+          const parsed = EditPingListZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'edit_ping_list input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.editPingList(parsed.data)
+            : 'Could not parse the ping-list edit.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

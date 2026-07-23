@@ -40,8 +40,15 @@ import type {
   ScheduleTaskInput,
   AddPoiInput,
   EditLexiconInput,
+  EditPingListInput,
   EditMemoryInput,
 } from '../../llm/schema.js';
+import {
+  DEFAULT_PING_LIST,
+  addPingMembers,
+  removePingMembers,
+  getPingList,
+} from '../../db/repos/pingList.repo.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -274,6 +281,37 @@ export function makeEditLexiconHandler(
 }
 
 /**
+ * Build the `edit_ping_list` handler for a chat — the "добавь @vasya в основной
+ * пинг" flow. Adds/removes members on a /ping roster and returns a short
+ * confirmation. Names in the confirmation are given WITHOUT the @ so the model's
+ * reply can't accidentally ping the people it just talks about.
+ */
+export function makeEditPingListHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: EditPingListInput) => string {
+  return ({ action, list, members }) => {
+    const name = list?.trim().toLowerCase() || DEFAULT_PING_LIST;
+    const plain = (xs: string[]) => xs.map((m) => m.replace(/^@/, '')).join(', ');
+    const pingCmd = name === DEFAULT_PING_LIST ? '/ping' : `/ping ${name}`;
+    if (action === 'add') {
+      const added = addPingMembers(chatId, name, members, tgUserId);
+      const total = getPingList(chatId, name).length;
+      if (added.length === 0) {
+        return `Все названные уже в составе «${name}» (${total} чел.). Глянуть: /ping show${name === DEFAULT_PING_LIST ? '' : ` ${name}`}`;
+      }
+      return `Добавил в «${name}»: ${plain(added)}. Теперь в составе ${total}. Пинг: ${pingCmd}`;
+    }
+    const removed = removePingMembers(chatId, name, members);
+    if (removed.length === 0) {
+      return `Никого из названных в списке «${name}» не нашёл. Состав: /ping show${name === DEFAULT_PING_LIST ? '' : ` ${name}`}`;
+    }
+    const total = getPingList(chatId, name).length;
+    return `Убрал из «${name}»: ${plain(removed)}. Осталось ${total}.`;
+  };
+}
+
+/**
  * Build the `add_poi` handler for a chat: persists the place and returns a short
  * human confirmation the assistant relays back.
  */
@@ -416,6 +454,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         editMemory: makeEditMemoryHandler(chatId),
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         editLexicon: makeEditLexiconHandler(chatId),
+        editPingList: makeEditPingListHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
@@ -617,6 +656,7 @@ async function rewordPendingInner(
       editMemory: makeEditMemoryHandler(chatId),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       editLexicon: makeEditLexiconHandler(chatId),
+      editPingList: makeEditPingListHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),

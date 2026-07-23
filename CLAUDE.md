@@ -123,13 +123,20 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (so behaviour rules are shared and the string stays prompt-cacheable), the OpenAI
   humorizer gets a matching `persona: 'dota'` variant (schoolkid-sensei rewrite instead of
   the surfer), and the chime in a dota chat is told to weave ONE concrete Dota tactic into
-  its revive quip (see `fireChime`). The mode also ships the deterministic `/dota` roll
+  its revive quip (see `fireChime`). The mode also ships the deterministic `/ping` roll
   call: named per-chat ping lists (`ping_list_entry`, `src/db/repos/pingList.repo.ts`) —
-  `/dota` pings the default «dota» list, `/dota <список>` a named one, edited via
-  `/dota add|del [список] @ник …`, `/dota lists`, `/dota clear [список]`. The ping is
-  NOT an LLM call (must fire instantly/reliably): a canned schoolkid-sensei opener plus
-  plain-text @usernames (which is what actually notifies in Telegram). The command works
-  in any chat regardless of mode; the mode drives only persona/chime/humor. `tutor` flips
+  `/ping` pings the default «dota» list, `/ping <список>` a named one, edited via
+  `/ping add|del [список] @ник …`, `/ping lists`, `/ping clear [список]`; `/ping show
+  [список]` is the dry run — it renders the roster with zero-width-space-defanged
+  mentions (`defangMention`) so nobody gets notified (lists output is defanged too).
+  The ping is NOT an LLM call (must fire instantly/reliably): a canned schoolkid-sensei
+  opener plus plain-text @usernames (which is what actually notifies in Telegram),
+  followed by a SECOND message — a random absurd "lesson" (`PING_LESSONS`). Rosters can
+  also be edited in plain words («добавь @vasya в основной пинг», multiple at once) via
+  the `edit_ping_list` tool (any non-tutor chat, off for scheduled runs; its handler
+  strips @ from confirmations so the model's reply can't re-ping people). The command
+  works in any chat regardless of mode; the mode drives only persona/chime/humor.
+  `tutor` flips
   a chat (typically a kid's DM; its chatId = their tg id) into an accuracy-first exam-prep
   tutor for 9th grade (ОГЭ) — `TUTOR_SYSTEM_PROMPT` + minimal context block in
   `src/llm/prompts.ts`, adaptive thinking with an 8192-token budget (the one place

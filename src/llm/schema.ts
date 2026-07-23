@@ -70,6 +70,13 @@ export const EditLexiconZ = z.object({
 });
 export type EditLexiconInput = z.infer<typeof EditLexiconZ>;
 
+export const EditPingListZ = z.object({
+  action: z.enum(['add', 'remove']),
+  list: z.string().min(1).nullable(),
+  members: z.array(z.string().min(1)).min(1).max(20),
+});
+export type EditPingListInput = z.infer<typeof EditPingListZ>;
+
 export const AddPoiZ = z.object({
   name: z.string().min(1),
   category: z.enum(['cafe', 'sight', 'plan', 'place']),
@@ -248,6 +255,32 @@ export const editLexiconJsonSchema = {
     },
   },
   required: ['term', 'gloss'],
+} as const;
+
+export const editPingListJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['add', 'remove'],
+      description: 'add — добавить участников в пинг-список; remove — убрать их из него.',
+    },
+    list: {
+      type: ['string', 'null'],
+      description:
+        'Which ping list to edit, when the user names one («в список стак», «из вечернего пинга» => "стак"/"вечерний"). null for the default/main list («основной пинг», «в пинг» with no name).',
+    },
+    members: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 20,
+      items: { type: 'string' },
+      description:
+        'The people to add/remove, copied AS WRITTEN from the message, keeping the @ prefix when present (e.g. ["@vasya", "@petya"]). Several at once is fine.',
+    },
+  },
+  required: ['action', 'list', 'members'],
 } as const;
 
 export const addPoiJsonSchema = {

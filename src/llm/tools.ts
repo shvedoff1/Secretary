@@ -5,6 +5,7 @@ import {
   editMemoryJsonSchema,
   learnExpenseJsonSchema,
   editLexiconJsonSchema,
+  editPingListJsonSchema,
   scheduleTaskJsonSchema,
   surfForecastJsonSchema,
   addPoiJsonSchema,
@@ -16,6 +17,7 @@ export const REMEMBER_TOOL = 'remember';
 export const EDIT_MEMORY_TOOL = 'edit_memory';
 export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
 export const EDIT_LEXICON_TOOL = 'edit_lexicon';
+export const EDIT_PING_LIST_TOOL = 'edit_ping_list';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
@@ -35,6 +37,9 @@ export interface ToolOptions {
   /** Expose the edit_lexicon tool (correct a slang word's meaning). Default true;
    *  disabled for scheduled runs (a firing task shouldn't rewrite the lexicon). */
   enableLexiconEdit?: boolean;
+  /** Expose the edit_ping_list tool (edit the /ping roll-call rosters in plain
+   *  words). Default true; disabled for scheduled runs and tutor chats. */
+  enablePingEdit?: boolean;
   /** Expose the schedule_task tool. Default true; disabled for scheduled runs so a
    *  firing reminder can't create more reminders. */
   enableReminders?: boolean;
@@ -97,6 +102,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         "Change the stored MEANING of a word in THIS chat's learned slang. Call this ONLY when the user explicitly asks to fix/change what a slang word means — e.g. «поменяй значение у пихалыч на рот», «у братик поставь значение …», «слово X значит Y, исправь». Pass `term` = the slang word (as used in the chat) and `gloss` = the new short meaning. This edits an EXISTING learned word's meaning; it does not add brand-new words (use nothing for that — the bot learns words on its own) and is not for general notes (use remember) or expense keywords (use learn_expense_pattern).",
       input_schema: editLexiconJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enablePingEdit !== false) {
+    tools.push({
+      name: EDIT_PING_LIST_TOOL,
+      description:
+        "Edit THIS chat's ping rosters — the named lists the /ping roll-call command pings. Call this when the user asks IN PLAIN WORDS to add or remove people — e.g. «добавь @vasya в основной пинг», «убери @petya и @kolya из пинга», «добавь @x и @y в список стак», \"add @z to the ping list\". Copy members AS WRITTEN (keep the @); several at once is fine. `list` = the named list, or null for the default/main one. This only edits the roster: the actual ping is the user's /ping command, and /ping show displays a roster without pinging. IMPORTANT: in your confirmation reply do NOT repeat the @usernames (that would ping them) — refer to them without the @ or by count.",
+      input_schema: editPingListJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

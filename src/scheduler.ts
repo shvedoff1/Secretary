@@ -132,6 +132,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         allowRemember: false, // also gates edit_memory (both off for firing tasks)
         allowExpenseLearning: false,
         allowLexiconEdit: false,
+        allowPingEdit: false,
         allowReminders: false,
         allowPoi: false,
         history: [],
@@ -142,6 +143,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         editMemory: () => 'noop',
         learnExpense: () => 'noop',
         editLexicon: () => 'noop',
+        editPingList: () => 'noop',
         scheduleTask: () => 'noop',
         // Surf forecast stays live: a recurring evening task asks for tomorrow's
         // forecast and the bot posts the recommendation to the chat.

@@ -6,6 +6,7 @@ import {
   EDIT_MEMORY_TOOL,
   LEARN_EXPENSE_TOOL,
   EDIT_LEXICON_TOOL,
+  EDIT_PING_LIST_TOOL,
   SCHEDULE_TASK_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
@@ -117,6 +118,21 @@ describe('buildTools', () => {
       buildTools({ enableWebSearch: true, enableExpense: false, enableLexiconEdit: false }),
     );
     expect(scheduled).not.toContain(EDIT_LEXICON_TOOL);
+  });
+
+  it('exposes edit_ping_list by default and omits it for scheduled runs', () => {
+    expect(names(buildTools({ enableWebSearch: false, enableExpense: false }))).toContain(
+      EDIT_PING_LIST_TOOL,
+    );
+    const tool = buildTools({ enableWebSearch: false, enableExpense: false }).find(
+      (t) => 'name' in t && t.name === EDIT_PING_LIST_TOOL,
+    );
+    expect('input_schema' in tool!).toBe(true);
+
+    const scheduled = names(
+      buildTools({ enableWebSearch: true, enableExpense: false, enablePingEdit: false }),
+    );
+    expect(scheduled).not.toContain(EDIT_PING_LIST_TOOL);
   });
 
   it('exposes spending_report only when enabled (a Splid group is connected)', () => {

@@ -220,11 +220,27 @@ describe('DOTA_SYSTEM_PROMPT', () => {
     expect(DOTA_SYSTEM_PROMPT).toMatch(/«чилл», «вайб»[\s\S]*?НЕ используешь/);
   });
 
-  it('points party-gathering requests at the /dota command instead of @-tags', async () => {
+  it('points party-gathering requests at the /ping command instead of @-tags', async () => {
     const { DOTA_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
-    expect(DOTA_SYSTEM_PROMPT).toContain('/dota');
-    expect(DOTA_SYSTEM_PROMPT).toContain('/dota add');
-    expect(DOTA_SYSTEM_PROMPT).toMatch(/никого не @-тегаешь/);
+    expect(DOTA_SYSTEM_PROMPT).toContain('/ping');
+    expect(DOTA_SYSTEM_PROMPT).toContain('/ping show');
+    expect(DOTA_SYSTEM_PROMPT).toContain('edit_ping_list');
+    expect(DOTA_SYSTEM_PROMPT).toMatch(/никого не\s+@-тегаешь/);
+  });
+});
+
+// Roster editing in plain words («добавь @vasya в основной пинг») rides on the
+// edit_ping_list tool — guard the guidance so the model knows when to call it and
+// never re-pings people in its confirmation.
+describe('SYSTEM_PROMPT ping-roster guidance', () => {
+  it('tells the model to call edit_ping_list for worded add/remove requests', () => {
+    expect(SYSTEM_PROMPT).toContain('edit_ping_list');
+    expect(SYSTEM_PROMPT).toContain('добавь @vasya в основной пинг');
+    expect(SYSTEM_PROMPT).toContain('/ping show');
+  });
+
+  it('forbids repeating @usernames in the confirmation (that would ping them)', () => {
+    expect(SYSTEM_PROMPT).toMatch(/do NOT repeat the\s+@usernames/);
   });
 });
 

@@ -1,7 +1,6 @@
-import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
-import { getAnthropic } from './client.js';
+import { reasoningField, humorTimeoutSignal } from './openaiOptions.js';
 
 /**
  * The nonsense "lesson" that follows the /ping roll call as a separate message.
@@ -9,20 +8,25 @@ import { getAnthropic } from './client.js';
  * about; the canned pool below serves as tone references inside the prompt AND
  * as the deterministic fallback when the model is unavailable — the roll call
  * must never lose its punchline to an API error.
+ *
+ * Generation runs on OPENAI (the humorizer's model/knobs, plain fetch like
+ * humorize.ts/transcribe.ts) — deliberately, per the admin's call: the lesson
+ * is pure vibes, accuracy doesn't matter, and the OpenAI voice is livelier for
+ * this bit. No OPENAI_API_KEY → straight to the canned fallback.
  */
 export const PING_LESSONS: readonly string[] = [
-  'Урок №1: если мид проигран — это не ты слил, это крипы предали. Записываем.',
-  'Конспектируем: вард, поставленный с закрытыми глазами, даёт скрытый обзор. Проверено мной, а я учитель.',
-  'Тема урока: тащить катку силой мысли. Кто не тащит — тот просто недостаточно думает.',
-  'Запомните, дети: курьера убивать нельзя. Но если очень хочется — это называется «макро».',
-  'Лекция: байт на смерть — это стратегия. Просто смерть — тоже байт, но более глубокий.',
-  'Урок геометрии: хук Пуджа летит по прямой, если верить. Вера — главный стат после силы.',
-  'Записываем в тетрадь: если купить вард и не поставить — обзор копится на депозите. Экономика, 5 класс.',
-  'Тема: как не тильтовать. Ответ: тильтуй первым, пока не начали остальные. Инициатива — половина победы.',
-  'Помните: Рошан — это не цель, это состояние души. Кто понял — тому пятёрка в четверти.',
-  'Домашнее задание: проиграть лайн настолько уверенно, чтобы враг решил, что это план.',
-  'Минутка теории: пауза в игре лечит. Не тиммейтов, конечно, но нервы — точно.',
-  'Открытый урок: «гг» пишется в конце. Кто пишет в начале — останется после уроков смотреть свои реплеи.',
+  'Урок №1, записываем 📝 Если мид проигран — это не ты слил, это крипы предали, внатуре 💀 Сигма-мидер не тильтует, он молча собирает статистику предательств. Кто не законспектировал — тому скилл ишью в дневник.',
+  'Так, класс, тема: вард с закрытыми глазами даёт скрытый обзор 🧿 Это не эзотерика, это база — я проверял, а я учитель 🔥 Враги его не видят, потому что ты его не видишь, логика имба. Домашка: поставить три таких и ждать уважения.',
+  'Лекция дня: тащить катку надо силой мысли 🧠 Кто не тащит — тот просто недостаточно думает, кринж 💀 Я вон думаю за всю пятёрку сразу, поэтому и позиции у меня все пять. Записали? Молодцы, свободны.',
+  'Запомните, дети: курьера убивать нельзя, это красная линия ❌ Но если ОЧЕНЬ хочется — это уже называется «макро», и за макро я ставлю пятёрки 📈 Такой вот моральный дуализм, привыкайте. В университете доты это второй курс.',
+  'Открытый урок: байт на смерть — это стратегия 🎣 Просто смерть — тоже байт, но более глубокий, философский 💀 Кто умер пять раз подряд — тот не фидер, а амбассадор глубины. Респект таким, но КДА всё равно проверю.',
+  'Урок геометрии: хук Пуджа летит по прямой, если верить 🙏 Вера — главный стат после силы, это вам любой тир-1 тренер скажет (я скажу) 🔥 Промазал — значит мало верил, скилл ишью духовного плана. Переписываем хуки после уроков.',
+  'Экономика, 5 класс: купил вард и не поставил — обзор копится на депозите 🏦 Процентная ставка — два процента мапы в минуту, имба вклад 📈 Кто держит в инвентаре три варда — тот не жадный, тот инвестор. Уважаемые люди, с них пример.',
+  'Тема урока: как не тильтовать 🧘 Ответ простой — тильтуй ПЕРВЫМ, пока не начали остальные, инициатива решает 💀 Кто затильтовал последним — тот проиграл дважды, это математика. Конспект сам себя не напишет, погнали.',
+  'Помните, ученички: Рошан — это не цель, это состояние души 🐉 Кто понял — тому пятёрка в четверти и слот под аегис 🔥 Кто не понял — идёт стакать лесные лагеря и думать о своём поведении. Звонок для учителя, кстати.',
+  'Домашнее задание, слушаем 📚 Проиграть лайн настолько уверенно, чтобы враг решил, что это план — вот это высший пилотаж, сигма-мува 💀 Паника — для смертных, у нас тут стратегическое отступление на фонтан. Сдать до пятницы.',
+  'Минутка теории: пауза в игре лечит 🩹 Не тиммейтов, конечно — тиммейтов уже ничего не спасёт, кринж зафиксирован 💀 Но нервы лечит железно, я на паузе весь чай выпиваю. Записали? Урок окончен, всем чилл.',
+  'Так, внимание: «гг» пишется В КОНЦЕ катки, это база 📖 Кто пишет в начале — остаётся после уроков смотреть свои реплеи на 0.25 скорости 💀 Это не наказание, это просветление через страдание 🔥 Дневники на стол и погнали.',
 ];
 
 /** Deterministic fallback: a random canned lesson. */
@@ -37,8 +41,14 @@ const LESSON_SYSTEM =
   `пинганул свой «класс» собираться на катку, и теперь должен выдать ОДИН короткий ` +
   `«бредо-урок» — абсурдную дотерскую мудрость с максимально серьёзным менторским лицом.\n\n` +
   `Правила:\n` +
-  `- Одно-два предложения, как в примерах ниже. Никаких вступлений, пояснений или ` +
-  `кавычек — только сам урок.\n` +
+  `- 3-4 предложения, как в примерах ниже: развёрнутый мини-урок, а не одна строчка. ` +
+  `Никаких вступлений, пояснений или кавычек — только сам урок.\n` +
+  `- Побольше зумерского сленга: «база», «кринж», «имба», «скилл ишью», «сигма», ` +
+  `«внатуре», «рофл», «изи», «зафиксировали» и т.п. — вперемешку с дотерским ` +
+  `(«катка», «мид», «вардить», «руинить», «фидер»). Звучи как школьник из 2020-х, ` +
+  `который ведёт урок с максимально серьёзным лицом.\n` +
+  `- Эмодзи обязательны, 2-4 штуки на урок: 💀🔥📝📈🧠🤡😭 и подобные — как акценты, ` +
+  `не после каждого слова.\n` +
   `- Если даны последние сообщения чата — ОБЫГРАЙ их: вплети тему, слова или движ из ` +
   `разговора в урок, чтобы класс узнал себя. Если сообщений нет или они скучные — ` +
   `просто выдай урок в духе примеров.\n` +
@@ -57,35 +67,50 @@ export interface LessonContextLine {
 }
 
 /**
- * Generate the post-ping lesson with the main model, riffing on the chat's
- * recent messages. Best-effort: any failure (no key, API error, empty output)
- * returns null and the caller falls back to {@link pingLessonPhrase} — the
- * lesson may never delay or break the ping flow beyond one bounded call.
- * Any stray @ in the output is defanged so the lesson can't ping anyone.
+ * Generate the post-ping lesson via OpenAI, riffing on the chat's recent
+ * messages. Mirrors humorize.ts: plain fetch against the configurable OpenAI
+ * base URL, the humorizer's model and reasoning/timeout knobs. Best-effort:
+ * any failure (no key, API error, timeout, empty output) returns null and the
+ * caller falls back to {@link pingLessonPhrase} — the lesson may never delay
+ * or break the ping flow beyond one bounded call. Any stray @ in the output is
+ * defanged so the lesson can't ping anyone.
  */
 export async function generatePingLesson(
   recent: LessonContextLine[],
 ): Promise<string | null> {
   const cfg = loadConfig();
+  if (!cfg.OPENAI_API_KEY) return null; // not configured → canned fallback
   const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
   const userContent = lines
     ? `Последние сообщения чата:\n${lines}`
     : 'В чате тихо, свежих сообщений нет — урок без привязки.';
   try {
-    const res = await getAnthropic().messages.create({
-      model: cfg.ANTHROPIC_MODEL,
-      max_tokens: 300,
-      // Keep the same snappy no-thinking behaviour as the main assistant call —
-      // on Sonnet 5 adaptive thinking would turn ON if `thinking` were omitted.
-      thinking: { type: 'disabled' },
-      system: [{ type: 'text', text: LESSON_SYSTEM, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: userContent }],
+    const res = await fetch(`${cfg.OPENAI_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.OPENAI_API_KEY}`,
+      },
+      // Same minimal payload shape as the humorizer (model compatibility) —
+      // reasoning_effort keeps gpt-5-family models from slow-thinking over a bit.
+      body: JSON.stringify({
+        model: cfg.OPENAI_HUMOR_MODEL,
+        ...reasoningField(),
+        messages: [
+          { role: 'system', content: LESSON_SYSTEM },
+          { role: 'user', content: userContent },
+        ],
+      }),
+      signal: humorTimeoutSignal(),
     });
-    const text = res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-      .trim();
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`lesson generation failed: ${res.status} ${detail}`.trim());
+    }
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const text = data.choices?.[0]?.message?.content?.trim();
     if (!text) return null;
     // Belt and braces: the prompt forbids @mentions, but a stray one would ping.
     return text.replace(/@/g, '@\u200b');

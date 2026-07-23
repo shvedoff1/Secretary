@@ -112,7 +112,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   non-reasoning models. Both calls are also bounded by `OPENAI_HUMOR_TIMEOUT_MS` (default
   20s); the shared knobs live in `src/llm/openaiOptions.ts`.
 - Access control: default-deny `authGate` (`src/bot/middleware/auth.ts`) — only approved
-  users pass (configured groups are exempt). The admin manages the whitelist from the DM:
+  users pass. Two whole-chat exemptions: a Splid-connected group, and a chat the admin
+  explicitly TRUSTED (`chat_settings.trusted`). Trust is granted by picking a mode from
+  the "bot was added" DM notification (`src/bot/handlers/onBotMembership.ts` — a
+  `my_chat_member` handler registered BEFORE the gate, so the join event from an
+  unapproved adder still reaches the admin; buttons `m:*` set mode+trust and greet the
+  chat in persona) or by `/mode` (setting a mode trusts the chat), and is managed with
+  `/trust <chatId> on|off`. Removal of the bot from a chat auto-revokes trust. The admin
+  manages the per-user whitelist from the DM:
   `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.
@@ -132,9 +139,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   The ping is NOT an LLM call (must fire instantly/reliably): a canned schoolkid-sensei
   opener plus plain-text @usernames (which is what actually notifies in Telegram),
   followed by a SECOND message — an absurd "lesson" GENERATED per ping
-  (`src/llm/pingLesson.ts`: main model, recent chatter from the chime's ring buffer as
-  context, the canned `PING_LESSONS` pool embedded in the prompt as tone references and
-  used as the deterministic fallback; output is @-defanged). Rosters can
+  (`src/llm/pingLesson.ts`: OPENAI, deliberately — livelier voice, accuracy irrelevant;
+  the humorizer's model/knobs via plain fetch, recent chatter from the chime's ring
+  buffer as context, the canned `PING_LESSONS` pool embedded in the prompt as tone
+  references and used as the deterministic fallback (also when no OpenAI key); output
+  is @-defanged). Rosters can
   also be edited in plain words («добавь @vasya в основной пинг», multiple at once) via
   the `edit_ping_list` tool (any non-tutor chat, off for scheduled runs; its handler
   strips @ from confirmations so the model's reply can't re-ping people). The command

@@ -46,3 +46,27 @@ export function setChatMode(chatId: number, mode: ChatMode): void {
     )
     .run(chatId, mode);
 }
+
+/**
+ * Admin-granted trust for a whole chat: participants of a trusted chat pass the
+ * default-deny auth gate without personal whitelist entries — the same standing
+ * a Splid-connected group gets. Granted when the admin explicitly configures the
+ * chat (picks a mode from the "bot was added" DM, or runs /mode); revocable.
+ */
+export function isChatTrusted(chatId: number): boolean {
+  const row = getDb()
+    .prepare('SELECT trusted FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { trusted: number | null } | undefined;
+  return !!row?.trusted;
+}
+
+export function setChatTrusted(chatId: number, trusted: boolean): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, trusted, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         trusted = excluded.trusted, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, trusted ? 1 : 0);
+}

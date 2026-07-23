@@ -1,7 +1,6 @@
-import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
-import { getAnthropic } from './client.js';
+import { reasoningField, humorTimeoutSignal } from './openaiOptions.js';
 
 /**
  * The nonsense "lesson" that follows the /ping roll call as a separate message.
@@ -9,6 +8,11 @@ import { getAnthropic } from './client.js';
  * about; the canned pool below serves as tone references inside the prompt AND
  * as the deterministic fallback when the model is unavailable — the roll call
  * must never lose its punchline to an API error.
+ *
+ * Generation runs on OPENAI (the humorizer's model/knobs, plain fetch like
+ * humorize.ts/transcribe.ts) — deliberately, per the admin's call: the lesson
+ * is pure vibes, accuracy doesn't matter, and the OpenAI voice is livelier for
+ * this bit. No OPENAI_API_KEY → straight to the canned fallback.
  */
 export const PING_LESSONS: readonly string[] = [
   'Урок №1, записываем 📝 Если мид проигран — это не ты слил, это крипы предали, внатуре 💀 Сигма-мидер не тильтует, он молча собирает статистику предательств. Кто не законспектировал — тому скилл ишью в дневник.',
@@ -63,36 +67,50 @@ export interface LessonContextLine {
 }
 
 /**
- * Generate the post-ping lesson with the main model, riffing on the chat's
- * recent messages. Best-effort: any failure (no key, API error, empty output)
- * returns null and the caller falls back to {@link pingLessonPhrase} — the
- * lesson may never delay or break the ping flow beyond one bounded call.
- * Any stray @ in the output is defanged so the lesson can't ping anyone.
+ * Generate the post-ping lesson via OpenAI, riffing on the chat's recent
+ * messages. Mirrors humorize.ts: plain fetch against the configurable OpenAI
+ * base URL, the humorizer's model and reasoning/timeout knobs. Best-effort:
+ * any failure (no key, API error, timeout, empty output) returns null and the
+ * caller falls back to {@link pingLessonPhrase} — the lesson may never delay
+ * or break the ping flow beyond one bounded call. Any stray @ in the output is
+ * defanged so the lesson can't ping anyone.
  */
 export async function generatePingLesson(
   recent: LessonContextLine[],
 ): Promise<string | null> {
   const cfg = loadConfig();
+  if (!cfg.OPENAI_API_KEY) return null; // not configured → canned fallback
   const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
   const userContent = lines
     ? `Последние сообщения чата:\n${lines}`
     : 'В чате тихо, свежих сообщений нет — урок без привязки.';
   try {
-    const res = await getAnthropic().messages.create({
-      model: cfg.ANTHROPIC_MODEL,
-      // 3-4 sentences with emoji — roomier than the old one-liner budget.
-      max_tokens: 512,
-      // Keep the same snappy no-thinking behaviour as the main assistant call —
-      // on Sonnet 5 adaptive thinking would turn ON if `thinking` were omitted.
-      thinking: { type: 'disabled' },
-      system: [{ type: 'text', text: LESSON_SYSTEM, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: userContent }],
+    const res = await fetch(`${cfg.OPENAI_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.OPENAI_API_KEY}`,
+      },
+      // Same minimal payload shape as the humorizer (model compatibility) —
+      // reasoning_effort keeps gpt-5-family models from slow-thinking over a bit.
+      body: JSON.stringify({
+        model: cfg.OPENAI_HUMOR_MODEL,
+        ...reasoningField(),
+        messages: [
+          { role: 'system', content: LESSON_SYSTEM },
+          { role: 'user', content: userContent },
+        ],
+      }),
+      signal: humorTimeoutSignal(),
     });
-    const text = res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-      .trim();
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`lesson generation failed: ${res.status} ${detail}`.trim());
+    }
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const text = data.choices?.[0]?.message?.content?.trim();
     if (!text) return null;
     // Belt and braces: the prompt forbids @mentions, but a stray one would ping.
     return text.replace(/@/g, '@\u200b');

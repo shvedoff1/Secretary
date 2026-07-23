@@ -197,6 +197,37 @@ describe('TUTOR_SYSTEM_PROMPT', () => {
   });
 });
 
+// Dota mode is secretary-with-a-different-persona: the prompt must carry the
+// schoolkid-sensei character AND keep every secretary capability (it is built on
+// top of SYSTEM_PROMPT, so tools/memory/expense guidance all survive).
+describe('DOTA_SYSTEM_PROMPT', () => {
+  it('keeps the full secretary prompt as its base', async () => {
+    const { DOTA_SYSTEM_PROMPT, SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(DOTA_SYSTEM_PROMPT.startsWith(SYSTEM_PROMPT)).toBe(true);
+  });
+
+  it('sets the schoolkid-turned-dota-teacher persona', async () => {
+    const { DOTA_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(DOTA_SYSTEM_PROMPT).toContain('ШКОЛЬНИК');
+    expect(DOTA_SYSTEM_PROMPT).toContain('УЧИТЕЛЕМ');
+    expect(DOTA_SYSTEM_PROMPT).toContain('Dota 2');
+  });
+
+  it('swaps the surfer slang out for dota slang', async () => {
+    const { DOTA_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(DOTA_SYSTEM_PROMPT).toContain('вардить');
+    // The persona override explicitly bans the surfer vocabulary.
+    expect(DOTA_SYSTEM_PROMPT).toMatch(/«чилл», «вайб»[\s\S]*?НЕ используешь/);
+  });
+
+  it('points party-gathering requests at the /dota command instead of @-tags', async () => {
+    const { DOTA_SYSTEM_PROMPT } = await import('../src/llm/prompts.js');
+    expect(DOTA_SYSTEM_PROMPT).toContain('/dota');
+    expect(DOTA_SYSTEM_PROMPT).toContain('/dota add');
+    expect(DOTA_SYSTEM_PROMPT).toMatch(/никого не @-тегаешь/);
+  });
+});
+
 describe('buildTutorContextBlock', () => {
   it('keeps time/timezone/sender/memory and drops the Splid-flavoured lines', async () => {
     const { buildTutorContextBlock } = await import('../src/llm/prompts.js');

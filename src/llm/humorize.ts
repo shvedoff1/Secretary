@@ -42,6 +42,46 @@ Keep it real (HARD rules — the bit must NOT break them):
 
 Length: keep it punchy. You can stretch a little for the joke, but don't turn a one-liner into an essay.`;
 
+// Same heavy-rewrite contract, different character: the dota-mode chat is voiced
+// by a schoolkid who fancies himself a Dota 2 teacher, so the tone pass must
+// speak THAT persona instead of the surfer (otherwise OpenAI would wash the
+// dota voice back into surfer slang).
+const DOTA_HUMOR_SYSTEM_PROMPT = `You are the voice of a Telegram bot, cranked all the way up. Your job is to TRANSFORM the bot's reply into a wild, in-character rewrite: a cocky SCHOOLKID who is convinced he is a great Dota 2 teacher/coach — condescending in a funny way, lecturing everyone like a sensei at the blackboard, dropping Dota slang everywhere.
+
+This is a REWRITE, not a touch-up. Rework it hard — do not just tack a word onto the front and hand the rest back unchanged:
+- Rebuild the sentences from scratch: change their order, split or merge them, swap the phrasing and rhythm. Do NOT reuse whole phrases or sentences from the input verbatim — the only things copied exactly are the locked facts listed below.
+- Riff: add a dumb joke, a patronizing "lesson", some wordplay or a smug aside that wasn't in the original.
+- React out loud ("ахаха", "хех", "лол", "ну ты даёшь"; EN: "haha", "lmao").
+- The result MUST read clearly DIFFERENT from the input at a glance. If a line would come out nearly identical to the input, you haven't rewritten it — redo it harder.
+
+Character & voice:
+- Schoolkid-turned-Dota-sensei energy: «так, слушай сюда», «записывай», «это же база», «я вас всему научу», «без меня бы вы и крипа не добили».
+- Sprinkle Dota slang naturally: «катка», «мид», «ганк», «вардить», «тимфайт», «пуш», «смок», «руинить», «изи», «гг» (EN: "ez", "gg", "mid or feed"). Don't cram in every one — keep it readable.
+- Condescending but good-natured — the joke is that he takes himself SO seriously.
+- Light emoji welcome (🎮😎🤓), don't spam them.
+
+Example of the energy — note the TOTAL rework, only the fact «18:00» survives untouched:
+  IN:  Готово, напоминание на 18:00 создано.
+  OUT: так, записывай, поставил тебе напоминалку на 18:00 — это база, без меня бы ты и катку не начал вовремя, ахаха 🎮
+
+Keep it real (HARD rules — the bit must NOT break them):
+- Every FACT stays EXACTLY: numbers, amounts, dates, times, names, @usernames, URLs/links and any code — character-for-character. Never invent "jokey" facts or data, and never drop info that mattered.
+- Keep the SAME language as the input (Russian or English).
+- Preserve Markdown/links/formatting.
+- Output ONLY the rewritten reply — no quotes, no preamble, no notes about what you changed.
+
+Length: keep it punchy. You can stretch a little for the joke, but don't turn a one-liner into an essay.`;
+
+/**
+ * Which character the tone pass speaks: the default stoned surfer, or the
+ * dota-mode schoolkid-sensei. Callers derive it from the chat's mode.
+ */
+export type HumorPersona = 'surfer' | 'dota';
+
+function personaPrompt(persona?: HumorPersona): string {
+  return persona === 'dota' ? DOTA_HUMOR_SYSTEM_PROMPT : HUMOR_SYSTEM_PROMPT;
+}
+
 /** A slang/distorted word this chat uses, as fed to the humorizer. */
 export interface HumorLexiconTerm {
   term: string;
@@ -55,14 +95,18 @@ export interface HumorLexiconTerm {
  * OpenAI tone-pass is where the chat's voice gets applied. Empty/absent lexicon
  * → the plain prompt unchanged, so nothing shows up for a fresh chat.
  */
-export function buildHumorSystemPrompt(lexicon?: HumorLexiconTerm[]): string {
+export function buildHumorSystemPrompt(
+  lexicon?: HumorLexiconTerm[],
+  persona?: HumorPersona,
+): string {
+  const base = personaPrompt(persona);
   const terms = (lexicon ?? []).filter((t) => t.term.trim());
-  if (terms.length === 0) return HUMOR_SYSTEM_PROMPT;
+  if (terms.length === 0) return base;
   const lines = terms.map(({ term, gloss }) =>
     gloss && gloss.trim() ? `- «${term}» — ${gloss}` : `- «${term}»`,
   );
   return (
-    HUMOR_SYSTEM_PROMPT +
+    base +
     `\n\nChat lexicon — slang and distorted word-forms THIS group actually uses. ` +
     `Weave them in naturally where they fit (don't cram in every one), so the bit ` +
     `sounds like one of the crew. Still obey every HARD rule above — the lexicon ` +
@@ -103,13 +147,17 @@ export function classifyHumorDecision(opts: {
  * configurable OpenAI base URL. Throws if not configured or the request fails —
  * callers that want a safe fallback should use {@link humorizeOrOriginal}.
  */
-export async function humorize(text: string, lexicon?: HumorLexiconTerm[]): Promise<string> {
+export async function humorize(
+  text: string,
+  lexicon?: HumorLexiconTerm[],
+  persona?: HumorPersona,
+): Promise<string> {
   const cfg = loadConfig();
   if (!cfg.OPENAI_API_KEY) {
     throw new Error('humor not configured (OPENAI_API_KEY unset)');
   }
 
-  const system = buildHumorSystemPrompt(lexicon);
+  const system = buildHumorSystemPrompt(lexicon, persona);
 
   // Observability: log EXACTLY which slang was appended to the OpenAI system
   // prompt, so "какой сленг ушёл в openai" is visible in the logs / diagnose dump
@@ -173,10 +221,11 @@ export async function humorize(text: string, lexicon?: HumorLexiconTerm[]): Prom
 export async function humorizeOrOriginal(
   text: string,
   lexicon?: HumorLexiconTerm[],
+  persona?: HumorPersona,
 ): Promise<string> {
   if (!isHumorEnabled()) return text;
   try {
-    return await humorize(text, lexicon);
+    return await humorize(text, lexicon, persona);
   } catch (err) {
     logger.warn({ err }, 'humorize failed, using original text');
     return text;
@@ -193,6 +242,7 @@ export async function humorizeWithPreview(
   text: string,
   sendOriginal: (original: string) => Promise<void>,
   lexicon?: HumorLexiconTerm[],
+  persona?: HumorPersona,
 ): Promise<string> {
   if (!isHumorEnabled()) return text;
   try {
@@ -200,5 +250,5 @@ export async function humorizeWithPreview(
   } catch (err) {
     logger.warn({ err }, 'failed to send humor preview');
   }
-  return humorizeOrOriginal(text, lexicon);
+  return humorizeOrOriginal(text, lexicon, persona);
 }

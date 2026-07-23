@@ -2,7 +2,7 @@ import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getProvider } from '../core/registry.js';
 import { getChatConfig } from '../db/repos/chatConfig.repo.js';
-import { getTimezone } from '../db/repos/chatSettings.repo.js';
+import { getTimezone, getChatMode } from '../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../db/repos/lexicon.repo.js';
 import { humorizeOrOriginal } from '../llm/humorize.js';
 import type { SpendingReportInput } from '../llm/schema.js';
@@ -73,7 +73,12 @@ export function makeSpendingReportHandler(
         term: e.term,
         gloss: e.gloss,
       }));
-      return humorizeOrOriginal(sections.join('\n\n'), lexicon);
+      return humorizeOrOriginal(
+        sections.join('\n\n'),
+        lexicon,
+        // The digest speaks the chat's persona (dota → schoolkid-sensei rewrite).
+        getChatMode(chatId) === 'dota' ? 'dota' : 'surfer',
+      );
     } catch (err) {
       logger.error({ err, chatId }, 'spending_report failed');
       return 'Не удалось собрать отчёт — Splid не ответил. Попробуйте чуть позже.';

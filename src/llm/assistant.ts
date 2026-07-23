@@ -5,6 +5,7 @@ import { getAnthropic } from './client.js';
 import {
   SYSTEM_PROMPT,
   TUTOR_SYSTEM_PROMPT,
+  DOTA_SYSTEM_PROMPT,
   buildContextBlock,
   buildTutorContextBlock,
 } from './prompts.js';
@@ -49,7 +50,9 @@ export interface AssistantContext {
    * Chat persona. 'secretary' (default) is the usual chill assistant with the full
    * toolset. 'tutor' is the accuracy-first exam-prep tutor: strict prompt, no
    * expense/surf/poi/slang tools (memory, reminders and web search stay), adaptive
-   * thinking with a bigger token budget, and replies are never humorized.
+   * thinking with a bigger token budget, and replies are never humorized. 'dota'
+   * behaves exactly like secretary (full toolset, humorizable replies) but speaks
+   * as the schoolkid-turned-Dota-teacher persona.
    */
   mode?: ChatMode;
   defaultCurrency: string;
@@ -249,7 +252,14 @@ export async function runAssistant(
       system: [
         {
           type: 'text',
-          text: tutor ? TUTOR_SYSTEM_PROMPT : SYSTEM_PROMPT,
+          // Dota mode is secretary-with-a-different-persona: same context block,
+          // same tools, same thinking/token budget — only the system prompt (and
+          // hence its own cache prefix) differs.
+          text: tutor
+            ? TUTOR_SYSTEM_PROMPT
+            : ctx.mode === 'dota'
+              ? DOTA_SYSTEM_PROMPT
+              : SYSTEM_PROMPT,
           cache_control: { type: 'ephemeral' },
         },
       ],

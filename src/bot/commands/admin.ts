@@ -142,7 +142,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
     [
       `Чат: ${cfg?.title ?? '(без названия)'}`,
       `id: ${id}`,
-      `режим: ${MODE_LABEL[getChatMode(id)]} (сменить: /mode ${id} tutor|secretary)`,
+      `режим: ${MODE_LABEL[getChatMode(id)]} (сменить: /mode ${id} tutor|secretary|dota)`,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
@@ -210,13 +210,15 @@ export async function cmdSetCurrency(ctx: Context): Promise<void> {
 const MODE_LABEL: Record<ChatMode, string> = {
   secretary: '🤙 секретарь (обычный ассистент)',
   tutor: '🎓 репетитор (подготовка к экзаменам, точность, без юмора)',
+  dota: '🎮 дота (пинг пати через /dota, школьник-«сенсей» по Dota 2)',
 };
 
 /**
- * `/mode <chatId>` shows the chat's persona; `/mode <chatId> tutor|secretary`
+ * `/mode <chatId>` shows the chat's persona; `/mode <chatId> tutor|secretary|dota`
  * switches it. For a personal chat the chatId is just the person's telegram id —
  * so `/mode <kid_tg_id> tutor` turns the kid's DM with the bot into a strict
- * exam-prep tutor.
+ * exam-prep tutor, and `/mode <group_id> dota` turns a group into the dota
+ * ping-bot (full secretary feature set, dota-teacher persona).
  */
 export async function cmdMode(ctx: Context): Promise<void> {
   if (!(await ensureAdminDM(ctx))) return;
@@ -224,7 +226,7 @@ export async function cmdMode(ctx: Context): Promise<void> {
   const id = parseChatId(idTok);
   if (id === null) {
     await ctx.reply(
-      'Использование: /mode <chatId> [tutor|secretary]\n' +
+      'Использование: /mode <chatId> [tutor|secretary|dota]\n' +
         'Для лички chatId = telegram id человека (см. /whitelist).',
     );
     return;
@@ -234,8 +236,8 @@ export async function cmdMode(ctx: Context): Promise<void> {
     await ctx.reply(`Режим чата ${id}: ${MODE_LABEL[getChatMode(id)]}`);
     return;
   }
-  if (want !== 'tutor' && want !== 'secretary') {
-    await ctx.reply('Режим бывает только tutor или secretary.');
+  if (want !== 'tutor' && want !== 'secretary' && want !== 'dota') {
+    await ctx.reply('Режим бывает только tutor, secretary или dota.');
     return;
   }
   setChatMode(id, want);

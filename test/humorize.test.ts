@@ -277,6 +277,30 @@ describe('buildHumorSystemPrompt', () => {
     expect(base).toContain('character-for-character');
   });
 
+  it('speaks the dota persona when asked, with the same hard fact rules', async () => {
+    setEnv({});
+    const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');
+    const dota = buildHumorSystemPrompt(undefined, 'dota');
+    // The character swaps to the schoolkid-dota-sensei…
+    expect(dota).toContain('Dota 2');
+    expect(dota).toContain('SCHOOLKID');
+    expect(dota).not.toContain('surfer bro');
+    // …but the rewrite contract and fact locks stay identical in spirit.
+    expect(dota).toContain('REWRITE');
+    expect(dota).toContain('character-for-character');
+    // Explicit 'surfer' and the default are the same prompt.
+    expect(buildHumorSystemPrompt(undefined, 'surfer')).toBe(buildHumorSystemPrompt());
+  });
+
+  it('appends the slang list to the dota persona too', async () => {
+    setEnv({});
+    const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');
+    const out = buildHumorSystemPrompt([{ term: 'пихалыч', gloss: 'рот' }], 'dota');
+    expect(out).toContain('SCHOOLKID');
+    expect(out).toContain('Chat lexicon');
+    expect(out).toContain('«пихалыч» — рот');
+  });
+
   it('appends the slang list, respecting glosses', async () => {
     setEnv({});
     const { buildHumorSystemPrompt } = await import('../src/llm/humorize.js');

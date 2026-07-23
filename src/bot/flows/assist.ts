@@ -385,11 +385,12 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
   });
 
+  const mode = getChatMode(chatId);
   let result: AssistantResult;
   try {
     result = await runAssistant(
       {
-        mode: getChatMode(chatId),
+        mode,
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat: memorySel.chat.map((i) => ({ content: i.content })),
@@ -517,6 +518,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
         },
         getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({ term: e.term, gloss: e.gloss })),
+        // The tone pass must speak the chat's persona: a dota chat gets the
+        // schoolkid-sensei rewrite, not the surfer one.
+        mode === 'dota' ? 'dota' : 'surfer',
       )
     : result.text;
 

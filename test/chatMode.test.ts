@@ -43,6 +43,14 @@ describe('chat mode setting', () => {
     expect(repo.getChatMode(1)).toBe('tutor');
   });
 
+  it('round-trips dota mode and back', async () => {
+    const repo = await freshRepo();
+    repo.setChatMode(1, 'dota');
+    expect(repo.getChatMode(1)).toBe('dota');
+    repo.setChatMode(1, 'secretary');
+    expect(repo.getChatMode(1)).toBe('secretary');
+  });
+
   it('is per chat', async () => {
     const repo = await freshRepo();
     repo.setChatMode(7, 'tutor');

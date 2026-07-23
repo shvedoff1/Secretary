@@ -110,11 +110,14 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       }
     }
 
+    // A task fired in a tutor chat keeps the tutor persona (and its no-humor,
+    // reduced-tools behaviour) — e.g. a daily "порешай со мной задачи" ping.
+    // Likewise a dota chat's tasks keep the dota-sensei persona.
+    const mode = getChatMode(task.chatId);
+
     const result = await runAssistant(
       {
-        // A task fired in a tutor chat keeps the tutor persona (and its no-humor,
-        // reduced-tools behaviour) — e.g. a daily "порешай со мной задачи" ping.
-        mode: getChatMode(task.chatId),
+        mode,
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,
@@ -174,6 +177,8 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
                 term: e.term,
                 gloss: e.gloss,
               })),
+              // Speak the chat's persona in the rewrite too (dota → sensei).
+              mode === 'dota' ? 'dota' : 'surfer',
             )
           : result.text;
       const prefix = task.title ? `⏰ ${task.title}\n` : '';

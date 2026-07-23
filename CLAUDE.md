@@ -116,7 +116,20 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.
-- Chat modes (`chat_settings.mode`, admin `/mode <chatId> tutor|secretary`): `tutor` flips
+- Chat modes (`chat_settings.mode`, admin `/mode <chatId> tutor|secretary|dota`): `dota`
+  keeps the FULL secretary feature set (memory, humor, slang, chime, reminders, tools) but
+  swaps the persona for a schoolkid who fancies himself a Dota 2 teacher —
+  `DOTA_SYSTEM_PROMPT` is a static persona-override suffix on top of `SYSTEM_PROMPT`
+  (so behaviour rules are shared and the string stays prompt-cacheable), the OpenAI
+  humorizer gets a matching `persona: 'dota'` variant (schoolkid-sensei rewrite instead of
+  the surfer), and the chime in a dota chat is told to weave ONE concrete Dota tactic into
+  its revive quip (see `fireChime`). The mode also ships the deterministic `/dota` roll
+  call: named per-chat ping lists (`ping_list_entry`, `src/db/repos/pingList.repo.ts`) —
+  `/dota` pings the default «dota» list, `/dota <список>` a named one, edited via
+  `/dota add|del [список] @ник …`, `/dota lists`, `/dota clear [список]`. The ping is
+  NOT an LLM call (must fire instantly/reliably): a canned schoolkid-sensei opener plus
+  plain-text @usernames (which is what actually notifies in Telegram). The command works
+  in any chat regardless of mode; the mode drives only persona/chime/humor. `tutor` flips
   a chat (typically a kid's DM; its chatId = their tg id) into an accuracy-first exam-prep
   tutor for 9th grade (ОГЭ) — `TUTOR_SYSTEM_PROMPT` + minimal context block in
   `src/llm/prompts.ts`, adaptive thinking with an 8192-token budget (the one place

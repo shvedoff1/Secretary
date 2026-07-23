@@ -66,6 +66,10 @@ describe('generatePingLesson', () => {
     // A couple of the canned lessons must be present verbatim as examples.
     expect(system).toContain(mod.PING_LESSONS[0]!);
     expect(system).toContain(mod.PING_LESSONS[mod.PING_LESSONS.length - 1]!);
+    // The beefed-up format: a 3-4 sentence lesson with zoomer slang and emoji.
+    expect(system).toContain('3-4 предложения');
+    expect(system).toContain('Эмодзи');
+    expect(system).toContain('скилл ишью');
   });
 
   it('tells the model the chat is quiet when there is no recent chatter', async () => {

@@ -131,7 +131,10 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   mentions (`defangMention`) so nobody gets notified (lists output is defanged too).
   The ping is NOT an LLM call (must fire instantly/reliably): a canned schoolkid-sensei
   opener plus plain-text @usernames (which is what actually notifies in Telegram),
-  followed by a SECOND message — a random absurd "lesson" (`PING_LESSONS`). Rosters can
+  followed by a SECOND message — an absurd "lesson" GENERATED per ping
+  (`src/llm/pingLesson.ts`: main model, recent chatter from the chime's ring buffer as
+  context, the canned `PING_LESSONS` pool embedded in the prompt as tone references and
+  used as the deterministic fallback; output is @-defanged). Rosters can
   also be edited in plain words («добавь @vasya в основной пинг», multiple at once) via
   the `edit_ping_list` tool (any non-tutor chat, off for scheduled runs; its handler
   strips @ from confirmations so the model's reply can't re-ping people). The command

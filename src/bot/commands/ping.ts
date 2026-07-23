@@ -7,6 +7,12 @@ import {
   listPingLists,
   clearPingList,
 } from '../../db/repos/pingList.repo.js';
+import { generatePingLesson, pingLessonPhrase } from '../../llm/pingLesson.js';
+import { getRecentChat } from '../recentChat.js';
+
+// Re-exported for convenience/tests: the canned pool lives in llm/pingLesson.ts
+// (it doubles as the prompt's tone references there).
+export { PING_LESSONS, pingLessonPhrase } from '../../llm/pingLesson.js';
 
 /**
  * `/ping` — the roll call. Pings a named circle of people from the chat:
@@ -24,7 +30,9 @@ import {
  * The ping itself is DETERMINISTIC (no LLM): a ping must fire instantly and
  * reliably, so the persona flavor comes from a canned call-to-arms phrase, and
  * plain-text @usernames do the actual notifying. Right after the roll call a
- * SECOND message drops a nonsense "lesson" from the schoolkid-sensei.
+ * SECOND message drops a nonsense "lesson" from the schoolkid-sensei — that one
+ * IS generated (riffing on the chat's recent messages, with the canned pool as
+ * tone references), falling back to a canned lesson if the model is unavailable.
  */
 
 // Call-to-arms openers in the schoolkid-dota-teacher voice. One is picked at
@@ -38,29 +46,8 @@ export const PING_CALLS: readonly string[] = [
   'Погнали катать! Кто не придёт — тому конспект по вардам переписывать:',
 ];
 
-// The nonsense "lesson" that follows the roll call as a separate message —
-// absurd dota wisdom delivered dead-serious by the self-appointed sensei.
-export const PING_LESSONS: readonly string[] = [
-  'Урок №1: если мид проигран — это не ты слил, это крипы предали. Записываем.',
-  'Конспектируем: вард, поставленный с закрытыми глазами, даёт скрытый обзор. Проверено мной, а я учитель.',
-  'Тема урока: тащить катку силой мысли. Кто не тащит — тот просто недостаточно думает.',
-  'Запомните, дети: курьера убивать нельзя. Но если очень хочется — это называется «макро».',
-  'Лекция: байт на смерть — это стратегия. Просто смерть — тоже байт, но более глубокий.',
-  'Урок геометрии: хук Пуджа летит по прямой, если верить. Вера — главный стат после силы.',
-  'Записываем в тетрадь: если купить вард и не поставить — обзор копится на депозите. Экономика, 5 класс.',
-  'Тема: как не тильтовать. Ответ: тильтуй первым, пока не начали остальные. Инициатива — половина победы.',
-  'Помните: Рошан — это не цель, это состояние души. Кто понял — тому пятёрка в четверти.',
-  'Домашнее задание: проиграть лайн настолько уверенно, чтобы враг решил, что это план.',
-  'Минутка теории: пауза в игре лечит. Не тиммейтов, конечно, но нервы — точно.',
-  'Открытый урок: «гг» пишется в конце. Кто пишет в начале — останется после уроков смотреть свои реплеи.',
-];
-
 export function pingCallPhrase(rand: () => number = Math.random): string {
   return PING_CALLS[Math.floor(rand() * PING_CALLS.length)]!;
-}
-
-export function pingLessonPhrase(rand: () => number = Math.random): string {
-  return PING_LESSONS[Math.floor(rand() * PING_LESSONS.length)]!;
 }
 
 /**
@@ -204,9 +191,17 @@ export async function cmdPing(ctx: Context): Promise<void> {
   // Plain text so Telegram turns @usernames into real pings.
   await ctx.reply(`${pingCallPhrase()}\n${members.join(' ')}`);
   // The follow-up "lesson" is a separate message so the ping stays clean and the
-  // joke lands on its own. Best-effort: a failed second send must not undo the ping.
+  // joke lands on its own. It's generated off the chat's recent chatter (the same
+  // in-memory buffer the chime uses); a canned lesson covers any model failure.
+  // Best-effort throughout: a failed second send must not undo the ping.
+  let lesson: string | null = null;
   try {
-    await ctx.reply(pingLessonPhrase());
+    lesson = await generatePingLesson(getRecentChat(chatId));
+  } catch {
+    lesson = null; // generator failures fall back to the canned pool below
+  }
+  try {
+    await ctx.reply(lesson ?? pingLessonPhrase());
   } catch {
     /* the ping already went out — the lesson is a bonus */
   }

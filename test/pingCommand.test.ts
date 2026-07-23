@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Context } from 'grammy';
 
+// The post-ping lesson is LLM-generated in production; here the generator is
+// mocked (default: null → canned fallback) so the command tests stay offline.
+const lessonMock = vi.fn(async (_recent: { name: string; text: string }[]) => null as string | null);
+vi.mock('../src/llm/pingLesson.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/llm/pingLesson.js')>();
+  return { ...actual, generatePingLesson: lessonMock };
+});
+
 type PingModule = typeof import('../src/bot/commands/ping.js');
 
 async function load(): Promise<PingModule> {
@@ -19,6 +27,8 @@ afterEach(async () => {
   if (closeDb) closeDb();
 });
 beforeEach(async () => {
+  lessonMock.mockClear();
+  lessonMock.mockResolvedValue(null);
   ({ closeDb } = await import('../src/db/client.js'));
 });
 
@@ -63,9 +73,37 @@ describe('/ping command', () => {
     expect(call).toContain('@vasya @petya');
     expect(call).not.toContain(ZWSP);
     expect(ping.PING_CALLS.some((p) => call.startsWith(p))).toBe(true);
-    // The lesson is one of the canned absurd lessons and mentions nobody.
+    // Generator returned null (mock default) → the canned fallback lesson.
     expect(ping.PING_LESSONS).toContain(lesson);
     expect(lesson).not.toContain('@');
+  });
+
+  it('sends the GENERATED lesson when the model delivers, feeding it the recent chatter', async () => {
+    const ping = await load();
+    const { recordChatMessage } = await import('../src/bot/recentChat.js');
+    recordChatMessage(10, 'Вася', 'опять мид слили');
+    lessonMock.mockResolvedValue('Урок по свежей теме: мид не слит, он стратегически сдан в аренду.');
+
+    await ping.cmdPing(makeCtx('add @vasya').ctx);
+    const roll = makeCtx('');
+    await ping.cmdPing(roll.ctx);
+
+    expect(roll.replies[1]).toBe('Урок по свежей теме: мид не слит, он стратегически сдан в аренду.');
+    // The generator saw the chat's recent messages (the chime's ring buffer).
+    const recent = lessonMock.mock.calls.at(-1)![0];
+    expect(recent.some((r) => r.text.includes('опять мид слили'))).toBe(true);
+  });
+
+  it('falls back to a canned lesson when the generator itself throws', async () => {
+    const ping = await load();
+    lessonMock.mockRejectedValue(new Error('api down'));
+    await ping.cmdPing(makeCtx('add @vasya').ctx);
+    const roll = makeCtx('');
+    await ping.cmdPing(roll.ctx);
+    // The ping lands AND the lesson still arrives — from the canned pool.
+    expect(roll.replies[0]).toContain('@vasya');
+    expect(roll.replies).toHaveLength(2);
+    expect(ping.PING_LESSONS).toContain(roll.replies[1]);
   });
 
   it('supports multiple named lists: /ping <список> pings only that list', async () => {

@@ -109,6 +109,73 @@ describe('makeEditPingListHandler', () => {
     expect(repo.getMuteRules(1, '@vasya')[0]!.timezone).toBe('Asia/Makassar');
   });
 
+  it('mute with replace:false APPENDS a window to the existing schedule', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [1, 2, 3, 4, 5], from: '00:00', to: '19:00' }],
+      timezone: null,
+      replace: true,
+    });
+    const out = handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [6], from: '08:00', to: '12:00' }],
+      timezone: null,
+      replace: false,
+    });
+
+    const rules = repo.getMuteRules(1, '@vasya');
+    expect(rules).toHaveLength(2); // old weekday window survived
+    expect(out).toContain('Дополнил');
+    // The confirmation shows the RESULTING schedule, both windows.
+    expect(out).toContain('будни до 19:00');
+    expect(out).toContain('сб 8:00–12:00');
+  });
+
+  it('mute with replace:true rewrites the whole schedule', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [
+        { days: [1, 2, 3, 4, 5], from: '00:00', to: '19:00' },
+        { days: [7], from: '18:00', to: '21:00' },
+      ],
+      timezone: null,
+      replace: true,
+    });
+    const out = handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [1, 2, 3, 4, 5], from: '00:00', to: '18:00' }],
+      timezone: null,
+      replace: true,
+    });
+
+    const rules = repo.getMuteRules(1, '@vasya');
+    expect(rules).toHaveLength(1); // sunday window is gone — full restatement
+    expect(rules[0]!.toMin).toBe(18 * 60);
+    expect(out).toContain('Переписал');
+  });
+
+  it('an omitted replace flag defaults to append (never silently wipes rules), with dedup', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    const win = { days: [7], from: '18:00', to: '21:00' };
+    handler({ action: 'mute', list: null, members: ['@vasya'], mute: [win], timezone: null });
+    // Same ask again without the flag: nothing piles up, nothing is lost.
+    handler({ action: 'mute', list: null, members: ['@vasya'], mute: [win], timezone: null });
+    expect(repo.getMuteRules(1, '@vasya')).toHaveLength(1);
+  });
+
   it('unmute clears the windows and says so; unmuting a clean member is honest', async () => {
     const { assist, repo } = await load();
     const handler = assist.makeEditPingListHandler(1, 42);

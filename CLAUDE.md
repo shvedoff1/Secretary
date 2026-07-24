@@ -148,7 +148,10 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   the `edit_ping_list` tool (any non-tutor chat, off for scheduled runs; its handler
   strips @ from confirmations so the model's reply can't re-ping people). The same tool
   carries per-member QUIET HOURS («не тегай меня до 19:00 по будням» → action `mute`
-  with structured windows; `unmute` clears): rules live in `ping_mute_rule` (migration
+  with structured windows; `unmute` clears; the `replace` flag decides from phrasing
+  whether windows REPLACE the schedule (restatement/correction) or are APPENDED with
+  dedup («ещё не тегай в субботу»); absent → append, so a misread never wipes rules —
+  the confirmation always echoes the RESULTING full schedule): rules live in `ping_mute_rule` (migration
   016, keyed chat + normalized member, chat-wide across lists), evaluation is
   deterministic and tz-aware at /ping time (`src/util/pingMute.ts` `isMutedAt`, default
   tz Europe/Moscow), muted members are left out of the roll call with a defanged «🔕 не

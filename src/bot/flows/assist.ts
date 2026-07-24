@@ -49,6 +49,8 @@ import {
   removePingMembers,
   getPingList,
   setMuteRules,
+  addMuteRules,
+  getMuteRules,
   clearMuteRules,
 } from '../../db/repos/pingList.repo.js';
 import { parseHHMM, describeWindows, type MuteWindow } from '../../util/pingMute.js';
@@ -293,13 +295,16 @@ export function makeEditPingListHandler(
   chatId: number,
   tgUserId: number,
 ): (input: EditPingListInput) => string {
-  return ({ action, list, members, mute, timezone }) => {
+  return ({ action, list, members, mute, timezone, replace }) => {
     const name = list?.trim().toLowerCase() || DEFAULT_PING_LIST;
     const plain = (xs: string[]) => xs.map((m) => m.replace(/^@/, '')).join(', ');
     const pingCmd = name === DEFAULT_PING_LIST ? '/ping' : `/ping ${name}`;
 
-    // Personal quiet hours («не тегай меня до 19:00 по будням»). Windows REPLACE
-    // the member's previous ones; times default to Moscow per product decision.
+    // Personal quiet hours («не тегай меня до 19:00 по будням»). Whether the
+    // windows replace the member's schedule (a full restatement/correction) or
+    // extend it («ещё не тегай в субботу») is the model's call via `replace`;
+    // absent → append, because appending preserves data and replacing destroys
+    // it. Times default to Moscow per product decision.
     if (action === 'mute') {
       const windows = mute ?? [];
       if (windows.length === 0) {
@@ -315,8 +320,16 @@ export function makeEditPingListHandler(
         }
         parsed.push({ days: w.days, fromMin, toMin, timezone: tz });
       }
-      for (const m of members) setMuteRules(chatId, m, parsed);
-      return `Принял: ${plain(members)} — не тревожим ${describeWindows(parsed)}. В остальное время пингуется как все. Снять: скажи «можно снова тегать». Проверка: /ping show`;
+      const overwrite = replace === true;
+      for (const m of members) {
+        if (overwrite) setMuteRules(chatId, m, parsed);
+        else addMuteRules(chatId, m, parsed);
+      }
+      // Confirm with the member's RESULTING schedule (not just the delta), so
+      // append vs replace is transparent to the user either way.
+      const total = describeWindows(getMuteRules(chatId, members[0]!));
+      const verb = overwrite ? 'Переписал расписание' : 'Дополнил расписание';
+      return `${verb}: ${plain(members)} — теперь не тревожим ${total}. В остальное время пингуется как все. Снять всё: скажи «можно снова тегать». Проверка: /ping show`;
     }
     if (action === 'unmute') {
       const cleared = members.filter((m) => clearMuteRules(chatId, m) > 0);

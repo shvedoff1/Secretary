@@ -83,6 +83,11 @@ export const EditPingListZ = z.object({
   members: z.array(z.string().min(1)).min(1).max(20),
   mute: z.array(MuteWindowInputZ).min(1).nullable().optional(),
   timezone: z.string().min(1).nullable().optional(),
+  // For action=mute: true → the windows REPLACE the member's previous schedule
+  // (a full restatement: «теперь только…», a correction); false → they are
+  // ADDED on top («ещё не тегай в субботу утром»). Absent/null defaults to
+  // append — adding preserves data, replacing destroys it.
+  replace: z.boolean().nullable().optional(),
 });
 export type EditPingListInput = z.infer<typeof EditPingListZ>;
 
@@ -317,15 +322,20 @@ export const editPingListJsonSchema = {
         required: ['days', 'from', 'to'],
       },
       description:
-        'For action=mute: the DO-NOT-PING windows («не тегай до 19:00 по будням и с 18 до 21 в вс» => [{days:[1,2,3,4,5],from:"00:00",to:"19:00"},{days:[7],from:"18:00",to:"21:00"}]). These REPLACE the member\'s previous windows. null for other actions.',
+        'For action=mute: the DO-NOT-PING windows («не тегай до 19:00 по будням и с 18 до 21 в вс» => [{days:[1,2,3,4,5],from:"00:00",to:"19:00"},{days:[7],from:"18:00",to:"21:00"}]). Whether they replace or extend the existing schedule is decided by `replace`. null for other actions.',
     },
     timezone: {
       type: ['string', 'null'],
       description:
         'IANA timezone the windows are written in. «по московскому»/«по мск» => "Europe/Moscow". null => the default (Europe/Moscow).',
     },
+    replace: {
+      type: ['boolean', 'null'],
+      description:
+        'For action=mute — decide from the phrasing. true: the user RESTATES their whole schedule or corrects it («не тегай меня только до 18», «теперь так: …», «вместо этого», their FIRST ever rule) => the windows REPLACE everything stored. false: the user ADDS to an existing schedule («ещё не тегай в субботу утром», «а также…», «плюс в среду») => the windows are appended, old ones stay. When genuinely unsure use false — adding preserves their old rules, replacing destroys them. null for other actions.',
+    },
   },
-  required: ['action', 'list', 'members', 'mute', 'timezone'],
+  required: ['action', 'list', 'members', 'mute', 'timezone', 'replace'],
 } as const;
 
 export const addPoiJsonSchema = {

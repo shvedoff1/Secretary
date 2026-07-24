@@ -249,6 +249,14 @@ describe('SYSTEM_PROMPT ping-roster guidance', () => {
     expect(SYSTEM_PROMPT).toContain('Europe/Moscow');
     expect(SYSTEM_PROMPT).toMatch(/«меня»[\s\S]*?@username/);
   });
+
+  it('teaches append vs replace for quiet-hours edits, defaulting to the safe append', () => {
+    expect(SYSTEM_PROMPT).toContain('APPEND vs REPLACE');
+    // Additive phrasing keeps old windows; restatements rewrite; unsure → false.
+    expect(SYSTEM_PROMPT).toMatch(/ещё\s+не тегай в субботу/);
+    expect(SYSTEM_PROMPT).toContain('`replace`: true');
+    expect(SYSTEM_PROMPT).toMatch(/Unsure => false/);
+  });
 });
 
 describe('buildContextBlock sender username', () => {

@@ -177,6 +177,48 @@ export function setMuteRules(chatId: number, member: string, windows: MuteWindow
   run();
 }
 
+/**
+ * Append windows to a member's existing quiet hours («ещё не тегай в субботу
+ * утром») — old windows stay. Exact duplicates of a stored window (same days,
+ * range and timezone) are skipped so a repeated ask can't pile up copies.
+ * Returns how many windows were actually added.
+ */
+export function addMuteRules(chatId: number, member: string, windows: MuteWindow[]): number {
+  const db = getDb();
+  const key = muteKey(member);
+  let added = 0;
+  const run = db.transaction(() => {
+    const seen = new Set(
+      (
+        db
+          .prepare(
+            `SELECT dow_mask, from_min, to_min, timezone FROM ping_mute_rule
+             WHERE chat_id = ? AND member = ?`,
+          )
+          .all(chatId, key) as {
+          dow_mask: number;
+          from_min: number;
+          to_min: number;
+          timezone: string;
+        }[]
+      ).map((r) => `${r.dow_mask}|${r.from_min}|${r.to_min}|${r.timezone}`),
+    );
+    const ins = db.prepare(
+      `INSERT INTO ping_mute_rule (chat_id, member, dow_mask, from_min, to_min, timezone, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, unixepoch() * 1000)`,
+    );
+    for (const w of windows) {
+      const sig = `${dowMask(w.days)}|${w.fromMin}|${w.toMin}|${w.timezone}`;
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      ins.run(chatId, key, dowMask(w.days), w.fromMin, w.toMin, w.timezone);
+      added++;
+    }
+  });
+  run();
+  return added;
+}
+
 /** Drop a member's quiet hours. Returns how many windows were removed. */
 export function clearMuteRules(chatId: number, member: string): number {
   return getDb()

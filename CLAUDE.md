@@ -151,7 +151,12 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   with structured windows; `unmute` clears; the `replace` flag decides from phrasing
   whether windows REPLACE the schedule (restatement/correction) or are APPENDED with
   dedup («ещё не тегай в субботу»); absent → append, so a misread never wipes rules —
-  the confirmation always echoes the RESULTING full schedule): rules live in `ping_mute_rule` (migration
+  the confirmation always echoes the RESULTING full schedule) and mention fixes
+  («исправь меншн X на Y» → action `rename`/`renameTo` → `renamePingMember`: renamed in
+  every list, folded into an existing target without duping, quiet hours move along —
+  never remove+add). The prompt FORBIDS inventing @usernames (latin-only; a Cyrillic
+  «@Имя» is a fabrication that pings nobody): unknown ник → ask once and suggest the
+  person reply in the chat so their handle surfaces. Rules live in `ping_mute_rule` (migration
   016, keyed chat + normalized member, chat-wide across lists), evaluation is
   deterministic and tz-aware at /ping time (`src/util/pingMute.ts` `isMutedAt`, default
   tz Europe/Moscow), muted members are left out of the roll call with a defanged «🔕 не

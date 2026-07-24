@@ -257,6 +257,22 @@ describe('SYSTEM_PROMPT ping-roster guidance', () => {
     expect(SYSTEM_PROMPT).toContain('`replace`: true');
     expect(SYSTEM_PROMPT).toMatch(/Unsure => false/);
   });
+
+  it('forbids inventing @usernames and teaches the ask-for-a-reply fallback', () => {
+    expect(SYSTEM_PROMPT).toContain('NEVER INVENT @usernames');
+    // Cyrillic handles are called out as fabrications that ping nobody.
+    expect(SYSTEM_PROMPT).toMatch(/Cyrillic[\s\S]*?fabrication/);
+    // The fallback: ask once and suggest the person reply so the handle surfaces.
+    expect(SYSTEM_PROMPT).toMatch(/реплаем/);
+  });
+
+  it('teaches the mention-rename flow that preserves quiet hours', () => {
+    expect(SYSTEM_PROMPT).toContain('исправь меншн');
+    expect(SYSTEM_PROMPT).toContain('`rename`');
+    expect(SYSTEM_PROMPT).toContain('renameTo');
+    // remove+add would drop the mute schedule — explicitly banned.
+    expect(SYSTEM_PROMPT).toMatch(/never do it as remove\+add/);
+  });
 });
 
 describe('buildContextBlock sender username', () => {

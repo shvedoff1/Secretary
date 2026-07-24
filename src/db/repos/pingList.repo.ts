@@ -137,6 +137,88 @@ export function clearPingList(chatId: number, listName: string): number {
   return res.changes;
 }
 
+/**
+ * Rename a member token everywhere in a chat — the «исправь меншн X на Y» flow
+ * (e.g. a fabricated «@ФилиппФилипп» corrected to the real «@philipp»). Every
+ * list entry matching the old token (case-insensitive, @-agnostic) is renamed
+ * to `to` AS GIVEN; if the target already sits in some list, the old row is
+ * dropped there instead of duplicating. Quiet-hours rules move to the new key
+ * (merged, exact duplicates skipped) so a rename never loses someone's mute
+ * schedule. Returns what actually changed.
+ */
+export function renamePingMember(
+  chatId: number,
+  from: string,
+  to: string,
+): { entries: number; rulesMoved: number } {
+  const db = getDb();
+  const fromKey = muteKey(from);
+  const toKey = muteKey(to);
+  let entries = 0;
+  let rulesMoved = 0;
+  if (!fromKey || !toKey || fromKey === toKey) return { entries, rulesMoved };
+  const run = db.transaction(() => {
+    const rows = db
+      .prepare('SELECT id, list_name, member FROM ping_list_entry WHERE chat_id = ?')
+      .all(chatId) as { id: number; list_name: string; member: string }[];
+    const listsWithTarget = new Set(
+      rows.filter((r) => muteKey(r.member) === toKey).map((r) => r.list_name.toLowerCase()),
+    );
+    for (const r of rows) {
+      if (muteKey(r.member) !== fromKey) continue;
+      if (listsWithTarget.has(r.list_name.toLowerCase())) {
+        // The corrected handle is already on this list — fold instead of duping.
+        db.prepare('DELETE FROM ping_list_entry WHERE id = ?').run(r.id);
+      } else {
+        db.prepare('UPDATE ping_list_entry SET member = ? WHERE id = ?').run(to.trim(), r.id);
+        listsWithTarget.add(r.list_name.toLowerCase());
+      }
+      entries++;
+    }
+
+    // Carry the quiet hours over to the new key (append semantics, deduped).
+    const targetSigs = new Set(
+      (
+        db
+          .prepare(
+            `SELECT dow_mask, from_min, to_min, timezone FROM ping_mute_rule
+             WHERE chat_id = ? AND member = ?`,
+          )
+          .all(chatId, toKey) as {
+          dow_mask: number;
+          from_min: number;
+          to_min: number;
+          timezone: string;
+        }[]
+      ).map((r) => `${r.dow_mask}|${r.from_min}|${r.to_min}|${r.timezone}`),
+    );
+    const olds = db
+      .prepare(
+        `SELECT id, dow_mask, from_min, to_min, timezone FROM ping_mute_rule
+         WHERE chat_id = ? AND member = ?`,
+      )
+      .all(chatId, fromKey) as {
+      id: number;
+      dow_mask: number;
+      from_min: number;
+      to_min: number;
+      timezone: string;
+    }[];
+    for (const o of olds) {
+      const sig = `${o.dow_mask}|${o.from_min}|${o.to_min}|${o.timezone}`;
+      if (targetSigs.has(sig)) {
+        db.prepare('DELETE FROM ping_mute_rule WHERE id = ?').run(o.id);
+      } else {
+        db.prepare('UPDATE ping_mute_rule SET member = ? WHERE id = ?').run(toKey, o.id);
+        targetSigs.add(sig);
+        rulesMoved++;
+      }
+    }
+  });
+  run();
+  return { entries, rulesMoved };
+}
+
 // --- per-member quiet hours («не тегай меня до 19:00 по будням») -------------
 
 /** Rule key: leading @ stripped + lower-cased, so «@Vasya» and «vasya» share

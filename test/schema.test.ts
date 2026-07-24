@@ -104,9 +104,27 @@ describe('EditPingListZ', () => {
     expect(empty.success).toBe(false);
   });
 
+  it('accepts rename with a target handle', () => {
+    const r = EditPingListZ.safeParse({
+      action: 'rename',
+      list: null,
+      members: ['@ФилиппФилипп'],
+      renameTo: '@philipp',
+    });
+    expect(r.success).toBe(true);
+    expect(
+      EditPingListZ.safeParse({
+        action: 'rename',
+        list: null,
+        members: ['@x'],
+        renameTo: '',
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects unknown actions, empty member lists and empty member strings', () => {
     expect(
-      EditPingListZ.safeParse({ action: 'rename', list: null, members: ['@x'] }).success,
+      EditPingListZ.safeParse({ action: 'promote', list: null, members: ['@x'] }).success,
     ).toBe(false);
     expect(EditPingListZ.safeParse({ action: 'add', list: null, members: [] }).success).toBe(
       false,

@@ -1,4 +1,5 @@
 import { getDb } from '../client.js';
+import type { MuteWindow } from '../../util/pingMute.js';
 
 /**
  * Named ping lists per chat — the dota-mode roll call. `/dota` pings the default
@@ -134,4 +135,142 @@ export function clearPingList(chatId: number, listName: string): number {
     .prepare('DELETE FROM ping_list_entry WHERE chat_id = ? AND list_name = ?')
     .run(chatId, normName(listName));
   return res.changes;
+}
+
+// --- per-member quiet hours («не тегай меня до 19:00 по будням») -------------
+
+/** Rule key: leading @ stripped + lower-cased, so «@Vasya» and «vasya» share
+ *  rules and a rule applies to the member in EVERY list of the chat. */
+export function muteKey(member: string): string {
+  return member.trim().replace(/^@/, '').toLowerCase();
+}
+
+function dowMask(days: number[]): number {
+  let mask = 0;
+  for (const d of days) if (d >= 1 && d <= 7) mask |= 1 << (d - 1);
+  return mask;
+}
+
+function maskDays(mask: number): number[] {
+  const days: number[] = [];
+  for (let d = 1; d <= 7; d++) if (mask & (1 << (d - 1))) days.push(d);
+  return days;
+}
+
+/** Replace a member's quiet-hours windows (empty array clears them). */
+export function setMuteRules(chatId: number, member: string, windows: MuteWindow[]): void {
+  const db = getDb();
+  const key = muteKey(member);
+  const run = db.transaction(() => {
+    db.prepare('DELETE FROM ping_mute_rule WHERE chat_id = ? AND member = ?').run(
+      chatId,
+      key,
+    );
+    const ins = db.prepare(
+      `INSERT INTO ping_mute_rule (chat_id, member, dow_mask, from_min, to_min, timezone, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, unixepoch() * 1000)`,
+    );
+    for (const w of windows) {
+      ins.run(chatId, key, dowMask(w.days), w.fromMin, w.toMin, w.timezone);
+    }
+  });
+  run();
+}
+
+/**
+ * Append windows to a member's existing quiet hours («ещё не тегай в субботу
+ * утром») — old windows stay. Exact duplicates of a stored window (same days,
+ * range and timezone) are skipped so a repeated ask can't pile up copies.
+ * Returns how many windows were actually added.
+ */
+export function addMuteRules(chatId: number, member: string, windows: MuteWindow[]): number {
+  const db = getDb();
+  const key = muteKey(member);
+  let added = 0;
+  const run = db.transaction(() => {
+    const seen = new Set(
+      (
+        db
+          .prepare(
+            `SELECT dow_mask, from_min, to_min, timezone FROM ping_mute_rule
+             WHERE chat_id = ? AND member = ?`,
+          )
+          .all(chatId, key) as {
+          dow_mask: number;
+          from_min: number;
+          to_min: number;
+          timezone: string;
+        }[]
+      ).map((r) => `${r.dow_mask}|${r.from_min}|${r.to_min}|${r.timezone}`),
+    );
+    const ins = db.prepare(
+      `INSERT INTO ping_mute_rule (chat_id, member, dow_mask, from_min, to_min, timezone, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, unixepoch() * 1000)`,
+    );
+    for (const w of windows) {
+      const sig = `${dowMask(w.days)}|${w.fromMin}|${w.toMin}|${w.timezone}`;
+      if (seen.has(sig)) continue;
+      seen.add(sig);
+      ins.run(chatId, key, dowMask(w.days), w.fromMin, w.toMin, w.timezone);
+      added++;
+    }
+  });
+  run();
+  return added;
+}
+
+/** Drop a member's quiet hours. Returns how many windows were removed. */
+export function clearMuteRules(chatId: number, member: string): number {
+  return getDb()
+    .prepare('DELETE FROM ping_mute_rule WHERE chat_id = ? AND member = ?')
+    .run(chatId, muteKey(member)).changes;
+}
+
+/** A member's quiet-hours windows (empty when none). */
+export function getMuteRules(chatId: number, member: string): MuteWindow[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT dow_mask, from_min, to_min, timezone FROM ping_mute_rule
+       WHERE chat_id = ? AND member = ? ORDER BY id ASC`,
+    )
+    .all(chatId, muteKey(member)) as {
+    dow_mask: number;
+    from_min: number;
+    to_min: number;
+    timezone: string;
+  }[];
+  return rows.map((r) => ({
+    days: maskDays(r.dow_mask),
+    fromMin: r.from_min,
+    toMin: r.to_min,
+    timezone: r.timezone,
+  }));
+}
+
+/** All quiet-hours rules in a chat, keyed by normalized member. */
+export function listMuteRules(chatId: number): Map<string, MuteWindow[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT member, dow_mask, from_min, to_min, timezone FROM ping_mute_rule
+       WHERE chat_id = ? ORDER BY member ASC, id ASC`,
+    )
+    .all(chatId) as {
+    member: string;
+    dow_mask: number;
+    from_min: number;
+    to_min: number;
+    timezone: string;
+  }[];
+  const out = new Map<string, MuteWindow[]>();
+  for (const r of rows) {
+    const list = out.get(r.member) ?? [];
+    list.push({
+      days: maskDays(r.dow_mask),
+      fromMin: r.from_min,
+      toMin: r.to_min,
+      timezone: r.timezone,
+    });
+    out.set(r.member, list);
+  }
+  return out;
 }

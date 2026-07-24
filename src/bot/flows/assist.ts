@@ -48,7 +48,12 @@ import {
   addPingMembers,
   removePingMembers,
   getPingList,
+  setMuteRules,
+  addMuteRules,
+  getMuteRules,
+  clearMuteRules,
 } from '../../db/repos/pingList.repo.js';
+import { parseHHMM, describeWindows, type MuteWindow } from '../../util/pingMute.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
 import {
   addTurn,
@@ -290,10 +295,49 @@ export function makeEditPingListHandler(
   chatId: number,
   tgUserId: number,
 ): (input: EditPingListInput) => string {
-  return ({ action, list, members }) => {
+  return ({ action, list, members, mute, timezone, replace }) => {
     const name = list?.trim().toLowerCase() || DEFAULT_PING_LIST;
     const plain = (xs: string[]) => xs.map((m) => m.replace(/^@/, '')).join(', ');
     const pingCmd = name === DEFAULT_PING_LIST ? '/ping' : `/ping ${name}`;
+
+    // Personal quiet hours («не тегай меня до 19:00 по будням»). Whether the
+    // windows replace the member's schedule (a full restatement/correction) or
+    // extend it («ещё не тегай в субботу») is the model's call via `replace`;
+    // absent → append, because appending preserves data and replacing destroys
+    // it. Times default to Moscow per product decision.
+    if (action === 'mute') {
+      const windows = mute ?? [];
+      if (windows.length === 0) {
+        return 'Не понял окна тишины — скажи, в какие дни и часы не тегать.';
+      }
+      const tz = timezone && isValidTimezone(timezone) ? timezone : 'Europe/Moscow';
+      const parsed: MuteWindow[] = [];
+      for (const w of windows) {
+        const fromMin = parseHHMM(w.from);
+        const toMin = parseHHMM(w.to);
+        if (fromMin === null || toMin === null || fromMin === toMin) {
+          return `Не понял время «${w.from}–${w.to}» — уточни часы (напр. «до 19:00», «с 18 до 21»).`;
+        }
+        parsed.push({ days: w.days, fromMin, toMin, timezone: tz });
+      }
+      const overwrite = replace === true;
+      for (const m of members) {
+        if (overwrite) setMuteRules(chatId, m, parsed);
+        else addMuteRules(chatId, m, parsed);
+      }
+      // Confirm with the member's RESULTING schedule (not just the delta), so
+      // append vs replace is transparent to the user either way.
+      const total = describeWindows(getMuteRules(chatId, members[0]!));
+      const verb = overwrite ? 'Переписал расписание' : 'Дополнил расписание';
+      return `${verb}: ${plain(members)} — теперь не тревожим ${total}. В остальное время пингуется как все. Снять всё: скажи «можно снова тегать». Проверка: /ping show`;
+    }
+    if (action === 'unmute') {
+      const cleared = members.filter((m) => clearMuteRules(chatId, m) > 0);
+      return cleared.length > 0
+        ? `Снял беззвучное: ${plain(cleared)} — теперь тегается всегда.`
+        : `У ${plain(members)} и не было окон тишины.`;
+    }
+
     if (action === 'add') {
       const added = addPingMembers(chatId, name, members, tgUserId);
       const total = getPingList(chatId, name).length;
@@ -438,6 +482,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         })),
         memoryPersona: memorySel.persona.map((i) => ({ content: i.content })),
         senderName: senderName(ctx),
+        senderUsername: ctx.from?.username ?? null,
         timezone: getTimezone(chatId),
         splidConnected: !!chatCfg?.provider_group_id,
         activeReminders: listTasks(chatId).map((t) => ({

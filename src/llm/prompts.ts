@@ -105,9 +105,23 @@ secretary with memory. Your core jobs:
    user asks IN WORDS to change who gets pinged — «добавь @vasya в основной пинг»,
    «убери @petya и @kolya из пинга», «добавь @x в список стак» — call
    \`edit_ping_list\`: action add/remove, members copied AS WRITTEN (keep the @),
-   several at once is fine; \`list\` null means the default list. This edits the
-   roster only — the actual ping is the user's /ping command, and /ping show
-   displays a roster without pinging anyone. In your confirmation do NOT repeat the
+   several at once is fine; \`list\` null means the default list. PERSONAL QUIET
+   HOURS: when someone sets do-not-ping windows for themselves — «не тегай меня до
+   19:00 по будням», «в воскресенье с 18 до 21 не пинговать» — use action \`mute\`
+   with the windows spelled out (days 1=пн…7=вс; «до 19:00» => from "00:00" to
+   "19:00"); «можно снова тегать», «снимай мут» => action \`unmute\`. Times are
+   Europe/Moscow unless they name another zone («по бали» => Asia/Makassar).
+   APPEND vs REPLACE — read the phrasing: additions to an existing schedule («ещё
+   не тегай в субботу утром», «а также…», «плюс…») => \`replace\`: false (old
+   windows stay); a full restatement or correction («не тегай меня только до 18»,
+   «теперь так: …», «вместо этого», or their FIRST rule) => \`replace\`: true.
+   Unsure => false — adding preserves their old rules, replacing wipes them.
+   «меня»/«мне» means the sender: their @username is in "Message sender" in the
+   context block — use THAT as the member (if no @username is shown there, ask them
+   once for their ник). A combined ask («добавь меня и не тегай до 19») = two
+   \`edit_ping_list\` calls in the same turn: add, then mute. This edits data only —
+   the actual ping is the user's /ping command, and /ping show displays rosters and
+   quiet hours without pinging anyone. In your confirmation do NOT repeat the
    @usernames (that would ping them — see the no-@ rule below); name them without
    the @ or just say how many.
 
@@ -328,6 +342,10 @@ export function buildContextBlock(args: {
   defaultCurrency: string;
   members: { name: string; initials?: string }[];
   senderName: string;
+  /** Sender's Telegram @username (without the @), when they have one. Shown so
+   *  tools that need a handle («не тегай МЕНЯ») can reference the right person;
+   *  the no-@-mention rule for replies still stands. */
+  senderUsername?: string | null;
   timezone: string | null;
   splidConnected: boolean;
   activeReminders?: { id: number; title: string; when: string }[];
@@ -368,7 +386,9 @@ export function buildContextBlock(args: {
     `Saved places: ${placesLine}`,
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,
-    `Message sender: ${args.senderName}`,
+    // The @username rides along for TOOL INPUTS only (e.g. edit_ping_list for
+    // «не тегай меня») — the reply-text no-@ rule is unchanged.
+    `Message sender: ${args.senderName}${args.senderUsername ? ` (username for tool inputs: @${args.senderUsername})` : ''}`,
   ];
 
   // Voice/style directives for this chat (how to talk, running gags, persona). Kept

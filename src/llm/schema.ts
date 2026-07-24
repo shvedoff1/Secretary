@@ -70,10 +70,24 @@ export const EditLexiconZ = z.object({
 });
 export type EditLexiconInput = z.infer<typeof EditLexiconZ>;
 
+export const MuteWindowInputZ = z.object({
+  days: z.array(z.number().int().min(1).max(7)).min(1),
+  from: z.string().regex(/^\d{1,2}:\d{2}$/),
+  to: z.string().regex(/^\d{1,2}:\d{2}$/),
+});
+export type MuteWindowInput = z.infer<typeof MuteWindowInputZ>;
+
 export const EditPingListZ = z.object({
-  action: z.enum(['add', 'remove']),
+  action: z.enum(['add', 'remove', 'mute', 'unmute']),
   list: z.string().min(1).nullable(),
   members: z.array(z.string().min(1)).min(1).max(20),
+  mute: z.array(MuteWindowInputZ).min(1).nullable().optional(),
+  timezone: z.string().min(1).nullable().optional(),
+  // For action=mute: true → the windows REPLACE the member's previous schedule
+  // (a full restatement: «теперь только…», a correction); false → they are
+  // ADDED on top («ещё не тегай в субботу утром»). Absent/null defaults to
+  // append — adding preserves data, replacing destroys it.
+  replace: z.boolean().nullable().optional(),
 });
 export type EditPingListInput = z.infer<typeof EditPingListZ>;
 
@@ -263,13 +277,14 @@ export const editPingListJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['add', 'remove'],
-      description: 'add — добавить участников в пинг-список; remove — убрать их из него.',
+      enum: ['add', 'remove', 'mute', 'unmute'],
+      description:
+        'add — добавить участников в пинг-список; remove — убрать их из него; mute — установить участникам персональные окна тишины («не тегай меня …», replaces any previous windows); unmute — снять окна тишины совсем.',
     },
     list: {
       type: ['string', 'null'],
       description:
-        'Which ping list to edit, when the user names one («в список стак», «из вечернего пинга» => "стак"/"вечерний"). null for the default/main list («основной пинг», «в пинг» with no name).',
+        'Which ping list to edit, when the user names one («в список стак», «из вечернего пинга» => "стак"/"вечерний"). null for the default/main list («основной пинг», «в пинг» with no name). Ignored for mute/unmute — quiet hours are per person for the whole chat.',
     },
     members: {
       type: 'array',
@@ -277,10 +292,50 @@ export const editPingListJsonSchema = {
       maxItems: 20,
       items: { type: 'string' },
       description:
-        'The people to add/remove, copied AS WRITTEN from the message, keeping the @ prefix when present (e.g. ["@vasya", "@petya"]). Several at once is fine.',
+        'The people to add/remove/mute, copied AS WRITTEN from the message, keeping the @ prefix when present (e.g. ["@vasya", "@petya"]). Several at once is fine. «меня»/«me» => the sender\'s @username from the context block.',
+    },
+    mute: {
+      type: ['array', 'null'],
+      minItems: 1,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          days: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'integer', minimum: 1, maximum: 7 },
+            description:
+              'ISO weekdays the window applies to: 1=Mon … 7=Sun. «будни» => [1,2,3,4,5]; «выходные» => [6,7]; «каждый день» => all seven.',
+          },
+          from: {
+            type: 'string',
+            description:
+              'Window start "HH:MM" (inclusive, 24h clock). «до 19:00» => from "00:00".',
+          },
+          to: {
+            type: 'string',
+            description:
+              'Window end "HH:MM" (exclusive). «до 19:00» => to "19:00"; «после 22:00» => from "22:00" to "24:00". from > to wraps past midnight.',
+          },
+        },
+        required: ['days', 'from', 'to'],
+      },
+      description:
+        'For action=mute: the DO-NOT-PING windows («не тегай до 19:00 по будням и с 18 до 21 в вс» => [{days:[1,2,3,4,5],from:"00:00",to:"19:00"},{days:[7],from:"18:00",to:"21:00"}]). Whether they replace or extend the existing schedule is decided by `replace`. null for other actions.',
+    },
+    timezone: {
+      type: ['string', 'null'],
+      description:
+        'IANA timezone the windows are written in. «по московскому»/«по мск» => "Europe/Moscow". null => the default (Europe/Moscow).',
+    },
+    replace: {
+      type: ['boolean', 'null'],
+      description:
+        'For action=mute — decide from the phrasing. true: the user RESTATES their whole schedule or corrects it («не тегай меня только до 18», «теперь так: …», «вместо этого», their FIRST ever rule) => the windows REPLACE everything stored. false: the user ADDS to an existing schedule («ещё не тегай в субботу утром», «а также…», «плюс в среду») => the windows are appended, old ones stay. When genuinely unsure use false — adding preserves their old rules, replacing destroys them. null for other actions.',
     },
   },
-  required: ['action', 'list', 'members'],
+  required: ['action', 'list', 'members', 'mute', 'timezone', 'replace'],
 } as const;
 
 export const addPoiJsonSchema = {

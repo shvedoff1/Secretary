@@ -6,7 +6,10 @@ import {
   getPingList,
   listPingLists,
   clearPingList,
+  listMuteRules,
+  muteKey,
 } from '../../db/repos/pingList.repo.js';
+import { isMutedAt, describeWindows } from '../../util/pingMute.js';
 import { generatePingLesson, pingLessonPhrase } from '../../llm/pingLesson.js';
 import { getRecentChat } from '../recentChat.js';
 
@@ -93,7 +96,9 @@ const USAGE =
   '/ping del [список] @ник … — убрать из списка\n' +
   '/ping lists — все списки\n' +
   '/ping clear [список] — удалить список целиком\n' +
-  'Можно и словами: «добавь @ника в основной пинг», «убери @васю из пинга».';
+  'Можно и словами: «добавь @ника в основной пинг», «убери @васю из пинга».\n' +
+  'Личные правила тишины — тоже словами: «не тегай меня до 19:00 по будням» ' +
+  '(время по умолчанию — московское).';
 
 export async function cmdPing(ctx: Context): Promise<void> {
   if (!ctx.chat || !ctx.from) return;
@@ -158,8 +163,15 @@ export async function cmdPing(ctx: Context): Promise<void> {
       );
       return;
     }
+    const rules = listMuteRules(chatId);
+    const quiet = members
+      .filter((m) => (rules.get(muteKey(m)) ?? []).length > 0)
+      .map(
+        (m) => `🔕 ${defangMention(m)}: ${describeWindows(rules.get(muteKey(m))!)}`,
+      );
     await ctx.reply(
-      `Состав «${list}» (${members.length}), без пинга:\n${members.map(defangMention).join(' ')}`,
+      `Состав «${list}» (${members.length}), без пинга:\n${members.map(defangMention).join(' ')}` +
+        (quiet.length > 0 ? `\n\nПравила тишины:\n${quiet.join('\n')}` : ''),
     );
     return;
   }
@@ -188,8 +200,24 @@ export async function cmdPing(ctx: Context): Promise<void> {
     );
     return;
   }
+  // Honour personal quiet hours: anyone inside a mute window is left out of the
+  // roll call (shown defanged so the message documents who was spared, without
+  // notifying them).
+  const rules = listMuteRules(chatId);
+  const now = new Date();
+  const active = members.filter((m) => !isMutedAt(rules.get(muteKey(m)) ?? [], now));
+  const sleeping = members.filter((m) => isMutedAt(rules.get(muteKey(m)) ?? [], now));
+  if (active.length === 0) {
+    await ctx.reply(
+      `Весь состав «${list}» сейчас на беззвучном 🔕 (${sleeping.map(defangMention).join(' ')}). ` +
+        `Уважаем расписание, урок переносится. Правила: /ping show${list === DEFAULT_PING_LIST ? '' : ` ${list}`}`,
+    );
+    return;
+  }
   // Plain text so Telegram turns @usernames into real pings.
-  await ctx.reply(`${pingCallPhrase()}\n${members.join(' ')}`);
+  const quietNote =
+    sleeping.length > 0 ? `\n🔕 не бужу: ${sleeping.map(defangMention).join(' ')}` : '';
+  await ctx.reply(`${pingCallPhrase()}\n${active.join(' ')}${quietNote}`);
   // The follow-up "lesson" is a separate message so the ping stays clean and the
   // joke lands on its own. It's generated off the chat's recent chatter (the same
   // in-memory buffer the chime uses); a canned lesson covers any model failure.

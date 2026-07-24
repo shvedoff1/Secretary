@@ -242,6 +242,43 @@ describe('SYSTEM_PROMPT ping-roster guidance', () => {
   it('forbids repeating @usernames in the confirmation (that would ping them)', () => {
     expect(SYSTEM_PROMPT).toMatch(/do NOT repeat the\s+@usernames/);
   });
+
+  it('teaches personal quiet hours: mute/unmute, MSK default, «меня» → sender username', () => {
+    expect(SYSTEM_PROMPT).toContain('PERSONAL QUIET');
+    expect(SYSTEM_PROMPT).toContain('не тегай меня до');
+    expect(SYSTEM_PROMPT).toContain('Europe/Moscow');
+    expect(SYSTEM_PROMPT).toMatch(/«меня»[\s\S]*?@username/);
+  });
+
+  it('teaches append vs replace for quiet-hours edits, defaulting to the safe append', () => {
+    expect(SYSTEM_PROMPT).toContain('APPEND vs REPLACE');
+    // Additive phrasing keeps old windows; restatements rewrite; unsure → false.
+    expect(SYSTEM_PROMPT).toMatch(/ещё\s+не тегай в субботу/);
+    expect(SYSTEM_PROMPT).toContain('`replace`: true');
+    expect(SYSTEM_PROMPT).toMatch(/Unsure => false/);
+  });
+});
+
+describe('buildContextBlock sender username', () => {
+  const base = {
+    defaultCurrency: 'EUR',
+    members: [],
+    senderName: 'Вася',
+    timezone: null,
+    splidConnected: false,
+  };
+
+  it('exposes the sender @username for tool inputs when present', () => {
+    const out = buildContextBlock({ ...base, senderUsername: 'vasya_mid' });
+    expect(out).toContain('Message sender: Вася');
+    expect(out).toContain('@vasya_mid');
+  });
+
+  it('renders the plain sender line when there is no username', () => {
+    const out = buildContextBlock(base);
+    expect(out).toContain('Message sender: Вася');
+    expect(out).not.toContain('username for tool inputs');
+  });
 });
 
 describe('buildTutorContextBlock', () => {

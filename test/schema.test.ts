@@ -58,6 +58,52 @@ describe('EditPingListZ', () => {
     expect(rm.success).toBe(true);
   });
 
+  it('accepts mute with structured windows and unmute without them', () => {
+    const mute = EditPingListZ.safeParse({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [
+        { days: [1, 2, 3, 4, 5], from: '00:00', to: '19:00' },
+        { days: [7], from: '18:00', to: '21:00' },
+      ],
+      timezone: 'Europe/Moscow',
+    });
+    expect(mute.success).toBe(true);
+    const unmute = EditPingListZ.safeParse({
+      action: 'unmute',
+      list: null,
+      members: ['@vasya'],
+      mute: null,
+      timezone: null,
+    });
+    expect(unmute.success).toBe(true);
+  });
+
+  it('rejects malformed mute windows', () => {
+    const badDay = EditPingListZ.safeParse({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [8], from: '00:00', to: '19:00' }],
+    });
+    expect(badDay.success).toBe(false);
+    const badTime = EditPingListZ.safeParse({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [1], from: 'вечер', to: '19:00' }],
+    });
+    expect(badTime.success).toBe(false);
+    const empty = EditPingListZ.safeParse({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [],
+    });
+    expect(empty.success).toBe(false);
+  });
+
   it('rejects unknown actions, empty member lists and empty member strings', () => {
     expect(
       EditPingListZ.safeParse({ action: 'rename', list: null, members: ['@x'] }).success,

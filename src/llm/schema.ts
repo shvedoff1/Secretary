@@ -78,11 +78,13 @@ export const MuteWindowInputZ = z.object({
 export type MuteWindowInput = z.infer<typeof MuteWindowInputZ>;
 
 export const EditPingListZ = z.object({
-  action: z.enum(['add', 'remove', 'mute', 'unmute']),
+  action: z.enum(['add', 'remove', 'mute', 'unmute', 'rename']),
   list: z.string().min(1).nullable(),
   members: z.array(z.string().min(1)).min(1).max(20),
   mute: z.array(MuteWindowInputZ).min(1).nullable().optional(),
   timezone: z.string().min(1).nullable().optional(),
+  // For action=rename: the corrected handle; members[0] is the old/wrong one.
+  renameTo: z.string().min(1).nullable().optional(),
   // For action=mute: true → the windows REPLACE the member's previous schedule
   // (a full restatement: «теперь только…», a correction); false → they are
   // ADDED on top («ещё не тегай в субботу утром»). Absent/null defaults to
@@ -277,9 +279,9 @@ export const editPingListJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['add', 'remove', 'mute', 'unmute'],
+      enum: ['add', 'remove', 'mute', 'unmute', 'rename'],
       description:
-        'add — добавить участников в пинг-список; remove — убрать их из него; mute — установить участникам персональные окна тишины («не тегай меня …», replaces any previous windows); unmute — снять окна тишины совсем.',
+        'add — добавить участников в пинг-список; remove — убрать их из него; mute — установить участникам персональные окна тишины («не тегай меня …»); unmute — снять окна тишины совсем; rename — исправить сохранённый меншн на правильный ник («исправь меншн X на Y») — правки едут во все списки, правила тишины сохраняются.',
     },
     list: {
       type: ['string', 'null'],
@@ -334,8 +336,13 @@ export const editPingListJsonSchema = {
       description:
         'For action=mute — decide from the phrasing. true: the user RESTATES their whole schedule or corrects it («не тегай меня только до 18», «теперь так: …», «вместо этого», their FIRST ever rule) => the windows REPLACE everything stored. false: the user ADDS to an existing schedule («ещё не тегай в субботу утром», «а также…», «плюс в среду») => the windows are appended, old ones stay. When genuinely unsure use false — adding preserves their old rules, replacing destroys them. null for other actions.',
     },
+    renameTo: {
+      type: ['string', 'null'],
+      description:
+        'For action=rename: the CORRECT handle to store («исправь меншн @ФилиппФилипп на @philipp» => members ["@ФилиппФилипп"], renameTo "@philipp"). Must be a real @username the user actually wrote — never construct one. null for other actions.',
+    },
   },
-  required: ['action', 'list', 'members', 'mute', 'timezone', 'replace'],
+  required: ['action', 'list', 'members', 'mute', 'timezone', 'replace', 'renameTo'],
 } as const;
 
 export const addPoiJsonSchema = {

@@ -52,6 +52,7 @@ import {
   addMuteRules,
   getMuteRules,
   clearMuteRules,
+  renamePingMember,
 } from '../../db/repos/pingList.repo.js';
 import { parseHHMM, describeWindows, type MuteWindow } from '../../util/pingMute.js';
 import { getAliasMap, setAlias } from '../../db/repos/nameAlias.repo.js';
@@ -295,10 +296,27 @@ export function makeEditPingListHandler(
   chatId: number,
   tgUserId: number,
 ): (input: EditPingListInput) => string {
-  return ({ action, list, members, mute, timezone, replace }) => {
+  return ({ action, list, members, mute, timezone, replace, renameTo }) => {
     const name = list?.trim().toLowerCase() || DEFAULT_PING_LIST;
     const plain = (xs: string[]) => xs.map((m) => m.replace(/^@/, '')).join(', ');
     const pingCmd = name === DEFAULT_PING_LIST ? '/ping' : `/ping ${name}`;
+
+    // Fix a stored mention («исправь меншн X на Y»): the token is renamed in
+    // EVERY list of the chat and the member's quiet-hours rules move along.
+    if (action === 'rename') {
+      const to = renameTo?.trim();
+      if (!to) {
+        return 'Не понял, на какой ник менять — скажи «исправь меншн X на @новый_ник».';
+      }
+      const from = members[0]!;
+      const res = renamePingMember(chatId, from, to);
+      if (res.entries === 0 && res.rulesMoved === 0) {
+        return `Не нашёл «${plain([from])}» ни в одном списке. Составы: /ping lists`;
+      }
+      const rulesNote =
+        res.rulesMoved > 0 ? `, правила тишины переехали (${res.rulesMoved})` : '';
+      return `Поправил: ${plain([from])} → ${plain([to])} (записей: ${res.entries}${rulesNote}). Проверка: /ping show`;
+    }
 
     // Personal quiet hours («не тегай меня до 19:00 по будням»). Whether the
     // windows replace the member's schedule (a full restatement/correction) or

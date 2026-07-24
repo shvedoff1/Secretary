@@ -194,6 +194,52 @@ describe('makeEditPingListHandler', () => {
     expect(noop).toContain('не было');
   });
 
+  it('rename: fixes the mention in every list and carries the mute rules over', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    handler({ action: 'add', list: null, members: ['@ФилиппФилипп'] });
+    handler({ action: 'add', list: 'стак', members: ['@ФилиппФилипп', '@vasya'] });
+    handler({
+      action: 'mute',
+      list: null,
+      members: ['@ФилиппФилипп'],
+      mute: [{ days: [1, 2, 3, 4, 5], from: '00:00', to: '19:00' }],
+      timezone: null,
+      replace: true,
+    });
+
+    const out = handler({
+      action: 'rename',
+      list: null,
+      members: ['@ФилиппФилипп'],
+      renameTo: '@philipp',
+    });
+
+    expect(repo.getPingList(1, 'dota')).toEqual(['@philipp']);
+    expect(repo.getPingList(1, 'стак')).toEqual(['@philipp', '@vasya']);
+    // The quiet hours followed the rename.
+    expect(repo.getMuteRules(1, '@philipp')).toHaveLength(1);
+    expect(repo.getMuteRules(1, '@ФилиппФилипп')).toEqual([]);
+    // Confirmation is defanged and mentions the rules moving.
+    expect(out).toContain('ФилиппФилипп → philipp');
+    expect(out).not.toContain('@philipp');
+    expect(out).toContain('правила тишины переехали');
+  });
+
+  it('rename: folds into an existing target instead of duplicating, honest on a miss', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    handler({ action: 'add', list: null, members: ['@old', '@new'] });
+    handler({ action: 'rename', list: null, members: ['@old'], renameTo: '@new' });
+    expect(repo.getPingList(1, 'dota')).toEqual(['@new']); // no duplicate row
+
+    const miss = handler({ action: 'rename', list: null, members: ['@ghost'], renameTo: '@x' });
+    expect(miss).toContain('Не нашёл');
+
+    const noTarget = handler({ action: 'rename', list: null, members: ['@new'] });
+    expect(noTarget).toContain('на какой ник');
+  });
+
   it('says so when nothing matched instead of pretending success', async () => {
     const { assist } = await load();
     const handler = assist.makeEditPingListHandler(1, 42);

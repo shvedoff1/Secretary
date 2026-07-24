@@ -156,6 +156,20 @@ describe('mute rules repo', () => {
     expect(repo.getMuteRules(1, '@vasya')).toEqual([]);
   });
 
+  it('renamePingMember merges rules into an existing target with dedup', async () => {
+    const repo = await freshRepo();
+    repo.addPingMembers(1, 'dota', ['@old', '@new'], 42);
+    repo.setMuteRules(1, '@old', [WEEKDAYS_BEFORE_19, SUNDAY_18_21]);
+    repo.setMuteRules(1, '@new', [SUNDAY_18_21]); // one window already shared
+
+    const res = repo.renamePingMember(1, '@old', '@new');
+    expect(res.entries).toBe(1);
+    expect(res.rulesMoved).toBe(1); // only the non-duplicate window moved
+    const merged = repo.getMuteRules(1, '@new');
+    expect(merged).toHaveLength(2);
+    expect(repo.getMuteRules(1, '@old')).toEqual([]);
+  });
+
   it('is per chat and lists all rules keyed by member', async () => {
     const repo = await freshRepo();
     repo.setMuteRules(1, '@vasya', [SUNDAY_18_21]);

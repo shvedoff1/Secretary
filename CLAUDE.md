@@ -146,7 +146,15 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   is @-defanged). Rosters can
   also be edited in plain words («добавь @vasya в основной пинг», multiple at once) via
   the `edit_ping_list` tool (any non-tutor chat, off for scheduled runs; its handler
-  strips @ from confirmations so the model's reply can't re-ping people). The command
+  strips @ from confirmations so the model's reply can't re-ping people). The same tool
+  carries per-member QUIET HOURS («не тегай меня до 19:00 по будням» → action `mute`
+  with structured windows; `unmute` clears): rules live in `ping_mute_rule` (migration
+  016, keyed chat + normalized member, chat-wide across lists), evaluation is
+  deterministic and tz-aware at /ping time (`src/util/pingMute.ts` `isMutedAt`, default
+  tz Europe/Moscow), muted members are left out of the roll call with a defanged «🔕 не
+  бужу» note (everyone muted → no ping at all), and `/ping show` prints the rules. For
+  «меня» the sender's @username is exposed in the context block ("username for tool
+  inputs"). The command
   works in any chat regardless of mode; the mode drives only persona/chime/humor.
   `tutor` flips
   a chat (typically a kid's DM; its chatId = their tg id) into an accuracy-first exam-prep

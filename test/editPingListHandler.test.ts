@@ -56,6 +56,77 @@ describe('makeEditPingListHandler', () => {
     expect(out).not.toContain('@vasya');
   });
 
+  it('mute: stores the user’s exact ask (weekdays before 19, Sunday 18-21, MSK default)', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    const out = handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [
+        { days: [1, 2, 3, 4, 5], from: '00:00', to: '19:00' },
+        { days: [7], from: '18:00', to: '21:00' },
+      ],
+      timezone: null, // default must land on Moscow
+    });
+
+    const rules = repo.getMuteRules(1, '@vasya');
+    expect(rules).toHaveLength(2);
+    expect(rules[0]).toEqual({
+      days: [1, 2, 3, 4, 5],
+      fromMin: 0,
+      toMin: 1140,
+      timezone: 'Europe/Moscow',
+    });
+    expect(rules[1]).toEqual({ days: [7], fromMin: 1080, toMin: 1260, timezone: 'Europe/Moscow' });
+    // Confirmation is readable and @-free.
+    expect(out).toContain('vasya');
+    expect(out).not.toContain('@vasya');
+    expect(out).toContain('будни до 19:00');
+  });
+
+  it('mute: keeps an explicitly named valid timezone, rejects malformed times', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [6], from: '10:00', to: '12:00' }],
+      timezone: 'Asia/Makassar',
+    });
+    expect(repo.getMuteRules(1, '@vasya')[0]!.timezone).toBe('Asia/Makassar');
+
+    const bad = handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [1], from: '25:99', to: '19:00' }],
+      timezone: null,
+    });
+    expect(bad).toContain('Не понял время');
+    // The malformed call must not have replaced the stored rules.
+    expect(repo.getMuteRules(1, '@vasya')[0]!.timezone).toBe('Asia/Makassar');
+  });
+
+  it('unmute clears the windows and says so; unmuting a clean member is honest', async () => {
+    const { assist, repo } = await load();
+    const handler = assist.makeEditPingListHandler(1, 42);
+    handler({
+      action: 'mute',
+      list: null,
+      members: ['@vasya'],
+      mute: [{ days: [1], from: '00:00', to: '19:00' }],
+      timezone: null,
+    });
+    const out = handler({ action: 'unmute', list: null, members: ['@vasya'] });
+    expect(out).toContain('Снял');
+    expect(repo.getMuteRules(1, '@vasya')).toEqual([]);
+
+    const noop = handler({ action: 'unmute', list: null, members: ['@petya'] });
+    expect(noop).toContain('не было');
+  });
+
   it('says so when nothing matched instead of pretending success', async () => {
     const { assist } = await load();
     const handler = assist.makeEditPingListHandler(1, 42);

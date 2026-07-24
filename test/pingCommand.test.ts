@@ -255,3 +255,52 @@ describe('/ping command', () => {
     expect(ping.defangMention('вася')).toBe('вася');
   });
 });
+
+// An always-on window (all days, whole day) so mute state is deterministic.
+const ALWAYS = [{ days: [1, 2, 3, 4, 5, 6, 7], fromMin: 0, toMin: 1440, timezone: 'Europe/Moscow' }];
+
+describe('/ping quiet hours', () => {
+  it('leaves a muted member out of the roll call, noting them defanged', async () => {
+    const ping = await load();
+    const repo = await import('../src/db/repos/pingList.repo.js');
+    await ping.cmdPing(makeCtx('add @vasya @petya').ctx);
+    repo.setMuteRules(10, '@vasya', ALWAYS);
+
+    const roll = makeCtx('');
+    await ping.cmdPing(roll.ctx);
+    const call = roll.replies[0]!;
+    expect(call).toContain('@petya'); // still pinged for real
+    expect(call).toContain(`@${ZWSP}vasya`); // spared, defanged in the note
+    expect(call).toContain('не бужу');
+    expect(call).not.toMatch(/(^|[^​])@vasya/u); // no raw pingable mention
+  });
+
+  it('when EVERYONE is muted, nothing pings and no lesson follows', async () => {
+    const ping = await load();
+    const repo = await import('../src/db/repos/pingList.repo.js');
+    await ping.cmdPing(makeCtx('add @vasya').ctx);
+    repo.setMuteRules(10, '@vasya', ALWAYS);
+
+    const roll = makeCtx('');
+    await ping.cmdPing(roll.ctx);
+    expect(roll.replies).toHaveLength(1); // announcement only, no lesson
+    expect(roll.replies[0]).toContain('беззвучном');
+    expect(roll.replies[0]).toContain(`@${ZWSP}vasya`);
+  });
+
+  it('show prints the member’s quiet-hours rules', async () => {
+    const ping = await load();
+    const repo = await import('../src/db/repos/pingList.repo.js');
+    await ping.cmdPing(makeCtx('add @vasya @petya').ctx);
+    repo.setMuteRules(10, '@vasya', [
+      { days: [1, 2, 3, 4, 5], fromMin: 0, toMin: 1140, timezone: 'Europe/Moscow' },
+    ]);
+
+    const show = makeCtx('show');
+    await ping.cmdPing(show.ctx);
+    const msg = show.replies[0]!;
+    expect(msg).toContain('Правила тишины');
+    expect(msg).toContain('будни до 19:00');
+    expect(msg).toContain(`@${ZWSP}vasya`);
+  });
+});

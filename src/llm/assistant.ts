@@ -61,6 +61,8 @@ export interface AssistantContext {
   defaultCurrency: string;
   members: { name: string; initials?: string }[];
   senderName: string;
+  /** Sender's Telegram @username (no @), for tools that need a handle. */
+  senderUsername?: string | null;
   /** Chat IANA timezone, or null if not set yet. */
   timezone: string | null;
   /** Whether a Splid group is connected (gates the record_expense add-on). */
@@ -204,6 +206,7 @@ export async function runAssistant(
         defaultCurrency: ctx.defaultCurrency,
         members: ctx.members,
         senderName: ctx.senderName,
+        senderUsername: ctx.senderUsername ?? null,
         timezone: ctx.timezone,
         splidConnected: ctx.splidConnected,
         activeReminders: ctx.activeReminders ?? [],

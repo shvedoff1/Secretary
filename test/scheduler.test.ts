@@ -165,6 +165,24 @@ describe('runDueTasks humor toggle', () => {
     expect(adminDm?.text).toContain('Привет!');
   });
 
+  it('skips the humorizer when the CHAT has humor switched off, despite the task flag', async () => {
+    const scheduler = await seedDueTask(true); // task itself opted in
+    const { setChatHumorEnabled } = await import('../src/db/repos/chatSettings.repo.js');
+    setChatHumorEnabled(100, false);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    responses = [textResponse('Привет!')];
+
+    const sent: { chatId: number; text: string }[] = [];
+    await scheduler.runDueTasks(fakeBot(sent));
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.chatId).toBe(100);
+    expect(sent[0]!.text).toContain('Привет!');
+    // The chat switch trumps the task flag: OpenAI never called, no admin DM.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('leaves the reply verbatim (and sends no admin preview) when the task did not opt in', async () => {
     const scheduler = await seedDueTask(false);
     const fetchMock = vi.fn();

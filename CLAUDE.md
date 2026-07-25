@@ -24,7 +24,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `chat_lexicon`. The learned slang is fed to the OpenAI **humorizer** (NOT Claude): the
   tone-pass adopts the chat's lingo while Claude sees only clean history/context (slang is
   a voice concern, not a factual one — see `src/llm/humorize.ts` `buildHumorSystemPrompt`).
-  Consequence: slang only surfaces when `ENABLE_HUMOR` is on and the reply is humorizable
+  Consequence: slang only surfaces when `ENABLE_HUMOR` is on, the chat's humor isn't
+  switched off (admin `/humor <chatId> on|off` → `chat_settings.humor_disabled`,
+  migration 018 — gates the live tone-pass, humour tasks (trumps `scheduled_task.humor`),
+  the spending-digest rewrite AND the expense quip (`prepareQuip` takes the chatId);
+  the /ping lesson is NOT the humorizer and is unaffected) and the reply is humorizable
   (plain chat, no tool, not money). Managed per chat with `/slang` (`/slang clear`); admins
   can inspect/reset another chat from the DM with `/slang <chatId>` / `/slang <chatId> clear`,
   and `/chat <chatId>` shows a chat's slang count even for non-Splid chats. The MEANING

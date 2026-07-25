@@ -35,6 +35,46 @@ function adminCtx(match: string, fromId = 1, chatType = 'private') {
   return { ctx, replies };
 }
 
+describe('/humor command', () => {
+  it('turns the humorizer off and back on for a specific chat', async () => {
+    await freshDb();
+    const { ensureAdmin } = await import('../src/db/repos/users.repo.js');
+    ensureAdmin(1);
+    const { cmdHumor } = await import('../src/bot/commands/admin.js');
+    const repo = await import('../src/db/repos/chatSettings.repo.js');
+
+    const off = adminCtx('-500 off');
+    await cmdHumor(off.ctx);
+    expect(repo.isChatHumorEnabled(-500)).toBe(false);
+    expect(off.replies[0]).toContain('выключен');
+
+    const status = adminCtx('-500');
+    await cmdHumor(status.ctx);
+    expect(status.replies[0]).toContain('ВЫКЛ');
+
+    const on = adminCtx('-500 on');
+    await cmdHumor(on.ctx);
+    expect(repo.isChatHumorEnabled(-500)).toBe(true);
+  });
+
+  it('rejects non-admins and bad usage', async () => {
+    await freshDb();
+    const { ensureAdmin } = await import('../src/db/repos/users.repo.js');
+    ensureAdmin(1);
+    const { cmdHumor } = await import('../src/bot/commands/admin.js');
+    const repo = await import('../src/db/repos/chatSettings.repo.js');
+
+    const stranger = adminCtx('-500 off', 999);
+    await cmdHumor(stranger.ctx);
+    expect(repo.isChatHumorEnabled(-500)).toBe(true);
+
+    const bad = adminCtx('-500 maybe');
+    await cmdHumor(bad.ctx);
+    expect(bad.replies[0]).toContain('Использование');
+    expect(repo.isChatHumorEnabled(-500)).toBe(true);
+  });
+});
+
 describe('/chime command', () => {
   it('turns the chime off and back on for a specific chat', async () => {
     await freshDb();

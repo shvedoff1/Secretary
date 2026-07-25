@@ -2,7 +2,11 @@ import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getProvider } from '../core/registry.js';
 import { getChatConfig } from '../db/repos/chatConfig.repo.js';
-import { getTimezone, getChatMode } from '../db/repos/chatSettings.repo.js';
+import {
+  getTimezone,
+  getChatMode,
+  isChatHumorEnabled,
+} from '../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../db/repos/lexicon.repo.js';
 import { humorizeOrOriginal } from '../llm/humorize.js';
 import type { SpendingReportInput } from '../llm/schema.js';
@@ -69,12 +73,16 @@ export function makeSpendingReportHandler(
       // Money digests are the one place we deliberately humorize; give the pass
       // the chat's slang too so the tone matches (facts stay locked by the
       // humorizer's hard rules).
+      const plain = sections.join('\n\n');
+      // Per-chat humor off: the digest ships as exact plain text — this is the
+      // deliberate "humorize money" exception, so it obeys the chat switch too.
+      if (!isChatHumorEnabled(chatId)) return plain;
       const lexicon = getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
         term: e.term,
         gloss: e.gloss,
       }));
       return humorizeOrOriginal(
-        sections.join('\n\n'),
+        plain,
         lexicon,
         // The digest speaks the chat's persona (dota → schoolkid-sensei rewrite).
         getChatMode(chatId) === 'dota' ? 'dota' : 'surfer',

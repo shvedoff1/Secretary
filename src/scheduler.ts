@@ -17,7 +17,7 @@ import { makeSurfForecastHandler } from './surf/index.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
-import { getChatMode } from './db/repos/chatSettings.repo.js';
+import { getChatMode, isChatHumorEnabled } from './db/repos/chatSettings.repo.js';
 import { getMemoryForContext } from './db/repos/memoryItem.repo.js';
 import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
 import type { Member } from './core/types.js';
@@ -163,7 +163,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       // original text is returned unchanged. Like the live flow, the pre-OpenAI
       // original is DM'd to the admin so the before/after can be compared.
       const text =
-        task.humor && result.humorizable
+        // Per-chat humor off trumps the task's own humor flag — the admin
+        // silenced the jokes for that chat entirely.
+        task.humor && result.humorizable && isChatHumorEnabled(task.chatId)
           ? await humorizeWithPreview(
               result.text,
               async (original) => {

@@ -58,3 +58,26 @@ describe('chat mode setting', () => {
     expect(repo.getChatMode(8)).toBe('secretary');
   });
 });
+
+describe('per-chat chime setting', () => {
+  it('defaults to enabled, round-trips, and is per chat', async () => {
+    const repo = await freshRepo();
+    expect(repo.isChimeEnabled(1)).toBe(true);
+    repo.setChimeEnabled(1, false);
+    expect(repo.isChimeEnabled(1)).toBe(false);
+    expect(repo.isChimeEnabled(2)).toBe(true); // other chats untouched
+    repo.setChimeEnabled(1, true);
+    expect(repo.isChimeEnabled(1)).toBe(true);
+  });
+
+  it('does not clobber mode/trust/timezone (all live in chat_settings)', async () => {
+    const repo = await freshRepo();
+    repo.setChatMode(1, 'dota');
+    repo.setChatTrusted(1, true);
+    repo.setTimezone(1, 'Europe/Moscow');
+    repo.setChimeEnabled(1, false);
+    expect(repo.getChatMode(1)).toBe('dota');
+    expect(repo.isChatTrusted(1)).toBe(true);
+    expect(repo.getTimezone(1)).toBe('Europe/Moscow');
+  });
+});

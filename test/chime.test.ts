@@ -160,6 +160,36 @@ describe('chime scheduling', () => {
   });
 });
 
+describe('per-chat chime toggle', () => {
+  it('a chat with chime disabled never fires, other chats are unaffected', async () => {
+    const chime = await load();
+    const { setChimeEnabled } = await import('../src/db/repos/chatSettings.repo.js');
+    setChimeEnabled(1, false);
+
+    chime.recordChatMessage(1, 'Аня', 'тишина будет долгой');
+    chime.recordChatMessage(2, 'Петя', 'а тут можно');
+    chime.armChime(ctx(1));
+    chime.armChime(ctx(2));
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+
+    // Only chat 2 chimed; the silenced chat stayed silent.
+    expect(runMock).toHaveBeenCalledOnce();
+    const usedCtx = runMock.mock.calls[0]![0] as { chat: { id: number } };
+    expect(usedCtx.chat.id).toBe(2);
+  });
+
+  it('re-enabling brings the chime back', async () => {
+    const chime = await load();
+    const { setChimeEnabled } = await import('../src/db/repos/chatSettings.repo.js');
+    setChimeEnabled(1, false);
+    setChimeEnabled(1, true);
+    chime.recordChatMessage(1, 'Аня', 'вернулись');
+    chime.armChime(ctx(1));
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+    expect(runMock).toHaveBeenCalledOnce();
+  });
+});
+
 describe('chime persona (dota mode)', () => {
   it('in a dota chat the chime instruction demands a concrete Dota tactic', async () => {
     const chime = await load();

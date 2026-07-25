@@ -10,6 +10,7 @@ export async function cmdHelp(ctx: Context): Promise<void> {
           '/whitelist — кто имеет доступ; /allow <id> [имя] — открыть; /deny <id> — закрыть',
           '/mode <chatId> tutor|secretary|dota — режим чата (репетитор / обычный / дота-пингер); выбор режима открывает доступ всем участникам чата',
           '/trust <chatId> on|off — открыть/закрыть доступ участникам чата',
+          '/chime <chatId> on|off — рандомные вбросы бота в тишину для чата',
           '/chats — список чатов; /chat <id> — детали',
           '/setgroup <id> <код> · /setcurrency <id> <CUR>',
           '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id>',

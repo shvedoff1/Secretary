@@ -6,14 +6,17 @@ import { previewKeyboard } from '../keyboards.js';
 import { setEditTarget } from '../editTargets.js';
 import { setQuip } from '../quipCache.js';
 import { expenseQuip } from '../../llm/expenseQuip.js';
+import { isChatHumorEnabled } from '../../db/repos/chatSettings.repo.js';
 
 /**
  * Generate the expense's comic riff in the BACKGROUND and stash it by pendingId,
  * so the confirmation can render it instantly without an OpenAI call on the button
  * tap. Fire-and-forget and best-effort: any failure just leaves no cached joke.
  * Called when a preview is shown (and again after a reword changes the title).
+ * Skipped entirely for a chat whose humor was switched off (/humor <chatId> off).
  */
-export function prepareQuip(pendingId: string, title: string): void {
+export function prepareQuip(pendingId: string, title: string, chatId: number): void {
+  if (!isChatHumorEnabled(chatId)) return;
   void expenseQuip(title)
     .then((quip) => {
       if (quip) setQuip(pendingId, quip);
@@ -127,5 +130,5 @@ export async function presentDraft(
   // Allow rewording by replying to this preview message.
   setEditTarget(args.chatId, sent.message_id, pending.id);
   // Pre-generate the joke now (in the background) so confirming is instant.
-  prepareQuip(pending.id, args.draft.title);
+  prepareQuip(pending.id, args.draft.title, args.chatId);
 }

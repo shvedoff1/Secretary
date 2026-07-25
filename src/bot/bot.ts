@@ -35,6 +35,7 @@ import {
   cmdMode,
   cmdTrust,
   cmdChime,
+  cmdHumor,
 } from './commands/admin.js';
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
@@ -119,6 +120,7 @@ export function buildBot(token: string): Bot {
   bot.command('mode', cmdMode);
   bot.command('trust', cmdTrust);
   bot.command('chime', cmdChime);
+  bot.command('humor', cmdHumor);
 
   bot.callbackQuery(/^u:/, handleUserCallback);
   bot.callbackQuery(/^e:/, handleExpenseCallback);

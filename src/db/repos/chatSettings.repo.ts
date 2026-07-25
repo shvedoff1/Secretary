@@ -71,6 +71,30 @@ export function setChimeEnabled(chatId: number, enabled: boolean): void {
 }
 
 /**
+ * Per-chat switch for the OpenAI humor passes (tone-rewrite humorizer, humour
+ * tasks, spending-digest rewrite, expense quip). Default is ON; the global
+ * ENABLE_HUMOR / ENABLE_EXPENSE_QUIP env flags still master-gate everything.
+ * Toggled by the admin with /humor <chatId> on|off.
+ */
+export function isChatHumorEnabled(chatId: number): boolean {
+  const row = getDb()
+    .prepare('SELECT humor_disabled FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { humor_disabled: number | null } | undefined;
+  return !row?.humor_disabled;
+}
+
+export function setChatHumorEnabled(chatId: number, enabled: boolean): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, humor_disabled, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         humor_disabled = excluded.humor_disabled, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, enabled ? 0 : 1);
+}
+
+/**
  * Admin-granted trust for a whole chat: participants of a trusted chat pass the
  * default-deny auth gate without personal whitelist entries — the same standing
  * a Splid-connected group gets. Granted when the admin explicitly configures the

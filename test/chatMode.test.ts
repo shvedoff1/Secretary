@@ -59,6 +59,28 @@ describe('chat mode setting', () => {
   });
 });
 
+describe('per-chat humor setting', () => {
+  it('defaults to enabled, round-trips, and is per chat', async () => {
+    const repo = await freshRepo();
+    expect(repo.isChatHumorEnabled(1)).toBe(true);
+    repo.setChatHumorEnabled(1, false);
+    expect(repo.isChatHumorEnabled(1)).toBe(false);
+    expect(repo.isChatHumorEnabled(2)).toBe(true);
+    repo.setChatHumorEnabled(1, true);
+    expect(repo.isChatHumorEnabled(1)).toBe(true);
+  });
+
+  it('does not clobber the other chat settings', async () => {
+    const repo = await freshRepo();
+    repo.setChatMode(1, 'dota');
+    repo.setChimeEnabled(1, false);
+    repo.setChatHumorEnabled(1, false);
+    expect(repo.getChatMode(1)).toBe('dota');
+    expect(repo.isChimeEnabled(1)).toBe(false);
+    expect(repo.isChatHumorEnabled(1)).toBe(false);
+  });
+});
+
 describe('per-chat chime setting', () => {
   it('defaults to enabled, round-trips, and is per chat', async () => {
     const repo = await freshRepo();

@@ -24,7 +24,12 @@ import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
-import { getTimezone, setTimezone, getChatMode } from '../../db/repos/chatSettings.repo.js';
+import {
+  getTimezone,
+  setTimezone,
+  getChatMode,
+  isChatHumorEnabled,
+} from '../../db/repos/chatSettings.repo.js';
 import {
   createTask,
   listTasks,
@@ -598,7 +603,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     chatId,
   });
   const decision = classifyHumorDecision({
-    enabled: isHumorEnabled(),
+    // The humorizer runs only when it's on globally AND not switched off for
+    // THIS chat (/humor <chatId> off) — a silenced chat gets Claude's text as-is.
+    enabled: isHumorEnabled() && isChatHumorEnabled(chatId),
     humorizable: result.humorizable ?? false,
     money,
   });
@@ -759,7 +766,7 @@ async function rewordPendingInner(
   updateDraft(pendingId, draft);
   // The reword may have changed the title — refresh the pre-generated joke so the
   // confirmation still matches what was bought.
-  prepareQuip(pendingId, draft.title);
+  prepareQuip(pendingId, draft.title, chatId);
 
   // Learn the nickname: if the previous draft had exactly one unresolved name
   // and this correction resolved exactly one new member, remember that mapping

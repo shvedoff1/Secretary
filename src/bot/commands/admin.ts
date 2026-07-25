@@ -34,6 +34,8 @@ import {
   setChatTrusted,
   isChimeEnabled,
   setChimeEnabled,
+  isChatHumorEnabled,
+  setChatHumorEnabled,
   type ChatMode,
 } from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
@@ -153,6 +155,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       `режим: ${MODE_LABEL[getChatMode(id)]} (сменить: /mode ${id} tutor|secretary|dota)`,
       `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (/trust ${id} on|off)`,
       `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (/chime ${id} on|off)`,
+      `юморайзер: ${isChatHumorEnabled(id) ? 'вкл' : 'выкл'} (/humor ${id} on|off)`,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
@@ -331,6 +334,44 @@ export async function cmdChime(ctx: Context): Promise<void> {
     want === 'on'
       ? `✅ Чат ${id}: рандомные вбросы включены.`
       : `🔇 Чат ${id}: рандомные вбросы выключены полностью.`,
+  );
+}
+
+// --- /humor <id> [on|off] : OpenAI humor passes per chat ---------------------
+
+/**
+ * `/humor <chatId>` shows whether the OpenAI humor passes run for that chat;
+ * `/humor <chatId> on|off` toggles them. Off = the tone-rewrite humorizer,
+ * humour tasks, the spending-digest rewrite and the expense quip are ALL
+ * skipped for the chat — replies ship as Claude wrote them. The global
+ * ENABLE_HUMOR / ENABLE_EXPENSE_QUIP flags still master-gate everything.
+ */
+export async function cmdHumor(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /humor <chatId> [on|off]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (!want) {
+    await ctx.reply(
+      isChatHumorEnabled(id)
+        ? `Чат ${id}: юморайзер ВКЛючен. Выключить: /humor ${id} off`
+        : `Чат ${id}: юморайзер ВЫКЛючен. Включить: /humor ${id} on`,
+    );
+    return;
+  }
+  if (want !== 'on' && want !== 'off') {
+    await ctx.reply('Использование: /humor <chatId> [on|off]');
+    return;
+  }
+  setChatHumorEnabled(id, want === 'on');
+  await ctx.reply(
+    want === 'on'
+      ? `✅ Чат ${id}: юморайзер включен.`
+      : `😐 Чат ${id}: юморайзер выключен полностью (тон-пасс, юмор-задачи, сводка трат, квипы).`,
   );
 }
 

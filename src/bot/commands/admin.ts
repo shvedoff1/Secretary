@@ -32,6 +32,8 @@ import {
   setChatMode,
   isChatTrusted,
   setChatTrusted,
+  isChimeEnabled,
+  setChimeEnabled,
   type ChatMode,
 } from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
@@ -150,6 +152,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       `id: ${id}`,
       `режим: ${MODE_LABEL[getChatMode(id)]} (сменить: /mode ${id} tutor|secretary|dota)`,
       `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (/trust ${id} on|off)`,
+      `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (/chime ${id} on|off)`,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
@@ -291,6 +294,43 @@ export async function cmdTrust(ctx: Context): Promise<void> {
     want === 'on'
       ? `✅ Чат ${id} доверенный — доступ открыт всем его участникам.`
       : `🚫 Чат ${id} больше не доверенный — доступ только по /whitelist (Splid-подключение, если есть, всё ещё даёт доступ).`,
+  );
+}
+
+// --- /chime <id> [on|off] : spontaneous chime-in per chat --------------------
+
+/**
+ * `/chime <chatId>` shows whether the bot may spontaneously chime into that
+ * chat's lulls; `/chime <chatId> on|off` toggles it. Off = the random revive
+ * message never fires there (the global ENABLE_CHIME flag still master-gates
+ * the feature everywhere).
+ */
+export async function cmdChime(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /chime <chatId> [on|off]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (!want) {
+    await ctx.reply(
+      isChimeEnabled(id)
+        ? `Чат ${id}: рандомные вбросы в тишину ВКЛючены. Выключить: /chime ${id} off`
+        : `Чат ${id}: рандомные вбросы в тишину ВЫКЛючены. Включить: /chime ${id} on`,
+    );
+    return;
+  }
+  if (want !== 'on' && want !== 'off') {
+    await ctx.reply('Использование: /chime <chatId> [on|off]');
+    return;
+  }
+  setChimeEnabled(id, want === 'on');
+  await ctx.reply(
+    want === 'on'
+      ? `✅ Чат ${id}: рандомные вбросы включены.`
+      : `🔇 Чат ${id}: рандомные вбросы выключены полностью.`,
   );
 }
 

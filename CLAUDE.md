@@ -43,7 +43,9 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   silence clock via `cancelChime` in the global `bot.on('message')` middleware. Recent
   chatter is kept in an in-memory per-chat ring buffer (`src/bot/recentChat.ts` —
   `recordChatMessage`/`getRecentChat`, shared with the scheduler so a humour task can
-  riff on it too) and fed in as context. Off via `ENABLE_CHIME=false`.
+  riff on it too) and fed in as context. Off globally via `ENABLE_CHIME=false`, or
+  per chat with the admin `/chime <chatId> on|off` (`chat_settings.chime_disabled`,
+  migration 017, checked in `armChime`).
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   edit_memory | learn_expense_pattern | edit_lexicon | schedule_task | surf_forecast |
   add_poi | spending_report | web_search`. `remember` pins a fact verbatim and can

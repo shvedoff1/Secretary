@@ -48,6 +48,29 @@ export function setChatMode(chatId: number, mode: ChatMode): void {
 }
 
 /**
+ * Per-chat switch for the spontaneous chime-in. Default is ON (a missing row or
+ * a 0 flag both mean "allowed"); the global ENABLE_CHIME env flag still
+ * master-gates the feature. Toggled by the admin with /chime <chatId> on|off.
+ */
+export function isChimeEnabled(chatId: number): boolean {
+  const row = getDb()
+    .prepare('SELECT chime_disabled FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { chime_disabled: number | null } | undefined;
+  return !row?.chime_disabled;
+}
+
+export function setChimeEnabled(chatId: number, enabled: boolean): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, chime_disabled, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         chime_disabled = excluded.chime_disabled, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, enabled ? 0 : 1);
+}
+
+/**
  * Admin-granted trust for a whole chat: participants of a trusted chat pass the
  * default-deny auth gate without personal whitelist entries — the same standing
  * a Splid-connected group gets. Granted when the admin explicitly configures the

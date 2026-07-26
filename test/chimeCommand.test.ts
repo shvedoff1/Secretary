@@ -75,6 +75,46 @@ describe('/humor command', () => {
   });
 });
 
+describe('/react command', () => {
+  it('turns auto-reactions off and back on for a specific chat', async () => {
+    await freshDb();
+    const { ensureAdmin } = await import('../src/db/repos/users.repo.js');
+    ensureAdmin(1);
+    const { cmdReact } = await import('../src/bot/commands/admin.js');
+    const repo = await import('../src/db/repos/chatSettings.repo.js');
+
+    const off = adminCtx('-500 off');
+    await cmdReact(off.ctx);
+    expect(repo.isReactionsEnabled(-500)).toBe(false);
+    expect(off.replies[0]).toContain('выключены');
+
+    const status = adminCtx('-500');
+    await cmdReact(status.ctx);
+    expect(status.replies[0]).toContain('ВЫКЛ');
+
+    const on = adminCtx('-500 on');
+    await cmdReact(on.ctx);
+    expect(repo.isReactionsEnabled(-500)).toBe(true);
+  });
+
+  it('rejects non-admins and bad usage', async () => {
+    await freshDb();
+    const { ensureAdmin } = await import('../src/db/repos/users.repo.js');
+    ensureAdmin(1);
+    const { cmdReact } = await import('../src/bot/commands/admin.js');
+    const repo = await import('../src/db/repos/chatSettings.repo.js');
+
+    const stranger = adminCtx('-500 off', 999);
+    await cmdReact(stranger.ctx);
+    expect(repo.isReactionsEnabled(-500)).toBe(true);
+
+    const bad = adminCtx('-500 maybe');
+    await cmdReact(bad.ctx);
+    expect(bad.replies[0]).toContain('Использование');
+    expect(repo.isReactionsEnabled(-500)).toBe(true);
+  });
+});
+
 describe('/chime command', () => {
   it('turns the chime off and back on for a specific chat', async () => {
     await freshDb();

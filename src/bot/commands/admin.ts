@@ -36,6 +36,8 @@ import {
   setChimeEnabled,
   isChatHumorEnabled,
   setChatHumorEnabled,
+  isReactionsEnabled,
+  setReactionsEnabled,
   type ChatMode,
 } from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
@@ -156,6 +158,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (/trust ${id} on|off)`,
       `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (/chime ${id} on|off)`,
       `юморайзер: ${isChatHumorEnabled(id) ? 'вкл' : 'выкл'} (/humor ${id} on|off)`,
+      `рандомные реакции: ${isReactionsEnabled(id) ? 'вкл' : 'выкл'} (/react ${id} on|off)`,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
@@ -372,6 +375,42 @@ export async function cmdHumor(ctx: Context): Promise<void> {
     want === 'on'
       ? `✅ Чат ${id}: юморайзер включен.`
       : `😐 Чат ${id}: юморайзер выключен полностью (тон-пасс, юмор-задачи, сводка трат, квипы).`,
+  );
+}
+
+// --- /react <id> [on|off] : random auto-reactions per chat -------------------
+
+/**
+ * `/react <chatId>` shows whether random auto-reactions run in that chat;
+ * `/react <chatId> on|off` toggles them. Off = the ~10% positive-emoji
+ * seasoning never fires there.
+ */
+export async function cmdReact(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /react <chatId> [on|off]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (!want) {
+    await ctx.reply(
+      isReactionsEnabled(id)
+        ? `Чат ${id}: рандомные реакции ВКЛючены. Выключить: /react ${id} off`
+        : `Чат ${id}: рандомные реакции ВЫКЛючены. Включить: /react ${id} on`,
+    );
+    return;
+  }
+  if (want !== 'on' && want !== 'off') {
+    await ctx.reply('Использование: /react <chatId> [on|off]');
+    return;
+  }
+  setReactionsEnabled(id, want === 'on');
+  await ctx.reply(
+    want === 'on'
+      ? `✅ Чат ${id}: рандомные реакции включены.`
+      : `😶 Чат ${id}: рандомные реакции выключены полностью.`,
   );
 }
 

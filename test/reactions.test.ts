@@ -66,3 +66,51 @@ describe('maybeAutoReact', () => {
     }
   });
 });
+
+// The per-chat toggle needs the DB (chat_settings), so these tests migrate an
+// in-memory database and load the module fresh — unlike the pure tests above.
+describe('maybeAutoReact per-chat toggle', () => {
+  async function loadWithDb() {
+    process.env.BOT_TOKEN = 'x';
+    process.env.ANTHROPIC_API_KEY = 'x';
+    process.env.ADMIN_TELEGRAM_ID = '1';
+    process.env.DATABASE_PATH = ':memory:';
+    vi.resetModules();
+    const { migrate } = await import('../src/db/migrate.js');
+    migrate();
+    const reactions = await import('../src/bot/reactions.js');
+    const settings = await import('../src/db/repos/chatSettings.repo.js');
+    const { closeDb } = await import('../src/db/client.js');
+    return { reactions, settings, closeDb };
+  }
+
+  function chatCtx(chatId: number, react: Context['react']): Context {
+    return {
+      chat: { id: chatId, type: 'group' },
+      message: { text: 'привет' },
+      react,
+    } as unknown as Context;
+  }
+
+  it('never reacts in a chat with reactions switched off, others unaffected', async () => {
+    const { reactions, settings, closeDb } = await loadWithDb();
+    try {
+      settings.setReactionsEnabled(5, false);
+      vi.spyOn(Math, 'random').mockReturnValue(0); // roll always passes
+      const muted = vi.fn(async () => {});
+      await reactions.maybeAutoReact(chatCtx(5, muted));
+      expect(muted).not.toHaveBeenCalled();
+
+      const free = vi.fn(async () => {});
+      await reactions.maybeAutoReact(chatCtx(6, free));
+      expect(free).toHaveBeenCalledOnce();
+
+      settings.setReactionsEnabled(5, true);
+      const back = vi.fn(async () => {});
+      await reactions.maybeAutoReact(chatCtx(5, back));
+      expect(back).toHaveBeenCalledOnce();
+    } finally {
+      closeDb();
+    }
+  });
+});

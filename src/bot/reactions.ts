@@ -1,6 +1,7 @@
 import type { Context } from 'grammy';
 import type { ReactionTypeEmoji } from '@grammyjs/types';
 import { logger } from '../logger.js';
+import { isReactionsEnabled } from '../db/repos/chatSettings.repo.js';
 
 // Light chat seasoning: a small fraction of messages get a random positive
 // reaction. No LLM, no memory, no per-user rules.
@@ -25,6 +26,10 @@ export async function maybeAutoReact(ctx: Context): Promise<void> {
   // Don't react to commands like /help — only real chat messages.
   if (ctx.message?.text?.startsWith('/')) return;
   if (Math.random() >= REACT_PROBABILITY) return;
+  // Per-chat opt-out (/react <chatId> off). Checked after the roll so 90% of
+  // messages skip the lookup entirely.
+  const chatId = ctx.chat?.id;
+  if (chatId != null && !isReactionsEnabled(chatId)) return;
   const emoji = POSITIVE_REACTIONS[Math.floor(Math.random() * POSITIVE_REACTIONS.length)];
   if (!emoji) return;
   try {

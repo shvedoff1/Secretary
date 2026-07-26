@@ -12,6 +12,7 @@ export async function cmdHelp(ctx: Context): Promise<void> {
           '/trust <chatId> on|off — открыть/закрыть доступ участникам чата',
           '/chime <chatId> on|off — рандомные вбросы бота в тишину для чата',
           '/humor <chatId> on|off — юморайзер (OpenAI-переписывание ответов) для чата',
+          '/react <chatId> on|off — рандомные реакции-эмодзи для чата',
           '/chats — список чатов; /chat <id> — детали',
           '/setgroup <id> <код> · /setcurrency <id> <CUR>',
           '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id>',

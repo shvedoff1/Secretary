@@ -81,6 +81,18 @@ describe('per-chat humor setting', () => {
   });
 });
 
+describe('per-chat reactions setting', () => {
+  it('defaults to enabled, round-trips, and is per chat', async () => {
+    const repo = await freshRepo();
+    expect(repo.isReactionsEnabled(1)).toBe(true);
+    repo.setReactionsEnabled(1, false);
+    expect(repo.isReactionsEnabled(1)).toBe(false);
+    expect(repo.isReactionsEnabled(2)).toBe(true);
+    repo.setReactionsEnabled(1, true);
+    expect(repo.isReactionsEnabled(1)).toBe(true);
+  });
+});
+
 describe('per-chat chime setting', () => {
   it('defaults to enabled, round-trips, and is per chat', async () => {
     const repo = await freshRepo();

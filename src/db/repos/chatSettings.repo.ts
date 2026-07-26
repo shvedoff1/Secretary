@@ -71,6 +71,28 @@ export function setChimeEnabled(chatId: number, enabled: boolean): void {
 }
 
 /**
+ * Per-chat switch for the random auto-reactions (the ~10% positive-emoji
+ * seasoning). Default is ON. Toggled by the admin with /react <chatId> on|off.
+ */
+export function isReactionsEnabled(chatId: number): boolean {
+  const row = getDb()
+    .prepare('SELECT reactions_disabled FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { reactions_disabled: number | null } | undefined;
+  return !row?.reactions_disabled;
+}
+
+export function setReactionsEnabled(chatId: number, enabled: boolean): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, reactions_disabled, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         reactions_disabled = excluded.reactions_disabled, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, enabled ? 0 : 1);
+}
+
+/**
  * Per-chat switch for the OpenAI humor passes (tone-rewrite humorizer, humour
  * tasks, spending-digest rewrite, expense quip). Default is ON; the global
  * ENABLE_HUMOR / ENABLE_EXPENSE_QUIP env flags still master-gate everything.

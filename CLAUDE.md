@@ -49,7 +49,10 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `recordChatMessage`/`getRecentChat`, shared with the scheduler so a humour task can
   riff on it too) and fed in as context. Off globally via `ENABLE_CHIME=false`, or
   per chat with the admin `/chime <chatId> on|off` (`chat_settings.chime_disabled`,
-  migration 017, checked in `armChime`).
+  migration 017, checked in `armChime`). The random auto-reactions (`reactions.ts`,
+  ~10% positive emoji) have the same per-chat switch: `/react <chatId> on|off`
+  (`chat_settings.reactions_disabled`, migration 019, checked in `maybeAutoReact`
+  after the probability roll).
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   edit_memory | learn_expense_pattern | edit_lexicon | schedule_task | surf_forecast |
   add_poi | spending_report | web_search`. `remember` pins a fact verbatim and can

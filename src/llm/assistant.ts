@@ -19,6 +19,7 @@ import {
   EDIT_LEXICON_TOOL,
   EDIT_PING_LIST_TOOL,
   SCHEDULE_TASK_TOOL,
+  WATCH_PAGE_TOOL,
   SURF_FORECAST_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
@@ -31,6 +32,7 @@ import {
   EditLexiconZ,
   EditPingListZ,
   ScheduleTaskZ,
+  WatchPageZ,
   SurfForecastZ,
   AddPoiZ,
   SpendingReportZ,
@@ -42,6 +44,7 @@ import {
   type EditLexiconInput,
   type EditPingListInput,
   type ScheduleTaskInput,
+  type WatchPageInput,
   type SurfForecastInput,
   type AddPoiInput,
   type SpendingReportInput,
@@ -79,6 +82,10 @@ export interface AssistantContext {
   allowPingEdit?: boolean;
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
+  /** Expose the watch_page tool (default true; false for scheduled runs). */
+  allowWatch?: boolean;
+  /** Active page watches in this chat, shown so the model never recreates one. */
+  activeWatches?: { id: number; title: string; url: string }[];
   /** Expose the add_poi tool (default true; false for scheduled runs). */
   allowPoi?: boolean;
   /** Saved places in this chat, shown so the model can recall them and not duplicate. */
@@ -107,6 +114,8 @@ export interface AssistantHandlers {
   editPingList: (input: EditPingListInput) => string;
   /** Create a reminder / recurring task; return a short human confirmation. */
   scheduleTask: (input: ScheduleTaskInput) => string;
+  /** Arm a page watch (poll a URL for an event); return a short confirmation. */
+  watchPage: (input: WatchPageInput) => string;
   /** Fetch a wave forecast for the given spots; return a compact data summary. */
   surfForecast: (input: SurfForecastInput) => Promise<string>;
   /** Save a point of interest; return a short human confirmation. */
@@ -189,6 +198,7 @@ export async function runAssistant(
     enableLexiconEdit: !tutor && ctx.allowLexiconEdit !== false,
     enablePingEdit: !tutor && ctx.allowPingEdit !== false,
     enableReminders: ctx.allowReminders !== false,
+    enableWatch: !tutor && cfg.ENABLE_WATCH && ctx.allowWatch !== false,
     enableSurf: !tutor && cfg.ENABLE_SURF,
     enablePoi: !tutor && ctx.allowPoi !== false,
     enableSpending: !tutor && ctx.splidConnected,
@@ -210,6 +220,7 @@ export async function runAssistant(
         timezone: ctx.timezone,
         splidConnected: ctx.splidConnected,
         activeReminders: ctx.activeReminders ?? [],
+        activeWatches: ctx.activeWatches ?? [],
         places: ctx.places ?? [],
         memoryChat: ctx.memoryChat ?? [],
         memoryUsers: ctx.memoryUsers ?? [],
@@ -422,6 +433,20 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.scheduleTask(parsed.data)
             : 'Could not parse the task.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === WATCH_PAGE_TOOL) {
+          const parsed = WatchPageZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'watch_page input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.watchPage(parsed.data)
+            : 'Could not parse the page watch.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

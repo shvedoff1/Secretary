@@ -14,6 +14,7 @@ import { cmdLink } from './commands/link.js';
 import { cmdWhoami } from './commands/whoami.js';
 import { cmdMemory, cmdRemember, cmdForget } from './commands/memory.js';
 import { cmdTasks, cmdCancelTask, cmdTaskHumor } from './commands/tasks.js';
+import { cmdWatch } from './commands/watch.js';
 import { cmdPoi, cmdDelPoi } from './commands/poi.js';
 import { cmdSlang } from './commands/lexicon.js';
 import { cmdTrata } from './commands/expenseTerm.js';
@@ -98,6 +99,7 @@ export function buildBot(token: string): Bot {
   bot.command('tasks', cmdTasks);
   bot.command('canceltask', cmdCancelTask);
   bot.command('taskhumor', cmdTaskHumor);
+  bot.command('watch', cmdWatch);
   bot.command('poi', cmdPoi);
   bot.command('delpoi', cmdDelPoi);
   bot.command('slang', cmdSlang);
@@ -162,6 +164,7 @@ export const BOT_COMMANDS = [
   { command: 'tasks', description: 'Напоминания и регулярные задачи' },
   { command: 'canceltask', description: 'Отменить задачу по id' },
   { command: 'taskhumor', description: 'Юмор для задачи: /taskhumor <id> on|off' },
+  { command: 'watch', description: 'Вотчеры страниц (/watch del <id> — снять)' },
   { command: 'poi', description: 'Список мест (кафе, достопримечательности, планы)' },
   { command: 'delpoi', description: 'Удалить место по id' },
   { command: 'slang', description: 'Словечки, которые я подхватил из чата' },

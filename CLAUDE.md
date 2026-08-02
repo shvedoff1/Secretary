@@ -89,6 +89,30 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `humorizeWithPreview` just like the live flow — passing the chat's lexicon to that call
   so its voice matches the chat. Recent chatter is still injected into a humour task's
   Claude context (see `scheduler.ts`); plain/factual tasks stay context-clean.
+- `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
+  on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
+  когда появятся сеансы Титана». Created in plain words via the `watch_page` tool
+  (url + `condition` — the precise awaited event — + `keywords`), listed in the
+  context block ("Active page watches") so the model never duplicates one, managed
+  with `/watch` (`/watch del <id>`, `/watch check <id>` forces a poll now). The
+  poller (`poller.ts`, driven by the same minute tick as the scheduler in
+  `index.ts`) fetches the page (`fetch.ts` — the only place watch HTTP happens,
+  browser-ish UA), and keeps the polling cheap with two gates before any LLM call:
+  a KEYWORD gate (no target keyword in the raw html => the event can't have
+  happened; raw html so JS-rendered pages whose schedule lives in embedded JSON
+  state still match) and an unchanged-page hash (the model-facing excerpt —
+  visible text + raw-HTML windows around keyword hits, `extract.ts`, pure — is
+  hashed; same hash as last poll => same verdict, skip). Only a changed,
+  keyword-bearing page reaches `src/llm/watchCheck.ts` (Haiku, temperature 0,
+  strict "concrete evidence only" prompt so a «скоро в кино» teaser never fires;
+  any malformed/failed verdict reads as not-met — fail-safe). On met: notify FIRST,
+  then disarm (a failed send retries next poll), and record the post as an
+  assistant turn so follow-ups have context. Watches expire (default 2 weeks, with
+  a farewell note), fetch failures warn the chat exactly once (at 10 consecutive),
+  and a per-chat cap (default 10) bounds the poll loop. Off globally via
+  `ENABLE_WATCH=false`; the tool is off for scheduled runs (no self-spawning) and
+  tutor chats. Knobs: `WATCH_INTERVAL_MINUTES` (default 15, clamped ≥5),
+  `WATCH_EXPIRES_DAYS`, `WATCH_MAX_PER_CHAT`, `ANTHROPIC_WATCH_MODEL`.
 - `src/surf/` — `surf_forecast` skill: fetches wave/wind from Open-Meteo (the only place
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a

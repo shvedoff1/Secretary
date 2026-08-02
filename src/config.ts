@@ -117,6 +117,20 @@ const ConfigSchema = z.object({
   // Max voice/style ("persona") directives to inject. These live in their own context
   // section so they don't compete with factual chat memory for the chat budget.
   MEMORY_CONTEXT_PERSONA: z.coerce.number().int().positive().default(20),
+  // Page watches ("вотчеры"): poll a URL until an awaited event appears on it
+  // («следи за страницей и напиши, когда появятся сеансы»), then notify the chat.
+  ENABLE_WATCH: boolish.default(true),
+  // Cheap model that judges "did the event happen?" from a page excerpt each poll
+  // (the keyword gate + unchanged-page hash keep most polls from reaching it).
+  ANTHROPIC_WATCH_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Default poll interval when the user doesn't ask for a pace.
+  WATCH_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
+  // Default lifetime: a watch that never fires disarms (with a note) after this.
+  WATCH_EXPIRES_DAYS: z.coerce.number().int().positive().default(14),
+  // Cap on active watches per chat so one chat can't fill the poll loop.
+  WATCH_MAX_PER_CHAT: z.coerce.number().int().positive().default(10),
+  // Hard cap (ms) on a single page fetch.
+  WATCH_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
   // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't

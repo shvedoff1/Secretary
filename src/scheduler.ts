@@ -134,6 +134,8 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         allowLexiconEdit: false,
         allowPingEdit: false,
         allowReminders: false,
+        // A firing task must not arm page watches either — same self-spawning risk.
+        allowWatch: false,
         allowPoi: false,
         history: [],
         userContent,
@@ -145,6 +147,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         editLexicon: () => 'noop',
         editPingList: () => 'noop',
         scheduleTask: () => 'noop',
+        watchPage: () => 'noop',
         // Surf forecast stays live: a recurring evening task asks for tomorrow's
         // forecast and the bot posts the recommendation to the chat.
         surfForecast,

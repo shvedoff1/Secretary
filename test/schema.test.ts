@@ -4,6 +4,7 @@ import {
   RememberZ,
   EditMemoryZ,
   EditPingListZ,
+  WatchPageZ,
   toParsedExpense,
 } from '../src/llm/schema.js';
 
@@ -45,6 +46,33 @@ function parse(over: Record<string, unknown> = {}) {
     ...over,
   });
 }
+
+describe('WatchPageZ', () => {
+  const base = {
+    title: 'Сеансы Титана',
+    url: 'https://kinomax.ru/titan/2026-08-06',
+    condition: 'появились сеансы фильма «Титан»',
+    keywords: ['титан', 'titan'],
+    intervalMinutes: null,
+    expiresInDays: null,
+  };
+
+  it('accepts a full watch with null pace/lifetime', () => {
+    expect(WatchPageZ.safeParse(base).success).toBe(true);
+  });
+
+  it('accepts explicit interval and expiry', () => {
+    const r = WatchPageZ.safeParse({ ...base, intervalMinutes: 5, expiresInDays: 7 });
+    expect(r.success && r.data.intervalMinutes).toBe(5);
+    expect(r.success && r.data.expiresInDays).toBe(7);
+  });
+
+  it('rejects a non-url, empty keywords, and non-positive interval', () => {
+    expect(WatchPageZ.safeParse({ ...base, url: 'kinomax' }).success).toBe(false);
+    expect(WatchPageZ.safeParse({ ...base, keywords: [] }).success).toBe(false);
+    expect(WatchPageZ.safeParse({ ...base, intervalMinutes: 0 }).success).toBe(false);
+  });
+});
 
 describe('EditPingListZ', () => {
   it('accepts add/remove with several members and a null (default) list', () => {

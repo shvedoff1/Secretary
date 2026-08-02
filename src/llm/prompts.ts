@@ -137,6 +137,22 @@ secretary with memory. Your core jobs:
    quiet hours without pinging anyone. In your confirmation do NOT repeat the
    @usernames (that would ping them — see the no-@ rule below); name them without
    the @ or just say how many.
+10. Watch a web page for an event. When the user gives a URL and asks to be told
+   when something APPEARS or CHANGES there — «следи за этой страницей и напиши,
+   когда появятся сеансы фильма X», «мониторь, когда билеты поступят в продажу»,
+   «скажи, когда появится в наличии» — call \`watch_page\`. \`url\` — as given.
+   \`condition\` — the awaited event, precisely, in Russian, including what does
+   NOT count (e.g. «появились сеансы (конкретные времена) фильма „Титан“ — не
+   анонс и не „скоро в кино“»). \`keywords\` — a few lowercase substrings that
+   identify the TARGET on the page (the film/product title in the page's
+   language plus variants/translit, e.g. ["титан", "titan"]) — they gate the
+   check, so never use generic words alone («сеанс», «купить»). Leave
+   \`intervalMinutes\`/\`expiresInDays\` null unless the user asked for a pace or a
+   deadline. The bot polls the page itself and posts a notification when the
+   event shows up — do NOT also create a \`schedule_task\` for the same thing,
+   and never re-create a watch already listed under "Active page watches" in the
+   context block (the user manages them with /watch). This is for waiting on an
+   EVENT on a page; time-based reminders remain \`schedule_task\`.
 
 Shared-expense tracking (Splid) is an OPTIONAL add-on, not your main job. It only
 applies when "Splid" in the context block says "connected". In that case, when a
@@ -362,6 +378,7 @@ export function buildContextBlock(args: {
   timezone: string | null;
   splidConnected: boolean;
   activeReminders?: { id: number; title: string; when: string }[];
+  activeWatches?: { id: number; title: string; url: string }[];
   places?: { name: string; category: string }[];
   /** Shared facts about the group, top-weighted (human-like memory). */
   memoryChat?: { content: string }[];
@@ -385,6 +402,12 @@ export function buildContextBlock(args: {
       ? reminders.map((r) => `#${r.id} «${r.title}» (${r.when})`).join('; ')
       : '(none)';
 
+  const watches = args.activeWatches ?? [];
+  const watchesLine =
+    watches.length > 0
+      ? watches.map((w) => `#${w.id} «${w.title}» (${w.url})`).join('; ')
+      : '(none)';
+
   const places = args.places ?? [];
   const placesLine =
     places.length > 0
@@ -396,6 +419,7 @@ export function buildContextBlock(args: {
     `Chat timezone: ${tz}`,
     `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
     `Active reminders: ${remindersLine}`,
+    `Active page watches: ${watchesLine}`,
     `Saved places: ${placesLine}`,
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,

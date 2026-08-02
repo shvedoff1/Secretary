@@ -36,6 +36,11 @@ import {
   findDuplicate,
 } from '../../db/repos/scheduledTask.repo.js';
 import {
+  createWatch,
+  listWatches,
+  findDuplicateWatch,
+} from '../../db/repos/pageWatch.repo.js';
+import {
   nextRunMs,
   isValidSchedule,
   isValidTimezone,
@@ -43,6 +48,7 @@ import {
 } from '../../util/schedule.js';
 import type {
   ScheduleTaskInput,
+  WatchPageInput,
   AddPoiInput,
   EditLexiconInput,
   EditPingListInput,
@@ -252,6 +258,62 @@ export function makeScheduleTaskHandler(
     const kind = input.once ? 'Напоминание' : 'Регулярная задача';
     const humorNote = input.humor ? ' 😂 с юмором' : '';
     return `${kind} #${id} «${input.title}»${humorNote} создана. Первый запуск: ${when} (${tz}). Список: /tasks`;
+  };
+}
+
+/**
+ * Build the `watch_page` handler for a chat — the «следи за страницей и напиши,
+ * когда появятся сеансы» flow. Validates the model's input, clamps the pace and
+ * lifetime to sane bounds, guards against duplicates and a per-chat cap, arms the
+ * watch (first poll on the next runner tick), and returns a human confirmation.
+ */
+export function makeWatchPageHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: WatchPageInput) => string {
+  return (input) => {
+    const cfg = loadConfig();
+    if (!/^https?:\/\//i.test(input.url)) {
+      return 'Могу следить только за обычными http(s)-страницами — дай прямую ссылку.';
+    }
+    const keywords = [
+      ...new Set(input.keywords.map((k) => k.trim().toLowerCase()).filter(Boolean)),
+    ];
+    if (keywords.length === 0) {
+      return 'Не понял, какие слова искать на странице — уточни, что именно должно появиться.';
+    }
+    const active = listWatches(chatId);
+    const dup = findDuplicateWatch(active, { url: input.url, condition: input.condition });
+    if (dup) {
+      return `Уже слежу — вотчер #${dup.id} «${dup.title}». Список: /watch`;
+    }
+    if (active.length >= cfg.WATCH_MAX_PER_CHAT) {
+      return `В этом чате уже ${active.length} активных вотчеров — это потолок. Сними лишний: /watch del <id> (список: /watch)`;
+    }
+    const interval = Math.min(
+      Math.max(input.intervalMinutes ?? cfg.WATCH_INTERVAL_MINUTES, 5),
+      24 * 60,
+    );
+    const days = Math.min(Math.max(input.expiresInDays ?? cfg.WATCH_EXPIRES_DAYS, 1), 90);
+    const now = Date.now();
+    const expiresAt = now + days * 24 * 60 * 60_000;
+    const id = createWatch({
+      chatId,
+      tgUserId,
+      title: input.title,
+      url: input.url,
+      condition: input.condition,
+      keywords,
+      intervalMinutes: interval,
+      expiresAt,
+      // Due immediately: the runner's next minute tick does the first poll.
+      nextCheckAt: now,
+    });
+    const until = formatInTimezone(expiresAt, getTimezone(chatId) ?? cfg.DEFAULT_TIMEZONE);
+    return (
+      `👁 Вотчер #${id} «${input.title}» поставлен: проверяю страницу каждые ${interval} мин ` +
+      `(слежу до ${until}). Как появится — сразу напишу сюда. Список: /watch`
+    );
   };
 }
 
@@ -513,6 +575,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           title: t.title,
           when: (t.once ? 'разово ' : '') + formatInTimezone(t.nextRunAt, t.timezone),
         })),
+        activeWatches: listWatches(chatId).map((w) => ({
+          id: w.id,
+          title: w.title,
+          url: w.url,
+        })),
         places: listPois(chatId).map((p) => ({ name: p.name, category: p.category })),
         history,
         userContent: args.userContent,
@@ -524,6 +591,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         editLexicon: makeEditLexiconHandler(chatId),
         editPingList: makeEditPingListHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+        watchPage: makeWatchPageHandler(chatId, tgUserId),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
         spendingReport: makeSpendingReportHandler(chatId),
@@ -728,6 +796,7 @@ async function rewordPendingInner(
       editLexicon: makeEditLexiconHandler(chatId),
       editPingList: makeEditPingListHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+      watchPage: makeWatchPageHandler(chatId, tgUserId),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
       spendingReport: makeSpendingReportHandler(chatId),

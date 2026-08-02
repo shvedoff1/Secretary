@@ -8,6 +8,7 @@ import {
   EDIT_LEXICON_TOOL,
   EDIT_PING_LIST_TOOL,
   SCHEDULE_TASK_TOOL,
+  WATCH_PAGE_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
 } from '../src/llm/tools.js';
@@ -133,6 +134,21 @@ describe('buildTools', () => {
       buildTools({ enableWebSearch: true, enableExpense: false, enablePingEdit: false }),
     );
     expect(scheduled).not.toContain(EDIT_PING_LIST_TOOL);
+  });
+
+  it('exposes watch_page by default and omits it for scheduled runs', () => {
+    expect(names(buildTools({ enableWebSearch: false, enableExpense: false }))).toContain(
+      WATCH_PAGE_TOOL,
+    );
+    const tool = buildTools({ enableWebSearch: false, enableExpense: false }).find(
+      (t) => 'name' in t && t.name === WATCH_PAGE_TOOL,
+    );
+    expect('input_schema' in tool!).toBe(true);
+
+    const scheduled = names(
+      buildTools({ enableWebSearch: true, enableExpense: false, enableWatch: false }),
+    );
+    expect(scheduled).not.toContain(WATCH_PAGE_TOOL);
   });
 
   it('exposes spending_report only when enabled (a Splid group is connected)', () => {

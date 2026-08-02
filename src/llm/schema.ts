@@ -113,6 +113,16 @@ export const ScheduleTaskZ = z.object({
 });
 export type ScheduleTaskInput = z.infer<typeof ScheduleTaskZ>;
 
+export const WatchPageZ = z.object({
+  title: z.string().min(1),
+  url: z.string().url(),
+  condition: z.string().min(1),
+  keywords: z.array(z.string().min(1)).min(1).max(10),
+  intervalMinutes: z.number().int().positive().nullable(),
+  expiresInDays: z.number().int().positive().nullable(),
+});
+export type WatchPageInput = z.infer<typeof WatchPageZ>;
+
 export const SurfForecastZ = z.object({
   spots: z
     .array(
@@ -418,6 +428,47 @@ export const scheduleTaskJsonSchema = {
     },
   },
   required: ['title', 'prompt', 'cron', 'timezone', 'once', 'humor'],
+} as const;
+
+export const watchPageJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: {
+      type: 'string',
+      description:
+        'Short human-readable title of what is being awaited, e.g. "Сеансы «Титана» в Киномаксе".',
+    },
+    url: {
+      type: 'string',
+      description:
+        'The exact http(s) page to poll, as the user gave it (e.g. "https://kinomax.ru/titan/2026-08-06").',
+    },
+    condition: {
+      type: 'string',
+      description:
+        'The awaited EVENT, precisely, in Russian — including what counts as real evidence, so a checking model can judge strictly. E.g. «в расписании появились сеансы (конкретные времена) фильма „Титан“ — не анонс, не „скоро в кино“, не сеансы других фильмов».',
+    },
+    keywords: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: { type: 'string' },
+      description:
+        'Lowercase substrings that will appear on the page when the event is possible — they GATE the check (no keyword on the page => no check), so make them identify the TARGET: the film/product title in the page\'s language plus useful variants/translit (e.g. ["титан", "titan"]). Avoid generic words like «сеанс» alone — they match any page state.',
+    },
+    intervalMinutes: {
+      type: ['number', 'null'],
+      description:
+        'How often to poll, in minutes, when the user asks for a pace («проверяй каждые 5 минут» => 5). null => the default (~15 min).',
+    },
+    expiresInDays: {
+      type: ['number', 'null'],
+      description:
+        'Stop watching after this many days if the event never happens, when the user bounds it («следи неделю» => 7). null => the default (~2 weeks).',
+    },
+  },
+  required: ['title', 'url', 'condition', 'keywords', 'intervalMinutes', 'expiresInDays'],
 } as const;
 
 export const surfForecastJsonSchema = {

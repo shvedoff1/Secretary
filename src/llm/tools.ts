@@ -7,6 +7,7 @@ import {
   editLexiconJsonSchema,
   editPingListJsonSchema,
   scheduleTaskJsonSchema,
+  watchPageJsonSchema,
   surfForecastJsonSchema,
   addPoiJsonSchema,
   spendingReportJsonSchema,
@@ -19,6 +20,7 @@ export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
 export const EDIT_LEXICON_TOOL = 'edit_lexicon';
 export const EDIT_PING_LIST_TOOL = 'edit_ping_list';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
+export const WATCH_PAGE_TOOL = 'watch_page';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
 export const SPENDING_REPORT_TOOL = 'spending_report';
@@ -43,6 +45,10 @@ export interface ToolOptions {
   /** Expose the schedule_task tool. Default true; disabled for scheduled runs so a
    *  firing reminder can't create more reminders. */
   enableReminders?: boolean;
+  /** Expose the watch_page tool (poll a URL until an awaited event appears).
+   *  Default true; disabled for scheduled runs (a firing task must not spawn
+   *  watches), tutor chats, and when ENABLE_WATCH is off. */
+  enableWatch?: boolean;
   /** Expose the surf_forecast tool. Default true; stays on for scheduled runs so a
    *  recurring evening task can produce the "where to go tomorrow" report. */
   enableSurf?: boolean;
@@ -120,6 +126,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Create a reminder or recurring task. Call this ONLY for a NEW request in the user\'s latest message (e.g. "напомни встать через 3 минуты", "каждое утро ищи прогноз волн и кидай сюда"). Convert the timing into a cron expression. The task `prompt` runs later WITHOUT chat history, so make it self-contained. Set `humor` to true when the user wants a funny/light tone for this task and false for a plain reminder. Never recreate a reminder that already appears in "Active reminders" in the context. Confirm timezone with the user once if it is unknown in the context.',
       input_schema: scheduleTaskJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableWatch !== false) {
+    tools.push({
+      name: WATCH_PAGE_TOOL,
+      description:
+        'Start watching a WEB PAGE and notify this chat when an awaited event appears on it. Call this when the user gives a URL and asks to be told when something appears/changes there («следи за этой страницей и напиши, когда появятся сеансы фильма X», «мониторь, когда билеты поступят в продажу», «скажи, когда появится в наличии»). The bot polls the page itself and posts a notification when the event shows up — do NOT also create a schedule_task for the same thing. `condition` must describe the awaited event precisely (including what does NOT count — e.g. a «скоро в кино» teaser); `keywords` are lowercase substrings identifying the TARGET (title in the page\'s language + variants/translit) that gate the check. Never re-create a watch already listed in "Active page watches" in the context; the list is managed with /watch. Event-on-a-page waiting only — time-based reminders stay schedule_task.',
+      input_schema: watchPageJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

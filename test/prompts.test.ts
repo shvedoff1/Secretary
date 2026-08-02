@@ -12,6 +12,17 @@ describe('SYSTEM_PROMPT web-search guidance', () => {
   });
 });
 
+// Guard the page-watch routing: «следи за <url> и напиши, когда появятся …» must
+// go to watch_page, not become a once-a-day schedule_task cron check (a real
+// misroute that shipped once — the daily check would simply miss the event).
+describe('SYSTEM_PROMPT page-watch routing', () => {
+  it('carves page watches out of the reminders job and points at watch_page', () => {
+    expect(SYSTEM_PROMPT).toContain('watch_page');
+    expect(SYSTEM_PROMPT).toContain('NOT A REMINDER');
+    expect(SYSTEM_PROMPT).toContain('Active page watches');
+  });
+});
+
 // Slang now rides ONLY on the OpenAI humorizer, not Claude — Claude gets clean
 // history/context. Guard that the lexicon block is gone from the model's prompt
 // so it can't silently creep back in.

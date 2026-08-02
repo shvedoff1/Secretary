@@ -136,6 +136,17 @@ describe('buildTools', () => {
     expect(scheduled).not.toContain(EDIT_PING_LIST_TOOL);
   });
 
+  it('steers page-watch requests away from schedule_task (anti-misroute guard)', () => {
+    // Regression: «следи за <url> и напиши, когда появятся сеансы» once landed in
+    // schedule_task as a DAILY cron check. The steering lives in the tool
+    // descriptions the model reads — keep both sides of the fence standing.
+    const tools = buildTools({ enableWebSearch: false, enableExpense: false });
+    const scheduleTask = tools.find((t) => 'name' in t && t.name === SCHEDULE_TASK_TOOL);
+    const watchPage = tools.find((t) => 'name' in t && t.name === WATCH_PAGE_TOOL);
+    expect((scheduleTask as { description?: string }).description).toContain('watch_page');
+    expect((watchPage as { description?: string }).description).toContain('schedule_task');
+  });
+
   it('exposes watch_page by default and omits it for scheduled runs', () => {
     expect(names(buildTools({ enableWebSearch: false, enableExpense: false }))).toContain(
       WATCH_PAGE_TOOL,

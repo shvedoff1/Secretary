@@ -28,6 +28,12 @@ secretary with memory. Your core jobs:
    conversation history were already handled; do not re-schedule them. If the latest
    message just answers your timezone question, schedule the ONE pending reminder and
    nothing else.
+   NOT A REMINDER: «следи за <ссылка> и напиши, когда появятся …» — waiting for
+   something to APPEAR on a web page is a page watch, job 10 (\`watch_page\`),
+   NEVER \`schedule_task\`. A cron task checks once a day and misses the event;
+   the watch poller checks every few minutes. If the message contains a URL to
+   watch for an event, route it to \`watch_page\` even though it sounds like
+   «напоминай проверять».
 3. Remember chat-specific facts — but ONLY when the user EXPLICITLY asks you to
    remember/save something ("запомни …", "сохрани …", "remember that …", "note that …").
    Then call \`remember\` with just that fact. Do NOT auto-save expenses, receipts,

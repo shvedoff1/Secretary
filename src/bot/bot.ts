@@ -19,6 +19,7 @@ import { cmdPoi, cmdDelPoi } from './commands/poi.js';
 import { cmdSlang } from './commands/lexicon.js';
 import { cmdTrata } from './commands/expenseTerm.js';
 import { cmdPing } from './commands/ping.js';
+import { cmdDota } from './commands/dota.js';
 import {
   cmdChats,
   cmdChat,
@@ -125,6 +126,7 @@ export function buildBot(token: string): Bot {
   bot.command('chime', cmdChime);
   bot.command('humor', cmdHumor);
   bot.command('react', cmdReact);
+  bot.command('dota', cmdDota);
 
   bot.callbackQuery(/^u:/, handleUserCallback);
   bot.callbackQuery(/^e:/, handleExpenseCallback);
@@ -170,6 +172,7 @@ export const BOT_COMMANDS = [
   { command: 'slang', description: 'Словечки, которые я подхватил из чата' },
   { command: 'trata', description: 'Слова, которые я считаю тратами' },
   { command: 'ping', description: 'Пингануть состав (/ping show — глянуть без пинга)' },
+  { command: 'dota', description: 'База по доте: /dota, /dota sync, /dota <название>' },
   { command: 'whoami', description: 'Кто я для бота' },
   { command: 'request', description: 'Запросить доступ' },
 ];

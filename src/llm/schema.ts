@@ -123,6 +123,13 @@ export const WatchPageZ = z.object({
 });
 export type WatchPageInput = z.infer<typeof WatchPageZ>;
 
+export const DotaLookupZ = z.object({
+  kind: z.enum(['hero', 'item', 'patch', 'any']),
+  names: z.array(z.string().min(1)).max(8).nullable(),
+  query: z.string().nullable(),
+});
+export type DotaLookupInput = z.infer<typeof DotaLookupZ>;
+
 export const SurfForecastZ = z.object({
   spots: z
     .array(
@@ -469,6 +476,32 @@ export const watchPageJsonSchema = {
     },
   },
   required: ['title', 'url', 'condition', 'keywords', 'intervalMinutes', 'expiresInDays'],
+} as const;
+
+export const dotaLookupJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    kind: {
+      type: 'string',
+      enum: ['hero', 'item', 'patch', 'any'],
+      description:
+        "What is being looked up: 'hero' (герой, его способности/статы/таланты), 'item' (предмет), 'patch' (что изменилось в последнем патче у конкретного героя/предмета), 'any' when unsure.",
+    },
+    names: {
+      type: ['array', 'null'],
+      maxItems: 8,
+      items: { type: 'string' },
+      description:
+        'Canonical ENGLISH names of the heroes/items asked about, as Valve spells them — "Anti-Mage", "Blink Dagger", "Black King Bar". Translate the chat\'s Russian/slang naming yourself («ам», «анти-маг» => "Anti-Mage"; «бкб» => "Black King Bar"; «спешка» => "Hand of Midas" only if that is really what they mean). Never pass a Russian name — the base stores English ones. null when you only have a freetext query.',
+    },
+    query: {
+      type: ['string', 'null'],
+      description:
+        'Freetext search over the base for questions that name no specific entity — "предметы с спелл-вампиризмом", "кто даёт сайленс". Words are matched against names and descriptions. null when `names` already covers the question.',
+    },
+  },
+  required: ['kind', 'names', 'query'],
 } as const;
 
 export const surfForecastJsonSchema = {

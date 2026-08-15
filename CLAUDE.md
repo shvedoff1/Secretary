@@ -113,6 +113,32 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `ENABLE_WATCH=false`; the tool is off for scheduled runs (no self-spawning) and
   tutor chats. Knobs: `WATCH_INTERVAL_MINUTES` (default 15, clamped ≥5),
   `WATCH_EXPIRES_DAYS`, `WATCH_MAX_PER_CHAT`, `ANTHROPIC_WATCH_MODEL`.
+- `src/dota/` — `dota_lookup` skill: CURRENT-patch Dota 2 reference (heroes, items,
+  abilities, talents, facets, patch notes) so the dota persona never answers item/hero
+  numbers from stale training data. A nightly job (`sync.ts`, driven by the hourly tick
+  in `index.ts`, plus a catch-up on startup when the base is empty) crawls Valve's
+  keyless datafeed and stores READY TEXT CARDS in SQLite (migration 021: `dota_entity` +
+  `dota_alias` + an FTS5 `dota_fts` + single-row `dota_sync_state`), so a lookup at chat
+  time is a local read with no network latency. `feed.ts` is the only place dota2.com /
+  dotaconstants HTTP happens (mirrors the splid-js/Open-Meteo rule) — note the feed's
+  quirks: ids can NOT be batched (a full crawl is ~550 requests, hence "at night"),
+  `language=russian` localises descriptions but NOT names (cards keep English names; the
+  model must pass canonical English), and `facets` comes back EMPTY for every hero, so
+  facets + resolved talent values come from odota/dotaconstants (labelled in the card as
+  possibly lagging). Descriptions are TEMPLATES (`%blink_range%`, `{s:bonus_x}`, `%%`)
+  resolved against `special_values` in `template.ts` (pure, fixture-tested — a wrong
+  substitution is a wrong number in the chat); `card.ts` renders them (also pure). The
+  crawl is skipped when one cheap `patchnoteslist` request shows the patch hasn't moved,
+  and a >20% feed-failure rate ABORTS the swap so a bad night can't replace a good base
+  with a gutted one (the whole swap is one transaction). `lookup.ts` resolves names via
+  `dota_alias`, falls back to FTS "did you mean" rather than letting the model invent,
+  attaches the entity's patch notes automatically, and degrades to digests past a char
+  budget. Tool is exposed ONLY in `dota` mode chats (keeps every other chat's cached tool
+  prefix untouched) and stays on for scheduled runs. Admin `/dota` (status), `/dota sync`
+  (force rebuild), `/dota <название>` (preview the stored card). Off via
+  `ENABLE_DOTA=false`; knobs `DOTA_LANGUAGE`, `DOTA_SYNC_HOUR_UTC`,
+  `DOTA_SYNC_MIN_INTERVAL_HOURS`, `DOTA_SYNC_MAX_AGE_HOURS`, `DOTA_FEED_DELAY_MS`,
+  `DOTA_MAX_CARDS`.
 - `src/surf/` — `surf_forecast` skill: fetches wave/wind from Open-Meteo (the only place
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a
@@ -163,7 +189,13 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (so behaviour rules are shared and the string stays prompt-cacheable), the OpenAI
   humorizer gets a matching `persona: 'dota'` variant (schoolkid-sensei rewrite instead of
   the surfer), and the chime in a dota chat is told to weave ONE concrete Dota tactic into
-  its revive quip (see `fireChime`). The mode also ships the deterministic `/ping` roll
+  its revive quip (see `fireChime`). Dota mode is also the ONLY mode that gets the
+  `dota_lookup` tool (`src/dota/`), and its prompt makes calling it mandatory before
+  answering with any concrete game data — the persona's whole shtick is being a sensei,
+  so quoting last patch's item price is the one failure that isn't funny. Because
+  `dota_lookup` is a tool call, those replies are `humorizable:false` (like surf/spending
+  tool answers) — Claude's own dota persona carries the tone, the OpenAI pass stays out
+  of the numbers. The mode also ships the deterministic `/ping` roll
   call: named per-chat ping lists (`ping_list_entry`, `src/db/repos/pingList.repo.ts`) —
   `/ping` pings the default «dota» list, `/ping <список>` a named one, edited via
   `/ping add|del [список] @ник …`, `/ping lists`, `/ping clear [список]`; `/ping show

@@ -8,6 +8,7 @@ import {
   editPingListJsonSchema,
   scheduleTaskJsonSchema,
   watchPageJsonSchema,
+  dotaLookupJsonSchema,
   surfForecastJsonSchema,
   addPoiJsonSchema,
   spendingReportJsonSchema,
@@ -21,6 +22,7 @@ export const EDIT_LEXICON_TOOL = 'edit_lexicon';
 export const EDIT_PING_LIST_TOOL = 'edit_ping_list';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const WATCH_PAGE_TOOL = 'watch_page';
+export const DOTA_LOOKUP_TOOL = 'dota_lookup';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
 export const SPENDING_REPORT_TOOL = 'spending_report';
@@ -49,6 +51,11 @@ export interface ToolOptions {
    *  Default true; disabled for scheduled runs (a firing task must not spawn
    *  watches), tutor chats, and when ENABLE_WATCH is off. */
   enableWatch?: boolean;
+  /** Expose the dota_lookup tool (current-patch hero/item/ability reference read
+   *  from the locally synced knowledge base). Only in dota-mode chats, and only
+   *  when ENABLE_DOTA is on. Stays on for scheduled runs so a recurring "разбор
+   *  патча по утрам" task can use it. */
+  enableDota?: boolean;
   /** Expose the surf_forecast tool. Default true; stays on for scheduled runs so a
    *  recurring evening task can produce the "where to go tomorrow" report. */
   enableSurf?: boolean;
@@ -135,6 +142,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Start watching a WEB PAGE and notify this chat when an awaited event appears on it. Call this when the user gives a URL and asks to be told when something appears/changes there («следи за этой страницей и напиши, когда появятся сеансы фильма X», «мониторь, когда билеты поступят в продажу», «скажи, когда появится в наличии»). The bot polls the page itself and posts a notification when the event shows up — do NOT also create a schedule_task for the same thing. `condition` must describe the awaited event precisely (including what does NOT count — e.g. a «скоро в кино» teaser); `keywords` are lowercase substrings identifying the TARGET (title in the page\'s language + variants/translit) that gate the check. Never re-create a watch already listed in "Active page watches" in the context; the list is managed with /watch. Event-on-a-page waiting only — time-based reminders stay schedule_task.',
       input_schema: watchPageJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableDota) {
+    tools.push({
+      name: DOTA_LOOKUP_TOOL,
+      description:
+        'Look up CURRENT Dota 2 data — heroes, items, abilities, talents and what the latest patch changed — in the bot\'s local base, which is re-synced from Valve\'s own datafeed every night. Call this EVERY time the answer depends on concrete game data: what an item does or costs, an ability\'s cooldown/damage/duration, a hero\'s stats or talents, what changed in the patch («что делает Crella\'s Crozier», «сколько кулдаун у блинка», «какие таланты у Джаггернаута», «что поменяли у Акса»). Your own knowledge of Dota is STALE — items get reworked and renumbered every patch, so answering from memory is how you get the numbers wrong. Pass `names` as canonical ENGLISH names the way Valve spells them (translate the chat\'s «ам»/«бкб»/«анти-маг» yourself), or use `query` for a freetext search when no specific entity is named. The tool returns exact figures for the current patch — relay them as-is, in your usual tone; do not recompute or "correct" them. If it reports that something is missing, say so instead of filling the gap from memory.',
+      input_schema: dotaLookupJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

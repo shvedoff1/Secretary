@@ -1,0 +1,99 @@
+{
+ "heroAbilities": {
+  "npc_dota_hero_juggernaut": {
+   "abilities": [
+    "juggernaut_blade_fury",
+    "juggernaut_healing_ward",
+    "juggernaut_blade_dance",
+    "juggernaut_swift_slash",
+    "juggernaut_bladeform",
+    "juggernaut_omni_slash"
+   ],
+   "talents": [
+    {
+     "name": "special_bonus_unique_juggernaut_5",
+     "level": 1
+    },
+    {
+     "name": "special_bonus_unique_juggernaut_3",
+     "level": 1
+    },
+    {
+     "name": "special_bonus_unique_juggernaut_omnislash_cooldown",
+     "level": 2
+    },
+    {
+     "name": "special_bonus_unique_juggernaut_blade_fury_movespeed",
+     "level": 2
+    },
+    {
+     "name": "special_bonus_unique_juggernaut_4",
+     "level": 3
+    },
+    {
+     "name": "special_bonus_unique_juggernaut",
+     "level": 3
+    },
+    {
+     "name": "special_bonus_unique_juggernaut_omnislash_duration",
+     "level": 4
+    },
+    {
+     "name": "special_bonus_unique_juggernaut_blade_dance_lifesteal",
+     "level": 4
+    }
+   ],
+   "facets": [
+    {
+     "id": 0,
+     "name": "juggernaut_bladestorm",
+     "deprecated": "true",
+     "icon": "spinning",
+     "color": "Yellow",
+     "gradient_id": 1,
+     "title": "Bladestorm",
+     "description": "Blade Fury can now critically strike based on the level of Blade Dance."
+    },
+    {
+     "id": 1,
+     "name": "juggernaut_agigain",
+     "deprecated": "true",
+     "icon": "agility",
+     "color": "Red",
+     "gradient_id": 2,
+     "title": "Bladeform",
+     "description": "Juggernaut gains a stack of Bladeform every 2s that Juggernaut does not take damage. Each stack grants bonus base Agility and Movement Speed. Stacks fade after 2s upon taking any damage.",
+     "abilities": [
+      "juggernaut_bladeform"
+     ]
+    }
+   ]
+  }
+ },
+ "abilities": {
+  "special_bonus_unique_juggernaut_5": {
+   "dname": "-12s Healing Ward Cooldown"
+  },
+  "special_bonus_unique_juggernaut_3": {
+   "dname": "-1.0s Bladeform Stack Gain Interval"
+  },
+  "special_bonus_unique_juggernaut_omnislash_cooldown": {
+   "dname": "-15s Omnislash Cooldown"
+  },
+  "special_bonus_unique_juggernaut_blade_fury_movespeed": {
+   "dname": "45 Movement Speed During Blade Fury"
+  },
+  "special_bonus_unique_juggernaut_4": {
+   "dname": "+15% Blade Dance Crit Damage"
+  },
+  "special_bonus_unique_juggernaut": {
+   "dname": "+120 Blade Fury Damage Per Second"
+  },
+  "special_bonus_unique_juggernaut_omnislash_duration": {
+   "dname": "+1s Omnislash Duration"
+  },
+  "special_bonus_unique_juggernaut_blade_dance_lifesteal": {
+   "dname": "+40% Blade Dance Lifesteal"
+  }
+ }
+}

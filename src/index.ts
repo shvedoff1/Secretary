@@ -8,6 +8,7 @@ import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
 import { runDueWatches } from './watch/poller.js';
+import { runDueDotaSync } from './dota/sync.js';
 import { flushStaleLexicons } from './bot/flows/lexicon.js';
 import { flushStaleMemories } from './bot/flows/memory.js';
 import { isHumorEnabled } from './llm/humorize.js';
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
       surf: cfg.ENABLE_SURF,
       memory: cfg.ENABLE_MEMORY,
       watch: cfg.ENABLE_WATCH,
+      dota: cfg.ENABLE_DOTA,
       humor,
       humorModel: humor ? cfg.OPENAI_HUMOR_MODEL : undefined,
     },
@@ -71,8 +73,16 @@ async function main(): Promise<void> {
     void flushStaleMemories().catch((err) => {
       logger.warn({ err }, 'memory flush tick failed');
     });
+    // The Dota knowledge base decides for itself whether anything is due (a
+    // once-a-day probe, a crawl only at night or when the patch moved), so the
+    // hourly heartbeat is all it needs.
+    void runDueDotaSync();
   }, 60 * 60_000);
   lexiconFlusher.unref();
+
+  // Startup catch-up: an empty base would leave the dota chat unanswerable until
+  // the night hour, so the first boot (and any boot with no data) syncs now.
+  void runDueDotaSync();
 
   // Concurrent long polling: the runner processes updates concurrently instead of
   // one-at-a-time, so a slow LLM turn in one chat no longer blocks every other chat.

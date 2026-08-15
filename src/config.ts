@@ -131,6 +131,28 @@ const ConfigSchema = z.object({
   WATCH_MAX_PER_CHAT: z.coerce.number().int().positive().default(10),
   // Hard cap (ms) on a single page fetch.
   WATCH_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  // Dota knowledge base: a nightly crawl of Valve's datafeed (heroes, items,
+  // abilities, talents, patch notes) into SQLite, read by the `dota_lookup` tool
+  // in dota-mode chats so answers carry CURRENT-patch numbers instead of the
+  // model's stale training data. Needs no API key.
+  ENABLE_DOTA: boolish.default(true),
+  // Feed language for descriptions. Names are never localised by Valve, so this
+  // only affects prose ('russian' matches the chat; 'english' is the fallback).
+  DOTA_LANGUAGE: z.string().min(1).default('russian'),
+  // Hour (UTC) the nightly rebuild runs. A full crawl is ~550 requests, so it is
+  // deliberately parked at night; an empty base syncs immediately on startup.
+  DOTA_SYNC_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(3),
+  // Don't probe the feed more than once per this window (the tick is hourly).
+  DOTA_SYNC_MIN_INTERVAL_HOURS: z.coerce.number().int().positive().default(20),
+  // Staleness net: rebuild even on an unchanged patch string once data is this
+  // old (covers a hotfix shipped without a version bump, or a missed night).
+  DOTA_SYNC_MAX_AGE_HOURS: z.coerce.number().int().positive().default(72),
+  // Minimum gap between two feed requests — politeness on an undocumented,
+  // keyless endpoint. 250ms puts a full crawl at ~5 minutes.
+  DOTA_FEED_DELAY_MS: z.coerce.number().int().nonnegative().default(250),
+  DOTA_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  // Cap on how many entities one dota_lookup call returns (token guard).
+  DOTA_MAX_CARDS: z.coerce.number().int().positive().default(4),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
   // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't

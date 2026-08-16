@@ -158,12 +158,21 @@ export interface ConstantsData {
 
 let lastRequestAt = 0;
 
-/** Serialise politeness: never issue two requests closer than the configured gap. */
+/**
+ * Serialise politeness: never issue two requests closer than the configured gap.
+ *
+ * The slot is reserved SYNCHRONOUSLY, before the await — concurrent callers
+ * (fetchConstants fires two requests at once) would otherwise both measure their
+ * wait against the same `lastRequestAt` and fire together, which is the one
+ * thing this gate exists to prevent.
+ */
 async function politeGap(): Promise<void> {
   const gap = loadConfig().DOTA_FEED_DELAY_MS;
-  const wait = lastRequestAt + gap - Date.now();
+  const now = Date.now();
+  const slot = Math.max(now, lastRequestAt + gap);
+  lastRequestAt = slot;
+  const wait = slot - now;
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastRequestAt = Date.now();
 }
 
 async function getJson<T>(url: string): Promise<T> {

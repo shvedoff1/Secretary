@@ -133,3 +133,39 @@ describe('dota entity store', () => {
     });
   });
 });
+
+describe('duplicate keys', () => {
+  it('drops a repeated (kind, key) instead of losing the whole base to it', async () => {
+    // Regression: `dota_entity` has UNIQUE (kind, key), and the swap is one
+    // transaction — a single duplicated row used to abort it, taking every hero
+    // and item down with it and freezing the base on the previous patch.
+    const repo = await freshRepo();
+    const dup = { ...PATCH, card: 'вторая карточка с тем же ключом' };
+
+    expect(() => repo.replaceDotaEntities([HERO, ITEM, PATCH, dup], '7.41e')).not.toThrow();
+    expect(repo.countDotaEntities()).toEqual({ hero: 1, item: 1, patch: 1 });
+    // First one wins, and the rest of the base survived.
+    expect(repo.findDotaEntity('Anti-Mage', 'patch')?.card).toContain('база ловкости снижена');
+    expect(repo.findDotaEntity('Blink Dagger')?.name).toBe('Blink Dagger');
+  });
+
+  it('keeps same-named entities that carry different keys', async () => {
+    // Levelled items (Dagon 1-5) share a display name but are distinct rows —
+    // keying by feed id must not collapse them into one.
+    const repo = await freshRepo();
+    const dagon = (id: number) => ({
+      kind: 'patch' as const,
+      key: `patch:item:${id}`,
+      feedId: id,
+      name: 'Dagon',
+      card: `Изменения в патче 7.41e — Dagon (уровень ${id})`,
+      summary: 'Dagon',
+      search: 'Dagon патч',
+    });
+
+    expect(repo.replaceDotaEntities([dagon(1), dagon(2), dagon(3)], '7.41e')).toBe(3);
+    expect(repo.countDotaEntities().patch).toBe(3);
+    // All three are reachable under the shared display-name alias.
+    expect(repo.findDotaEntity('Dagon', 'patch')?.name).toBe('Dagon');
+  });
+});

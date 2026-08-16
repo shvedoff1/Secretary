@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { DotaSyncState } from '../src/db/repos/dota.repo.js';
 import { isSyncDue } from '../src/dota/sync.js';
 
-const OPTS = { hourUtc: 3, minIntervalHours: 20, maxAgeHours: 72 };
+const OPTS = { hourUtc: 3, minIntervalHours: 20, maxAgeHours: 72, retryIntervalHours: 6 };
 const HOUR = 3_600_000;
 
 function at(iso: string): number {
@@ -17,6 +17,16 @@ describe('isSyncDue', () => {
   it('syncs immediately when the base has never been built', () => {
     // A fresh deploy must not sit unanswerable until 3am.
     expect(isSyncDue(state(), at('2026-08-15T14:00:00Z'), OPTS)).toBe(true);
+  });
+
+  it('does not re-crawl every tick while an empty base keeps failing', () => {
+    // Regression: the "no data yet" fast path used to bypass the throttle, so a
+    // feed outage meant a fresh ~550-request crawl every single hour.
+    const now = at('2026-08-15T14:00:00Z');
+    const failing = state({ lastFullSync: null, lastCheck: now - HOUR, lastError: 'HTTP 503' });
+    expect(isSyncDue(failing, now, OPTS)).toBe(false);
+    // ...but it does come back once the retry window is up.
+    expect(isSyncDue(failing, now + 6 * HOUR, OPTS)).toBe(true);
   });
 
   it('does not probe twice within the interval', () => {
@@ -149,10 +159,53 @@ describe('runDotaSync', () => {
     expect(repo.findDotaEntity('Blink Dagger')?.card).toContain('Перемещает на 1200');
   });
 
-  it('takes the LAST entry of the patch list as the current patch', async () => {
+  it('takes the NEWEST patch by timestamp, not by array position', async () => {
     const { sync, repo } = await freshSync();
     await sync.runDotaSync(true);
     expect(repo.getDotaSyncState().patch).toBe('7.41e');
+  });
+
+  it('still finds the current patch if the feed lists it oldest-last', async () => {
+    // The list ordering is undocumented; a reversed one must not rebuild the
+    // whole base on an ancient patch, which is the very failure this exists to
+    // prevent.
+    const { sync, repo } = await freshSync();
+    feed.fetchPatchList.mockResolvedValue([
+      { patch_number: '7.41e', patch_name: '7.41e', patch_timestamp: 2 },
+      { patch_number: '7.41d', patch_name: '7.41d', patch_timestamp: 1 },
+    ]);
+    await sync.runDotaSync(true);
+    expect(repo.getDotaSyncState().patch).toBe('7.41e');
+  });
+
+  it('keys patch notes by feed id, so same-named entries cannot collide', async () => {
+    // Two ids, one display name (levelled items such as Dagon). Keyed by name,
+    // the second insert hit UNIQUE (kind, key) and aborted the entire swap.
+    const { sync, repo } = await freshSync();
+    feed.fetchItemList.mockResolvedValue([
+      { id: 1, name: 'item_dagon', name_loc: 'Dagon' },
+      { id: 2, name: 'item_dagon_2', name_loc: 'Dagon' },
+    ]);
+    feed.fetchItem.mockImplementation(async (id: number) => ({
+      ...ITEM,
+      id,
+      name: id === 1 ? 'item_dagon' : 'item_dagon_2',
+      name_loc: 'Dagon',
+    }));
+    feed.fetchPatchNotes.mockResolvedValue({
+      patch_number: '7.41e',
+      patch_name: '7.41e',
+      patch_timestamp: 2,
+      items: [
+        { ability_id: 1, ability_notes: [{ note: 'Урон Dagon 1 снижен' }] },
+        { ability_id: 2, ability_notes: [{ note: 'Урон Dagon 2 снижен' }] },
+      ],
+    });
+
+    const result = await sync.runDotaSync(true);
+    expect(result.status).toBe('synced');
+    // Heroes and items survived, and both patch blocks were stored.
+    expect(repo.countDotaEntities()).toEqual({ hero: 1, item: 2, patch: 2 });
   });
 
   it('skips recipes — they carry no data worth indexing', async () => {

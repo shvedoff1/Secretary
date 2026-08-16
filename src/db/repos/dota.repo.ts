@@ -1,4 +1,5 @@
 import { getDb } from '../client.js';
+import { logger } from '../../logger.js';
 
 // Storage for the Dota knowledge base (see src/dota/). Global reference data,
 // not per-chat: the game is the same in every chat.
@@ -86,6 +87,12 @@ function aliasesFor(input: DotaEntityInput): string[] {
  * entities, their lookup aliases and the FTS index are rebuilt together, so a
  * failed sync leaves the previous (working) patch in place rather than a
  * half-written mix, and the FTS index can never drift from the rows.
+ *
+ * Repeated (kind, key) pairs are dropped rather than thrown at the UNIQUE
+ * constraint: one duplicate would abort the transaction and take the ENTIRE
+ * base down with it (heroes and items included) over what is, by definition, a
+ * row we already have. The sync keys entities by feed id precisely so this stays
+ * a last-resort guard against a feed that lists the same id twice.
  */
 export function replaceDotaEntities(
   entities: DotaEntityInput[],
@@ -93,6 +100,17 @@ export function replaceDotaEntities(
   now = Date.now(),
 ): number {
   const db = getDb();
+  const unique: DotaEntityInput[] = [];
+  const takenKeys = new Set<string>();
+  for (const e of entities) {
+    const dedupeKey = `${e.kind}:${e.key}`;
+    if (takenKeys.has(dedupeKey)) {
+      logger.warn({ kind: e.kind, key: e.key, name: e.name }, 'dota: duplicate entity key dropped');
+      continue;
+    }
+    takenKeys.add(dedupeKey);
+    unique.push(e);
+  }
   const run = db.transaction(() => {
     db.exec('DELETE FROM dota_alias');
     db.exec('DELETE FROM dota_fts');
@@ -107,7 +125,7 @@ export function replaceDotaEntities(
     const insertFts = db.prepare(
       'INSERT INTO dota_fts (name, body, entity_id) VALUES (?, ?, ?)',
     );
-    for (const e of entities) {
+    for (const e of unique) {
       const info = insertEntity.run(
         e.kind,
         e.key,
@@ -125,7 +143,7 @@ export function replaceDotaEntities(
     }
   });
   run();
-  return entities.length;
+  return unique.length;
 }
 
 /** Exact lookup by any known alias. `kind` null searches heroes and items. */

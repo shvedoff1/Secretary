@@ -19,12 +19,15 @@ const FULL_CARD_BUDGET = 6000;
 function describeMiss(name: string, kind: DotaLookupInput['kind']): string {
   const wanted = kind === 'any' ? null : kind;
   const near = searchDotaEntities(name, 4, wanted);
-  if (near.length === 0) {
+  // A hero and its patch card share a display name, so the raw hit list can
+  // suggest the same thing twice ("Похожее: Axe, Axe") — dedupe by name.
+  const candidates = [...new Set(near.map((e) => e.name))];
+  if (candidates.length === 0) {
     return `«${name}» — не нашёл в базе. Проверь английское название (база хранит их так, как их пишет Valve).`;
   }
-  return `«${name}» — точного совпадения нет. Похожее в базе: ${near
-    .map((e) => e.name)
-    .join(', ')}. Если имелось в виду одно из них — переспроси или уточни название.`;
+  return `«${name}» — точного совпадения нет. Похожее в базе: ${candidates.join(
+    ', ',
+  )}. Если имелось в виду одно из них — переспроси или уточни название.`;
 }
 
 /**
@@ -63,7 +66,8 @@ export function makeDotaLookupHandler(): (input: DotaLookupInput) => string {
     };
 
     const seen = new Set<number>();
-    for (const name of names.slice(0, cfg.DOTA_MAX_CARDS)) {
+    const asked = names.slice(0, cfg.DOTA_MAX_CARDS);
+    for (const name of asked) {
       const entity = findDotaEntity(name, kind);
       if (!entity) {
         blocks.push(describeMiss(name, input.kind));
@@ -79,8 +83,22 @@ export function makeDotaLookupHandler(): (input: DotaLookupInput) => string {
       const patchNotes = findDotaEntity(name, 'patch');
       if (patchNotes && !seen.has(patchNotes.id)) {
         seen.add(patchNotes.id);
-        blocks.push(patchNotes.card);
+        // Through `push`, not straight into `blocks`: patch notes are cards like
+        // any other and have to be paid for out of the same budget, or asking
+        // about four heroes right after a patch quietly doubles the tool result.
+        push(patchNotes);
       }
+    }
+
+    // The schema lets the model ask for up to 8 names while DOTA_MAX_CARDS caps
+    // what one call returns. Say what was dropped instead of answering about
+    // four heroes as though all eight had been covered.
+    if (names.length > asked.length) {
+      blocks.push(
+        `Не поместились в этот ответ: ${names
+          .slice(asked.length)
+          .join(', ')}. Если они нужны — спроси их отдельным вызовом инструмента.`,
+      );
     }
 
     const query = (input.query ?? '').trim();

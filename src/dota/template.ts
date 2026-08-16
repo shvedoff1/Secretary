@@ -20,8 +20,9 @@ export interface DotaSpecialValue {
 /** Trim a float the way the game client shows it: 5 not 5.0, 1.75 not 1.750001. */
 export function formatNumber(n: number): string {
   if (!Number.isFinite(n)) return '?';
-  const rounded = Math.round(n * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+  // Rounding to 2dp already drops the trailing zeroes String() would print
+  // (1.75, 5 — never 1.750001 or 5.0), so there is nothing left to special-case.
+  return String(Math.round(n * 100) / 100);
 }
 
 /**

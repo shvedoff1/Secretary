@@ -147,6 +147,9 @@ const ConfigSchema = z.object({
   // Staleness net: rebuild even on an unchanged patch string once data is this
   // old (covers a hotfix shipped without a version bump, or a missed night).
   DOTA_SYNC_MAX_AGE_HOURS: z.coerce.number().int().positive().default(72),
+  // How long an EMPTY base waits before retrying a failed build. Without it a
+  // feed outage would mean a fresh ~550-request crawl on every hourly tick.
+  DOTA_SYNC_RETRY_HOURS: z.coerce.number().int().positive().default(6),
   // Minimum gap between two feed requests — politeness on an undocumented,
   // keyless endpoint. 250ms puts a full crawl at ~5 minutes.
   DOTA_FEED_DELAY_MS: z.coerce.number().int().nonnegative().default(250),

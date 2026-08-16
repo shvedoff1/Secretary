@@ -16,6 +16,7 @@ import {
   fetchItemList,
   fetchPatchList,
   fetchPatchNotes,
+  type FeedPatch,
 } from './feed.js';
 import {
   renderGeneralPatchCard,
@@ -37,6 +38,7 @@ export interface SyncOptions {
   hourUtc: number;
   minIntervalHours: number;
   maxAgeHours: number;
+  retryIntervalHours: number;
 }
 
 /**
@@ -44,17 +46,44 @@ export interface SyncOptions {
  * a clock or a network.
  *
  * - no data at all => yes, right now (a bot that just booted must not wait for
- *   3am to be able to answer anything);
+ *   3am to be able to answer anything) — but NOT on every tick: a crawl that
+ *   keeps failing (feed down, too many 5xx) would otherwise fire another ~550
+ *   requests every hour, forever. After a failed attempt the empty base waits
+ *   out `retryIntervalHours` like everyone else;
  * - already probed within the last interval => no (one probe a day);
  * - data older than the staleness net => yes, whatever the hour;
  * - otherwise only during the configured night hour.
  */
 export function isSyncDue(state: DotaSyncState, now: number, opts: SyncOptions): boolean {
-  if (!state.lastFullSync) return true;
   const hour = 3_600_000;
+  if (!state.lastFullSync) {
+    return !state.lastCheck || now - state.lastCheck >= opts.retryIntervalHours * hour;
+  }
   if (state.lastCheck && now - state.lastCheck < opts.minIntervalHours * hour) return false;
   if (now - state.lastFullSync >= opts.maxAgeHours * hour) return true;
   return new Date(now).getUTCHours() === opts.hourUtc;
+}
+
+/**
+ * The current patch out of `patchnoteslist`. The feed happens to return the list
+ * oldest-first, but that is an undocumented ordering to be leaning on — a day
+ * where it comes back reversed would silently rebuild the base on an ancient
+ * patch, which is exactly the failure this feature exists to prevent. Pick by
+ * timestamp and fall back to array order only if the feed ships none.
+ */
+export function pickCurrentPatch(patches: FeedPatch[]): string | null {
+  let best: FeedPatch | null = null;
+  for (const patch of patches) {
+    if (!patch?.patch_number) continue;
+    if (!best) {
+      best = patch;
+      continue;
+    }
+    const ts = patch.patch_timestamp ?? 0;
+    const bestTs = best.patch_timestamp ?? 0;
+    if (ts >= bestTs) best = patch;
+  }
+  return best?.patch_number ?? null;
 }
 
 export interface SyncResult {
@@ -142,13 +171,32 @@ async function crawl(patch: string): Promise<DotaEntityInput[]> {
           notes: a.ability_notes,
         })),
       ]);
-      if (card) entities.push({ ...card, kind: 'patch', key: `patch:hero:${name}`, name });
+      // Keyed by FEED ID, not by display name: names are not unique (levelled
+      // items such as Dagon 1-5 all render as "Dagon"), and `dota_entity` has a
+      // UNIQUE (kind, key) — a collision would abort the whole swap transaction,
+      // taking heroes and items down with it. The display name stays a lookup
+      // alias, so «что поменяли у Акса» still resolves.
+      if (card)
+        entities.push({
+          ...card,
+          kind: 'patch',
+          key: `patch:hero:${hero.hero_id}`,
+          feedId: hero.hero_id,
+          name,
+        });
     }
     for (const item of [...(notes.items ?? []), ...(notes.neutral_items ?? [])]) {
       const name = itemNames.get(item.ability_id);
       if (!name) continue;
       const card = renderPatchCard(name, patch, item.ability_notes);
-      if (card) entities.push({ ...card, kind: 'patch', key: `patch:item:${name}`, name });
+      if (card)
+        entities.push({
+          ...card,
+          kind: 'patch',
+          key: `patch:item:${item.ability_id}`,
+          feedId: item.ability_id,
+          name,
+        });
     }
     const general = renderGeneralPatchCard(notes);
     if (general) {
@@ -181,6 +229,7 @@ export async function runDotaSync(force = false): Promise<SyncResult> {
     hourUtc: cfg.DOTA_SYNC_HOUR_UTC,
     minIntervalHours: cfg.DOTA_SYNC_MIN_INTERVAL_HOURS,
     maxAgeHours: cfg.DOTA_SYNC_MAX_AGE_HOURS,
+    retryIntervalHours: cfg.DOTA_SYNC_RETRY_HOURS,
   };
   if (!force && !isSyncDue(state, now, opts)) return { status: 'skipped' };
 
@@ -190,7 +239,7 @@ export async function runDotaSync(force = false): Promise<SyncResult> {
     setDotaSyncState({ lastCheck: now });
 
     const patches = await fetchPatchList();
-    const latest = patches[patches.length - 1]?.patch_number;
+    const latest = pickCurrentPatch(patches);
     if (!latest) throw new Error('patch list came back empty');
 
     const counts = countDotaEntities();

@@ -135,10 +135,16 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   attaches the entity's patch notes automatically, and degrades to digests past a char
   budget. Tool is exposed ONLY in `dota` mode chats (keeps every other chat's cached tool
   prefix untouched) and stays on for scheduled runs. Admin `/dota` (status), `/dota sync`
-  (force rebuild), `/dota <название>` (preview the stored card). Off via
+  (force rebuild — runs DETACHED so the ~5-minute crawl doesn't freeze the admin's
+  DM behind `sequentialize`), `/dota <название>` (preview the stored card). Patch
+  cards are keyed by FEED ID (`patch:item:<ability_id>`), never by display name:
+  names are not unique (Dagon 1-5), and `UNIQUE (kind, key)` inside the one-shot
+  swap transaction means a single collision would take the whole base down —
+  `replaceDotaEntities` also drops repeated keys as a last-resort guard. Off via
   `ENABLE_DOTA=false`; knobs `DOTA_LANGUAGE`, `DOTA_SYNC_HOUR_UTC`,
-  `DOTA_SYNC_MIN_INTERVAL_HOURS`, `DOTA_SYNC_MAX_AGE_HOURS`, `DOTA_FEED_DELAY_MS`,
-  `DOTA_MAX_CARDS`.
+  `DOTA_SYNC_MIN_INTERVAL_HOURS`, `DOTA_SYNC_MAX_AGE_HOURS`, `DOTA_SYNC_RETRY_HOURS`
+  (backoff for an EMPTY base, so a failing feed isn't re-crawled every hourly tick),
+  `DOTA_FEED_DELAY_MS`, `DOTA_FETCH_TIMEOUT_MS`, `DOTA_MAX_CARDS`.
 - `src/surf/` — `surf_forecast` skill: fetches wave/wind from Open-Meteo (the only place
   that API is touched, mirroring the splid-js rule) and formats a per-spot summary. The
   model supplies candidate spots + coords; the handler stays live in the scheduler so a

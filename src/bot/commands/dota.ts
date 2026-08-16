@@ -35,15 +35,30 @@ export async function cmdDota(ctx: Context): Promise<void> {
 
   if (arg.toLowerCase() === 'sync') {
     await ctx.reply('🔄 Запускаю пересборку базы — это несколько минут, напишу когда закончу.');
-    const result = await runDotaSync(true);
-    if (result.status === 'failed') {
-      await ctx.reply(`⚠️ Синк упал: ${result.error}\nСтарые данные остались на месте.`);
-      return;
-    }
-    const c = result.counts;
-    await ctx.reply(
-      `✅ Синк готов (${result.status}). Патч ${result.patch ?? '?'}: ${c?.hero ?? 0} героев, ${c?.item ?? 0} предметов, ${c?.patch ?? 0} блоков изменений.`,
-    );
+    // Detached ON PURPOSE: a full crawl is ~5 minutes, and awaiting it here would
+    // hold the update open — `sequentialize` keys the queue by chat, so the whole
+    // DM would go unresponsive until the crawl finished. The command already
+    // promises to report back, so report back from the callback instead.
+    void runDotaSync(true)
+      .then(async (result) => {
+        if (result.status === 'failed') {
+          await ctx.reply(`⚠️ Синк упал: ${result.error}\nСтарые данные остались на месте.`);
+          return;
+        }
+        // `skipped` means nothing ran (a nightly crawl already in flight) — do
+        // not dress that up as a successful rebuild with zero rows.
+        if (result.status === 'skipped') {
+          await ctx.reply(`⏳ Не запускал: ${result.error ?? 'синк сейчас не нужен'}.`);
+          return;
+        }
+        const c = result.counts;
+        await ctx.reply(
+          `✅ Синк готов (${result.status}). Патч ${result.patch ?? '?'}: ${c?.hero ?? 0} героев, ${c?.item ?? 0} предметов, ${c?.patch ?? 0} блоков изменений.`,
+        );
+      })
+      .catch(async (err) => {
+        await ctx.reply(`⚠️ Синк упал: ${String(err)}`).catch(() => undefined);
+      });
     return;
   }
 

@@ -127,10 +127,64 @@ describe('dota_lookup handler', () => {
         query: null,
       });
       expect(out).toContain('Blink Dagger');
-      expect(out).not.toContain('Black King Bar');
+      // The capped entity's CARD is not returned — only a note that it was left
+      // out (see the "says which names did not fit" case below).
+      expect(out).not.toContain('Black King Bar — 4050');
+      expect(out).not.toContain('невосприимчивость к магии');
     } finally {
       delete process.env.DOTA_MAX_CARDS;
     }
+  });
+
+  it('says which names did not fit instead of silently dropping them', async () => {
+    // The schema allows 8 names, DOTA_MAX_CARDS caps the answer — the model has
+    // to know the difference, or it reports on four heroes as though it covered
+    // all eight.
+    process.env.DOTA_MAX_CARDS = '1';
+    try {
+      const { lookup, repo } = await freshLookup();
+      repo.replaceDotaEntities([ITEM, BKB], '7.41e');
+
+      const out = lookup({
+        kind: 'item',
+        names: ['Blink Dagger', 'Black King Bar'],
+        query: null,
+      });
+      expect(out).toContain('Не поместились');
+      expect(out).toContain('Black King Bar');
+    } finally {
+      delete process.env.DOTA_MAX_CARDS;
+    }
+  });
+
+  it('pays for attached patch notes out of the same budget', async () => {
+    // Patch cards used to bypass the char budget entirely, so asking about a few
+    // heroes right after a patch quietly doubled the tool result.
+    const { lookup, repo } = await freshLookup();
+    const long = 'ж'.repeat(6000);
+    repo.replaceDotaEntities(
+      [
+        { ...HERO, card: `Герой: Anti-Mage — ${long}` },
+        { ...PATCH, card: `Изменения — ${long}`, summary: 'Anti-Mage — краткие изменения' },
+      ],
+      '7.41e',
+    );
+
+    const out = lookup({ kind: 'hero', names: ['Anti-Mage'], query: null });
+    // The hero card spent the budget, so the patch card degrades to its digest
+    // rather than being appended in full.
+    expect(out).toContain('Anti-Mage — краткие изменения');
+    expect(out).not.toContain(`Изменения — ${long}`);
+  });
+
+  it('does not suggest the same name twice in a near miss', async () => {
+    // A hero and its patch card share a display name — "Похожее: Axe, Axe".
+    const { lookup, repo } = await freshLookup();
+    repo.replaceDotaEntities([HERO, PATCH], '7.41e');
+
+    const out = lookup({ kind: 'any', names: ['Anti-Mageee'], query: null });
+    expect(out).toContain('точного совпадения нет');
+    expect(out.match(/Anti-Mage/g)?.length).toBe(2); // the asked name + one suggestion
   });
 
   it('tells the model to flag uncertainty when the base is empty', async () => {

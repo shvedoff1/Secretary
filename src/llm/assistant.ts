@@ -20,6 +20,7 @@ import {
   EDIT_PING_LIST_TOOL,
   SCHEDULE_TASK_TOOL,
   WATCH_PAGE_TOOL,
+  DOTA_LOOKUP_TOOL,
   SURF_FORECAST_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
@@ -33,6 +34,7 @@ import {
   EditPingListZ,
   ScheduleTaskZ,
   WatchPageZ,
+  DotaLookupZ,
   SurfForecastZ,
   AddPoiZ,
   SpendingReportZ,
@@ -45,6 +47,7 @@ import {
   type EditPingListInput,
   type ScheduleTaskInput,
   type WatchPageInput,
+  type DotaLookupInput,
   type SurfForecastInput,
   type AddPoiInput,
   type SpendingReportInput,
@@ -86,6 +89,8 @@ export interface AssistantContext {
   allowWatch?: boolean;
   /** Active page watches in this chat, shown so the model never recreates one. */
   activeWatches?: { id: number; title: string; url: string }[];
+  /** Expose the dota_lookup tool (dota-mode chats only; stays on for scheduled runs). */
+  allowDota?: boolean;
   /** Expose the add_poi tool (default true; false for scheduled runs). */
   allowPoi?: boolean;
   /** Saved places in this chat, shown so the model can recall them and not duplicate. */
@@ -116,6 +121,8 @@ export interface AssistantHandlers {
   scheduleTask: (input: ScheduleTaskInput) => string;
   /** Arm a page watch (poll a URL for an event); return a short confirmation. */
   watchPage: (input: WatchPageInput) => string;
+  /** Read current-patch Dota data out of the local base; return ready text cards. */
+  dotaLookup: (input: DotaLookupInput) => string;
   /** Fetch a wave forecast for the given spots; return a compact data summary. */
   surfForecast: (input: SurfForecastInput) => Promise<string>;
   /** Save a point of interest; return a short human confirmation. */
@@ -199,6 +206,9 @@ export async function runAssistant(
     enablePingEdit: !tutor && ctx.allowPingEdit !== false,
     enableReminders: ctx.allowReminders !== false,
     enableWatch: !tutor && cfg.ENABLE_WATCH && ctx.allowWatch !== false,
+    // Dota reference data is only ever relevant in a dota chat, and keeping it
+    // out of the default tool list leaves every other chat's cached prefix alone.
+    enableDota: ctx.mode === 'dota' && cfg.ENABLE_DOTA && ctx.allowDota !== false,
     enableSurf: !tutor && cfg.ENABLE_SURF,
     enablePoi: !tutor && ctx.allowPoi !== false,
     enableSpending: !tutor && ctx.splidConnected,
@@ -447,6 +457,20 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.watchPage(parsed.data)
             : 'Could not parse the page watch.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === DOTA_LOOKUP_TOOL) {
+          const parsed = DotaLookupZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'dota_lookup input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.dotaLookup(parsed.data)
+            : 'Could not parse the dota lookup.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

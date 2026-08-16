@@ -14,6 +14,7 @@ import { humorizeWithPreview } from './llm/humorize.js';
 import { getLexicon } from './db/repos/lexicon.repo.js';
 import { getRecentChat } from './bot/recentChat.js';
 import { makeSurfForecastHandler } from './surf/index.js';
+import { makeDotaLookupHandler } from './dota/lookup.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
@@ -24,6 +25,7 @@ import type { Member } from './core/types.js';
 import type { Config } from './config.js';
 
 const surfForecast = makeSurfForecastHandler();
+const dotaLookup = makeDotaLookupHandler();
 
 /**
  * Build the memory working set for a scheduled run. A scheduled task fires with
@@ -148,6 +150,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         editPingList: () => 'noop',
         scheduleTask: () => 'noop',
         watchPage: () => 'noop',
+        // Dota lookup stays live: a recurring "разбор патча по утрам" task needs
+        // the current-patch numbers exactly like an on-demand question does.
+        dotaLookup,
         // Surf forecast stays live: a recurring evening task asks for tomorrow's
         // forecast and the bot posts the recommendation to the chat.
         surfForecast,

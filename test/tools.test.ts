@@ -9,6 +9,7 @@ import {
   EDIT_PING_LIST_TOOL,
   SCHEDULE_TASK_TOOL,
   WATCH_PAGE_TOOL,
+  DOTA_LOOKUP_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
 } from '../src/llm/tools.js';
@@ -175,6 +176,25 @@ describe('buildTools', () => {
       enableExpense: true,
       enableSpending: true,
     }).find((t) => 'name' in t && t.name === SPENDING_REPORT_TOOL);
+    expect('input_schema' in tool!).toBe(true);
+  });
+
+  it('exposes dota_lookup only when the chat is in dota mode', () => {
+    // Off by default: keeping it out of every other chat's tool list leaves
+    // their cached prompt prefix untouched.
+    expect(
+      names(buildTools({ enableWebSearch: false, enableExpense: false })),
+    ).not.toContain(DOTA_LOOKUP_TOOL);
+
+    const got = names(
+      buildTools({ enableWebSearch: false, enableExpense: false, enableDota: true }),
+    );
+    expect(got).toContain(DOTA_LOOKUP_TOOL);
+    const tool = buildTools({
+      enableWebSearch: false,
+      enableExpense: false,
+      enableDota: true,
+    }).find((t) => 'name' in t && t.name === DOTA_LOOKUP_TOOL);
     expect('input_schema' in tool!).toBe(true);
   });
 });

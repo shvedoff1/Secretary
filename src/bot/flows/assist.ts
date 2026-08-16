@@ -10,6 +10,7 @@ import { humorizeWithPreview, isHumorEnabled, classifyHumorDecision } from '../.
 import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
+import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
@@ -592,6 +593,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         editPingList: makeEditPingListHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         watchPage: makeWatchPageHandler(chatId, tgUserId),
+        dotaLookup: makeDotaLookupHandler(),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
         spendingReport: makeSpendingReportHandler(chatId),
@@ -797,6 +799,7 @@ async function rewordPendingInner(
       editPingList: makeEditPingListHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       watchPage: makeWatchPageHandler(chatId, tgUserId),
+      dotaLookup: makeDotaLookupHandler(),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
       spendingReport: makeSpendingReportHandler(chatId),

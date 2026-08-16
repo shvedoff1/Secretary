@@ -1,0 +1,114 @@
+{
+ "patch_number": "7.41e",
+ "patch_name": "7.41e",
+ "patch_timestamp": 1785394800,
+ "general_notes": [
+  {
+   "title": "Парные порталы",
+   "generic": [
+    {
+     "indent_level": 1,
+     "note": "Теперь подготовку телепортации через Парный портал можно прервать оцепенением"
+    }
+   ]
+  }
+ ],
+ "items": [
+  {
+   "ability_id": 208,
+   "postfix_lines": 1,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Бонус к силе увеличен с 26 до 30"
+    }
+   ]
+  },
+  {
+   "ability_id": 139,
+   "postfix_lines": 1,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Бонус к ловкости уменьшен с 35 до 30"
+    },
+    {
+     "indent_level": 1,
+     "note": "Бонус к урону увеличен с 25 до 30"
+    }
+   ]
+  }
+ ],
+ "neutral_items": [
+  {
+   "ability_id": -1,
+   "title": "Артефакты",
+   "is_general_note": true
+  }
+ ],
+ "heroes": [
+  {
+   "hero_id": 2,
+   "hero_notes": [
+    {
+     "indent_level": 1,
+     "note": "Базовая ловкость уменьшена с 20 до 18",
+     "icon": "agility"
+    }
+   ],
+   "abilities": [
+    {
+     "ability_id": 5008,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Урон в секунду уменьшен с 12/18/24/30 до 12/16/20/24"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "hero_id": 3,
+   "abilities": [
+    {
+     "ability_id": 1202,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Максимум кошмаров у врага увеличен с 5 до 6"
+      },
+      {
+       "indent_level": 1,
+       "note": "Снижение сопротивления эффектам за кошмар уменьшено с 5% до 4%"
+      }
+     ]
+    },
+    {
+     "ability_id": 5014,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Длительность уменьшена с 3,5/4,5/5,5/6,5 до 3/4/5/6 секунд"
+      },
+      {
+       "indent_level": 1,
+       "note": "Теперь полностью отключает жертве обзор, а не изменяет его дальность"
+      }
+     ]
+    },
+    {
+     "ability_id": 5013,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Уменьшение перезарядки от Aghanim's Scepter ослаблено с 45 до 40 секунд",
+       "aghanims": "scepter"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "success": true
+}

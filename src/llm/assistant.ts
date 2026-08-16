@@ -15,6 +15,7 @@ import {
   RECORD_EXPENSE_TOOL,
   REMEMBER_TOOL,
   EDIT_MEMORY_TOOL,
+  RECALL_MEMORY_TOOL,
   LEARN_EXPENSE_TOOL,
   EDIT_LEXICON_TOOL,
   EDIT_PING_LIST_TOOL,
@@ -29,6 +30,7 @@ import {
   RecordExpenseZ,
   RememberZ,
   EditMemoryZ,
+  RecallMemoryZ,
   LearnExpenseZ,
   EditLexiconZ,
   EditPingListZ,
@@ -42,6 +44,7 @@ import {
   type RecordExpenseInput,
   type RememberInput,
   type EditMemoryInput,
+  type RecallMemoryInput,
   type LearnExpenseInput,
   type EditLexiconInput,
   type EditPingListInput,
@@ -101,6 +104,8 @@ export interface AssistantContext {
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   /** Voice/style directives for this chat (how to talk here), kept apart from facts. */
   memoryPersona?: { content: string }[];
+  /** Total facts stored for this chat, so the context can point at the deeper tier. */
+  memoryTotal?: number;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -111,6 +116,8 @@ export interface AssistantHandlers {
   remember: (input: RememberInput) => string;
   /** Fix an existing remembered fact in place; return a short confirmation. */
   editMemory: (input: EditMemoryInput) => string;
+  /** Search the full memory store; return the matching facts as text for the model. */
+  recallMemory: (input: RecallMemoryInput) => string;
   /** Add trigger words to the chat's expense dictionary; return a confirmation. */
   learnExpense: (input: LearnExpenseInput) => string;
   /** Change the meaning of a learned slang word; return a short confirmation. */
@@ -201,6 +208,9 @@ export async function runAssistant(
     enableExpense: !tutor && ctx.splidConnected,
     enableRemember: ctx.allowRemember !== false,
     enableMemoryEdit: ctx.allowRemember !== false,
+    // Recall is READ-ONLY, so unlike remember/edit it stays on everywhere memory is:
+    // scheduled runs and tutor chats need to look things up just as much.
+    enableRecall: cfg.ENABLE_MEMORY,
     enableExpenseLearning: !tutor && ctx.allowExpenseLearning !== false,
     enableLexiconEdit: !tutor && ctx.allowLexiconEdit !== false,
     enablePingEdit: !tutor && ctx.allowPingEdit !== false,
@@ -221,6 +231,7 @@ export async function runAssistant(
         activeReminders: ctx.activeReminders ?? [],
         memoryChat: ctx.memoryChat ?? [],
         memoryUsers: ctx.memoryUsers ?? [],
+        memoryTotal: ctx.memoryTotal ?? 0,
       })
     : buildContextBlock({
         defaultCurrency: ctx.defaultCurrency,
@@ -376,6 +387,20 @@ export async function runAssistant(
             type: 'tool_result',
             tool_use_id: block.id,
             content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === RECALL_MEMORY_TOOL) {
+          const parsed = RecallMemoryZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'recall_memory input failed validation');
+          }
+          const found = parsed.success
+            ? handlers.recallMemory(parsed.data)
+            : 'Could not parse the memory query.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: found,
             is_error: !parsed.success,
           });
         } else if (block.name === EDIT_MEMORY_TOOL) {

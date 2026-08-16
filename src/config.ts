@@ -100,8 +100,18 @@ const ConfigSchema = z.object({
   // Days for a passive fact's weight to halve (older events carry less weight).
   MEMORY_HALFLIFE_DAYS: z.coerce.number().int().positive().default(14),
   // Hard cap on stored passive facts per chat; lowest-weight overflow is pruned
-  // (pinned facts are exempt). This is the "limited volume" of human-like memory.
-  MEMORY_MAX_ITEMS: z.coerce.number().int().positive().default(200),
+  // (pinned facts are exempt). Storage is cheap and costs NO tokens — what a turn
+  // pays for is the injected working set below, which is bounded separately — so the
+  // cap is generous and exists only to stop unbounded growth. Anything beyond the
+  // working set stays reachable through the `recall_memory` tool.
+  MEMORY_MAX_ITEMS: z.coerce.number().int().positive().default(2000),
+  // How many memory items /memory and /chat print. The store is deep now, so a full
+  // dump would be dozens of Telegram messages (and a single reply would exceed the
+  // 4096-char cap outright); /forget <N> still addresses the full list by index.
+  MEMORY_DISPLAY_LIMIT: z.coerce.number().int().positive().default(60),
+  // How many facts one `recall_memory` search returns. This IS a token cost (it lands
+  // in the tool result), so it is a working-set-sized number, not a page of the store.
+  MEMORY_RECALL_LIMIT: z.coerce.number().int().positive().default(10),
   // How many rotating PASSIVE shared chat facts to inject into the assistant context.
   MEMORY_CONTEXT_CHAT: z.coerce.number().int().positive().default(8),
   // How many EXPLICIT (pinned / remembered) chat facts to always inject on top, so a

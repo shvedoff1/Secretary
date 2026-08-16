@@ -16,16 +16,25 @@ export async function cmdMemory(ctx: Context): Promise<void> {
     return;
   }
   // 📌 marks a pinned (explicitly remembered) fact; 🎭 a voice/style directive;
-  // "→ Имя" tags a per-person fact.
+  // "→ Имя" tags a per-person fact. Only the top slice is printed — the store holds
+  // thousands and a full dump would blow past Telegram's message cap; the numbering
+  // still matches the full list, so /forget <N> works for anything shown.
+  const limit = loadConfig().MEMORY_DISPLAY_LIMIT;
   const body = items
+    .slice(0, limit)
     .map((it, i) => {
       const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : '';
       const who = it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : '';
       return `${i + 1}. ${tag}${it.content}${who}`;
     })
     .join('\n');
+  const hidden = items.length - Math.min(items.length, limit);
+  const tail = hidden > 0
+    ? `\n\n…и ещё ${hidden} записей — они на месте, просто не показываю все. ` +
+      'Чтобы достать конкретное, спроси словами: «что ты помнишь про …».'
+    : '';
   await ctx.reply(
-    `🧠 Память чата:\n${body}\n\n` +
+    `🧠 Память чата (${items.length} записей):\n${body}${tail}\n\n` +
       '📌 — закреплено (не забывается), 🎭 — стиль/повадки. Забыть один пункт: ' +
       '/forget <номер>. Стереть всё (и историю диалога): /forget',
   );

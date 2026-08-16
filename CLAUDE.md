@@ -61,7 +61,27 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   back once before overriding — prompt-driven). `edit_memory` fixes an existing fact in
   place (fuzzy `find` → overwrite with `replace`). Explicit/pinned chat facts get their
   own guaranteed context budget (`MEMORY_CONTEXT_PINNED`, separate from the rotating
-  `MEMORY_CONTEXT_CHAT`) so a remembered fact always reaches the model. Bulk cleanup of
+  `MEMORY_CONTEXT_CHAT`) so a remembered fact always reaches the model.
+  Memory is TWO-TIER: the weighted working set above is injected into every turn (a few
+  dozen lines, bounded by the `MEMORY_CONTEXT_*` budgets), while the STORE holds
+  everything (`MEMORY_MAX_ITEMS`, default 2000 — storage costs no tokens, only the
+  injection does) and is reached on demand with the `recall_memory` tool
+  (`makeRecallMemoryHandler` in `flows/assist.ts` → `searchMemory` in
+  `memoryItem.repo.ts` → the pure ranker in `src/util/memorySearch.ts`). Ranking is
+  RELEVANCE-first with weight only breaking ties — the working set already covers
+  "what's salient now", so the deep tier exists precisely to surface the decayed fact
+  that actually answers the question. Matching is per-token exact > prefix > shared
+  5-char stem (Russian inflects endings), over content AND subject, so «когда у Гоши
+  днюха» finds a user-scoped fact whose text never repeats the name; `about` alone
+  answers «что ты знаешь про X» by weight. Deliberately NOT FTS5 (unlike `src/dota/`):
+  memory rows are constantly inserted/reinforced/edited/pruned, and an index that
+  drifts returns wrong facts — scoring a few thousand short strings in JS is
+  microseconds and can't drift. The context block carries a one-line
+  hint of how many facts are hidden (`pushMemoryDepthHint`), without which the model
+  reads the shown sections as the whole of memory and answers «не помню» for a fact
+  one call away. `recall_memory` is read-only, so unlike remember/edit_memory it stays
+  on for scheduled runs and tutor chats; results are capped by `MEMORY_RECALL_LIMIT`
+  (they land in the context as tokens). Bulk cleanup of
   ACCUMULATED conflicts (what `/dedupememory`'s exact-match fold can't catch) is the
   admin `/reconcile <chatId>` command → `src/llm/reconcile.ts` (a one-shot Haiku pass at
   `temperature:0` so re-runs are stable, proposing deletes/merges for contradictions/stale/

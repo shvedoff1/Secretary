@@ -249,6 +249,13 @@ Style — talk like a chill mate in the group chat, not a corporate assistant:
   EN: "chill", "easy", "stoked", "vibe", "no worries", "let's go"). Lean into it
   fairly often, but don't force every sentence or turn it into a parody — clarity
   and being genuinely helpful come first.
+- Memory has two tiers. The context block shows only what is salient right now; the
+  full store is searched with \`recall_memory\`. Before answering «а помнишь…», «что я
+  тебе говорил про…», «что ты знаешь про <человека>» — or ANY question that turns on a
+  detail this chat told you earlier and you cannot see above — call \`recall_memory\`
+  first. Saying you don't remember while the fact sits in the store is the failure to
+  avoid; a search that finds nothing costs almost nothing. Never invent a "recalled"
+  fact the tool did not return.
 - The context block may include memory sections. An optional "Voice & style" section
   gives how to talk in THIS chat (persona, running gags, tone rules) — follow it.
   "Chat memory" holds durable shared facts about the group, and one or more
@@ -405,6 +412,8 @@ export function buildContextBlock(args: {
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   /** Voice/style directives for THIS chat (how to talk here), kept apart from facts. */
   memoryPersona?: { content: string }[];
+  /** Total facts held for this chat: how much memory exists BEYOND what is shown. */
+  memoryTotal?: number;
 }): string {
   const roster =
     args.members.length > 0
@@ -461,8 +470,33 @@ export function buildContextBlock(args: {
   // section is rendered only when non-empty so a fresh chat stays clean. Newer /
   // more important / more reinforced facts are listed first (already ranked).
   pushMemorySections(lines, args.memoryChat ?? [], args.memoryUsers ?? []);
+  pushMemoryDepthHint(lines, args.memoryTotal ?? 0, shownMemoryCount(args));
 
   return lines.join('\n');
+}
+
+/** How many memory lines the context block actually shows this turn. */
+function shownMemoryCount(args: {
+  memoryChat?: { content: string }[];
+  memoryUsers?: { subject: string; items: { content: string }[] }[];
+  memoryPersona?: { content: string }[];
+}): number {
+  const users = (args.memoryUsers ?? []).reduce((n, u) => n + u.items.length, 0);
+  return (args.memoryChat ?? []).length + users + (args.memoryPersona ?? []).length;
+}
+
+/**
+ * Tell the model the store is DEEPER than what it can see. Without this line the
+ * sections above read as the whole of memory, and the model answers "не помню" for a
+ * fact that is sitting in the store one recall_memory call away. Rendered only when
+ * something is actually hidden, and kept to one line — it is paid for on every turn.
+ */
+function pushMemoryDepthHint(lines: string[], total: number, shown: number): void {
+  const hidden = total - shown;
+  if (hidden <= 0) return;
+  lines.push(
+    `Memory store: ${total} facts total, ${shown} shown above — the other ${hidden} are reachable ONLY via the recall_memory tool. If the answer may depend on something remembered earlier that you cannot see here, call recall_memory BEFORE answering (and before saying you don't remember).`,
+  );
 }
 
 function pushMemorySections(
@@ -495,6 +529,7 @@ export function buildTutorContextBlock(args: {
   activeReminders?: { id: number; title: string; when: string }[];
   memoryChat?: { content: string }[];
   memoryUsers?: { subject: string; items: { content: string }[] }[];
+  memoryTotal?: number;
 }): string {
   const reminders = args.activeReminders ?? [];
   const remindersLine =
@@ -510,6 +545,7 @@ export function buildTutorContextBlock(args: {
   ];
 
   pushMemorySections(lines, args.memoryChat ?? [], args.memoryUsers ?? []);
+  pushMemoryDepthHint(lines, args.memoryTotal ?? 0, shownMemoryCount(args));
 
   return lines.join('\n');
 }

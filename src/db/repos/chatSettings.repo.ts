@@ -117,6 +117,31 @@ export function setChatHumorEnabled(chatId: number, enabled: boolean): void {
 }
 
 /**
+ * Per-chat switch for APPLYING the learned slang to replies — both as the
+ * humorizer's lexicon and as the standalone slang pass over answers the
+ * humorizer skips. Default is ON; the global ENABLE_SLANG / ENABLE_HUMOR env
+ * flags still master-gate their respective passes, and lexicon LEARNING is
+ * unaffected (that's ENABLE_LEXICON). Toggled with `/slang [<chatId>] on|off`.
+ */
+export function isChatSlangEnabled(chatId: number): boolean {
+  const row = getDb()
+    .prepare('SELECT slang_disabled FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { slang_disabled: number | null } | undefined;
+  return !row?.slang_disabled;
+}
+
+export function setChatSlangEnabled(chatId: number, enabled: boolean): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, slang_disabled, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         slang_disabled = excluded.slang_disabled, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, enabled ? 0 : 1);
+}
+
+/**
  * Admin-granted trust for a whole chat: participants of a trusted chat pass the
  * default-deny auth gate without personal whitelist entries — the same standing
  * a Splid-connected group gets. Granted when the admin explicitly configures the

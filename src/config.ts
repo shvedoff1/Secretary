@@ -86,6 +86,13 @@ const ConfigSchema = z.object({
   LEXICON_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
   // How many learned terms to feed back into the assistant context.
   LEXICON_MAX_TERMS: z.coerce.number().int().positive().default(40),
+  // Slang pass: apply the chat's learned lexicon to replies the HUMORIZER never
+  // touches (tool/factual answers, money answers, chats with humour switched
+  // off). It's a vocabulary-only rewrite — no jokes — guarded by a
+  // fact-preservation check, so exact answers keep their numbers/links. Needs
+  // OPENAI_API_KEY; reuses OPENAI_HUMOR_MODEL and its reasoning/timeout knobs.
+  // On by default, per-chat switch via `/slang [<chatId>] on|off`.
+  ENABLE_SLANG: boolish.default(true),
   // Weighted memory: passively extract durable, salient facts from the chat (split
   // into shared chat facts and per-person facts), decay them over time, reinforce
   // re-mentioned ones, and inject a tight working set into the assistant context —

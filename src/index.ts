@@ -12,6 +12,7 @@ import { runDueDotaSync } from './dota/sync.js';
 import { flushStaleLexicons } from './bot/flows/lexicon.js';
 import { flushStaleMemories } from './bot/flows/memory.js';
 import { isHumorEnabled } from './llm/humorize.js';
+import { isSlangPassEnabled } from './llm/slang.js';
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -20,6 +21,8 @@ async function main(): Promise<void> {
   // verified from the logs. `humor` is true only when the flag is on AND an
   // OpenAI key is present — exactly the condition for the humorizer to run.
   const humor = isHumorEnabled();
+  // Same shape for the slang pass: on only with the flag AND an OpenAI key.
+  const slangPass = isSlangPassEnabled();
   logger.info(
     {
       model: cfg.ANTHROPIC_MODEL,
@@ -30,6 +33,7 @@ async function main(): Promise<void> {
       dota: cfg.ENABLE_DOTA,
       humor,
       humorModel: humor ? cfg.OPENAI_HUMOR_MODEL : undefined,
+      slang: slangPass,
     },
     'startup config',
   );

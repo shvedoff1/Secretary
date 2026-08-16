@@ -35,6 +35,7 @@ import {
   isChimeEnabled,
   setChimeEnabled,
   isChatHumorEnabled,
+  isChatSlangEnabled,
   setChatHumorEnabled,
   isReactionsEnabled,
   setReactionsEnabled,
@@ -147,7 +148,10 @@ export async function cmdChat(ctx: Context): Promise<void> {
     : '(пусто)';
 
   const slangCount = getLexicon(id).length;
-  const slangLine = slangCount ? `сленг: ${slangCount} словечек (/slang ${id})` : 'сленг: (пусто)';
+  const slangState = isChatSlangEnabled(id) ? 'вкл' : 'выкл';
+  const slangLine =
+    `сленг в ответах: ${slangState} (/slang ${id} on|off) · ` +
+    (slangCount ? `выучено ${slangCount} словечек (/slang ${id})` : 'выучено: (пусто)');
 
   const provider = cfg
     ? `${cfg.provider_name} (group ${cfg.provider_group_id ?? '—'})`

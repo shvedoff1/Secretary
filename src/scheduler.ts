@@ -11,14 +11,23 @@ import {
 import { nextRunMs } from './util/schedule.js';
 import { sendRichMarkdown } from './util/richMessage.js';
 import { humorizeWithPreview } from './llm/humorize.js';
-import { getLexicon } from './db/repos/lexicon.repo.js';
+import {
+  applySlangOrOriginal,
+  classifySlangDecision,
+  isSlangPassEnabled,
+} from './llm/slang.js';
+import { getVoiceLexicon } from './db/repos/lexicon.repo.js';
 import { getRecentChat } from './bot/recentChat.js';
 import { makeSurfForecastHandler } from './surf/index.js';
 import { makeDotaLookupHandler } from './dota/lookup.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
-import { getChatMode, isChatHumorEnabled } from './db/repos/chatSettings.repo.js';
+import {
+  getChatMode,
+  isChatHumorEnabled,
+  isChatSlangEnabled,
+} from './db/repos/chatSettings.repo.js';
 import { getMemoryForContext, memoryStats } from './db/repos/memoryItem.repo.js';
 import { makeRecallMemoryHandler } from './bot/flows/assist.js';
 import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
@@ -177,29 +186,48 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       // Best-effort: when humour is globally disabled or OpenAI fails, the
       // original text is returned unchanged. Like the live flow, the pre-OpenAI
       // original is DM'd to the admin so the before/after can be compared.
+      // The lexicon honours the chat's /slang switch (empty list when off), and
+      // feeds whichever pass runs below.
+      const lexicon = getVoiceLexicon(task.chatId, cfg.LEXICON_MAX_TERMS);
+      // Per-chat humor off trumps the task's own humor flag — the admin
+      // silenced the jokes for that chat entirely.
+      const humorRan = !!(
+        task.humor &&
+        result.humorizable &&
+        isChatHumorEnabled(task.chatId)
+      );
+      const humorized = humorRan
+        ? await humorizeWithPreview(
+            result.text,
+            async (original) => {
+              await bot.api.sendMessage(
+                cfg.ADMIN_TELEGRAM_ID,
+                `🔬 До OpenAI (⏰ ${task.title}):\n\n${original}`,
+              );
+            },
+            // Slang lives on the tone passes (not Claude), so a humour task
+            // gets the chat's voice here — its plain-chat output speaks the
+            // group's lingo, exactly like the live flow.
+            lexicon,
+            // Speak the chat's persona in the rewrite too (dota → sensei).
+            mode === 'dota' ? 'dota' : 'surfer',
+          )
+        : result.text;
+      // Every other task output — a plain reminder, a surf forecast, a task the
+      // admin never marked funny — still gets the chat's WORDS via the
+      // vocabulary-only slang pass (facts guarded, jokes not invited). Same gate
+      // as the live flow, so a chat reads consistently whoever is talking.
+      const slangDecision = classifySlangDecision({
+        enabled:
+          isSlangPassEnabled() && isChatSlangEnabled(task.chatId) && mode !== 'tutor',
+        humorized: humorRan,
+        toned: result.toned ?? false,
+        lexiconSize: lexicon.length,
+      });
       const text =
-        // Per-chat humor off trumps the task's own humor flag — the admin
-        // silenced the jokes for that chat entirely.
-        task.humor && result.humorizable && isChatHumorEnabled(task.chatId)
-          ? await humorizeWithPreview(
-              result.text,
-              async (original) => {
-                await bot.api.sendMessage(
-                  cfg.ADMIN_TELEGRAM_ID,
-                  `🔬 До OpenAI (⏰ ${task.title}):\n\n${original}`,
-                );
-              },
-              // Slang now lives on the humorizer (not Claude), so a humour task
-              // gets the chat's voice here — its plain-chat output speaks the
-              // group's lingo, exactly like the live flow.
-              getLexicon(task.chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
-                term: e.term,
-                gloss: e.gloss,
-              })),
-              // Speak the chat's persona in the rewrite too (dota → sensei).
-              mode === 'dota' ? 'dota' : 'surfer',
-            )
-          : result.text;
+        slangDecision === 'sent'
+          ? await applySlangOrOriginal(humorized, lexicon)
+          : humorized;
       const prefix = task.title ? `⏰ ${task.title}\n` : '';
       const posted = prefix + text;
       await sendMarkdown(bot, task.chatId, posted);

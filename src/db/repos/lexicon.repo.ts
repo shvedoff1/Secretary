@@ -1,4 +1,5 @@
 import { getDb } from '../client.js';
+import { isChatSlangEnabled } from './chatSettings.repo.js';
 
 /** A learned slang/distorted word for a chat. */
 export interface LexiconEntry {
@@ -102,6 +103,22 @@ export function getLexicon(chatId: number, limit?: number): LexiconEntry[] {
     frequency: number;
   }[];
   return rows.map((r) => ({ term: r.term, gloss: r.gloss, frequency: r.frequency }));
+}
+
+/**
+ * The chat's lexicon as the tone passes want it ({term, gloss} pairs), with the
+ * per-chat slang switch applied: a chat with `/slang off` yields an EMPTY list,
+ * so neither the humorizer nor the standalone slang pass can speak its lingo
+ * (learning keeps running — only the application is muted). One helper for all
+ * three call sites (live reply, scheduler, spending digest) so the switch can't
+ * be honoured in one place and forgotten in another.
+ */
+export function getVoiceLexicon(
+  chatId: number,
+  limit?: number,
+): { term: string; gloss: string }[] {
+  if (!isChatSlangEnabled(chatId)) return [];
+  return getLexicon(chatId, limit).map((e) => ({ term: e.term, gloss: e.gloss }));
 }
 
 /**

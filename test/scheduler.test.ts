@@ -103,6 +103,7 @@ describe('runDueTasks humor toggle', () => {
     vi.unstubAllGlobals();
     delete process.env.ENABLE_HUMOR;
     delete process.env.OPENAI_API_KEY;
+    delete process.env.ENABLE_SLANG;
   });
 
   // A fake bot that records every (chatId, text) passed to sendMessage.
@@ -197,6 +198,84 @@ describe('runDueTasks humor toggle', () => {
     expect(sent[0]!.text).toContain('Привет!');
     // Humour off for this task => OpenAI is never called and no admin DM.
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('runs the SLANG pass over a task that never opted into humour', async () => {
+    // The point of the separate switch: a plain (non-humour) task still speaks
+    // the chat's words. Humour off for the task, slang on for the chat.
+    const scheduler = await seedDueTask(false);
+    const lex = await import('../src/db/repos/lexicon.repo.js');
+    lex.recordTerms(100, [{ term: 'катка', gloss: 'игра' }]);
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: 'Здарова, катка!' } }] }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    responses = [textResponse('Привет!')];
+
+    const sent: { chatId: number; text: string }[] = [];
+    await scheduler.runDueTasks(fakeBot(sent));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Slang pass only — no "before" DM to the admin (that's a humorizer thing).
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.chatId).toBe(100);
+    expect(sent[0]!.text).toContain('Здарова, катка!');
+  });
+
+  it('keeps a factual reply intact when the slang rewrite moved a number', async () => {
+    const scheduler = await seedDueTask(false);
+    const lex = await import('../src/db/repos/lexicon.repo.js');
+    lex.recordTerms(100, [{ term: 'катка', gloss: 'игра' }]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'Катка в 21:00' } }] }),
+          { status: 200 },
+        ),
+      ),
+    );
+    responses = [textResponse('Игра в 20:00')];
+
+    const sent: { chatId: number; text: string }[] = [];
+    await scheduler.runDueTasks(fakeBot(sent));
+
+    expect(sent[0]!.text).toContain('Игра в 20:00');
+    expect(sent[0]!.text).not.toContain('21:00');
+  });
+
+  it('skips the slang pass when the chat has slang switched off', async () => {
+    const scheduler = await seedDueTask(false);
+    const lex = await import('../src/db/repos/lexicon.repo.js');
+    lex.recordTerms(100, [{ term: 'катка', gloss: 'игра' }]);
+    const { setChatSlangEnabled } = await import('../src/db/repos/chatSettings.repo.js');
+    setChatSlangEnabled(100, false);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    responses = [textResponse('Привет!')];
+
+    const sent: { chatId: number; text: string }[] = [];
+    await scheduler.runDueTasks(fakeBot(sent));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sent[0]!.text).toContain('Привет!');
+  });
+
+  it('does not re-tone a humorized reply (one pass, not two)', async () => {
+    const scheduler = await seedDueTask(true);
+    const lex = await import('../src/db/repos/lexicon.repo.js');
+    lex.recordTerms(100, [{ term: 'катка', gloss: 'игра' }]);
+    stubHumorizer();
+    responses = [textResponse('Привет!')];
+
+    const sent: { chatId: number; text: string }[] = [];
+    await scheduler.runDueTasks(fakeBot(sent));
+
+    // Exactly one OpenAI call: the humorizer already carried the lexicon.
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
+    expect(sent.find((m) => m.chatId === 100)?.text).toContain('РОФЛ-вариант');
   });
 
   it('feeds recent chatter into a humour task so it can riff on context', async () => {

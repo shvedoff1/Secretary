@@ -21,17 +21,33 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `flows/lexicon.ts` drives passive "lexicon learning": every incoming message is buffered
   (`chat_lexicon_sample`), and in batches (N messages or once a day, whichever first) a
   cheap model (`src/llm/lexicon.ts`, Haiku) extracts the chat's slang/distorted words into
-  `chat_lexicon`. The learned slang is fed to the OpenAI **humorizer** (NOT Claude): the
-  tone-pass adopts the chat's lingo while Claude sees only clean history/context (slang is
-  a voice concern, not a factual one — see `src/llm/humorize.ts` `buildHumorSystemPrompt`).
-  Consequence: slang only surfaces when `ENABLE_HUMOR` is on, the chat's humor isn't
-  switched off (admin `/humor <chatId> on|off` → `chat_settings.humor_disabled`,
-  migration 018 — gates the live tone-pass, humour tasks (trumps `scheduled_task.humor`),
-  the spending-digest rewrite AND the expense quip (`prepareQuip` takes the chatId);
-  the /ping lesson is NOT the humorizer and is unaffected) and the reply is humorizable
-  (plain chat, no tool, not money). Managed per chat with `/slang` (`/slang clear`); admins
-  can inspect/reset another chat from the DM with `/slang <chatId>` / `/slang <chatId> clear`,
-  and `/chat <chatId>` shows a chat's slang count even for non-Splid chats. The MEANING
+  `chat_lexicon`. The learned slang is applied by the OpenAI **tone passes** (NOT Claude —
+  Claude sees clean history/context, since slang is a voice concern, not a factual one).
+  There are TWO of them and they never both run on one reply: the **humorizer**
+  (`buildHumorSystemPrompt`) carries the lexicon on plain-chat replies it rewrites, and
+  the **slang pass** (`src/llm/slang.ts`) covers everything the humorizer is banned from —
+  tool/factual answers, money answers, chats with humour switched off. The slang pass is
+  vocabulary-only (no jokes, no re-ordering, structure preserved) and its output is
+  checked by `factsPreserved` — every number/URL/@handle must survive character-for-character
+  or the rewrite is thrown away and the original ships, which is what makes it safe on
+  exact answers (dota cards, surf forecasts, digests). Slang has its OWN switch,
+  independent of `/humor`: global `ENABLE_SLANG` (default on, needs an OpenAI key) plus
+  per-chat `/slang [<chatId>] on|off` → `chat_settings.slang_disabled` (migration 022,
+  admin-only, default on). Off = neither pass speaks the chat's lingo (learning keeps
+  running); it's read through ONE helper, `lexicon.repo.ts` `getVoiceLexicon`, which every
+  call site (live reply, scheduler, spending digest) uses so the switch can't be honoured
+  in one place and forgotten in another. Tutor chats never get slang. The gate is a pure
+  `classifySlangDecision` (humorized → already-toned → disabled → no-lexicon → sent),
+  logged per reply as `slang gate` next to the `humorizer gate` line. Text whose producer
+  already ran a tone pass (the spending digest) is marked `toned: true` on
+  `AssistantResult` so it isn't rewritten twice. `/humor <chatId> on|off`
+  (`chat_settings.humor_disabled`, migration 018) still gates the JOKES — the live
+  tone-pass, humour tasks (trumps `scheduled_task.humor`), the spending-digest rewrite and
+  the expense quip (`prepareQuip` takes the chatId); the /ping lesson is neither pass and
+  is unaffected. Managed per chat with `/slang` (`/slang clear`, `/slang on|off`); admins
+  can inspect/reset/switch another chat from the DM with `/slang <chatId>` /
+  `/slang <chatId> clear` / `/slang <chatId> on|off`,
+  and `/chat <chatId>` shows a chat's slang state + count even for non-Splid chats. The MEANING
   of a learned word can be corrected by just telling the bot ("поменяй значение у X на Y")
   — the `edit_lexicon` tool (see `src/llm/`). A background
   flush in `index.ts` covers chats that went quiet before filling a batch.
@@ -101,7 +117,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   chat's learned slang (the `lexicon` arg → `buildHumorSystemPrompt`) so the rewrite speaks
   the group's lingo, and logs the exact slang it appended at INFO (`humorizer slang → openai`)
   so what reached OpenAI is visible in the diagnose dump. OpenAI is reached
-  by plain `fetch` (no SDK), mirroring `transcribe.ts`. Timer tasks opt into this pass
+  by plain `fetch` (no SDK), mirroring `transcribe.ts`. `slang.ts` is its sibling for
+  every reply the humorizer skips (see the slang notes under `src/bot/`): same transport
+  and knobs (`OPENAI_HUMOR_MODEL`, reasoning effort, timeout), but a vocabulary-only
+  prompt plus the deterministic `factsPreserved` guard, so it can run on exact answers.
+  Both live and scheduled replies run humorizer-then-slang as an either/or. Timer tasks opt into this pass
   per-task: `schedule_task` takes a `humor` flag (stored on `scheduled_task.humor`,
   toggled later with `/taskhumor <id> on|off`), and the scheduler humorizes a firing
   task's plain-chat output only when that flag is set (still subject to the same

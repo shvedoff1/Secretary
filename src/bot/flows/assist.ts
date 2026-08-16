@@ -7,6 +7,11 @@ import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { humorizeWithPreview, isHumorEnabled, classifyHumorDecision } from '../../llm/humorize.js';
+import {
+  applySlangOrOriginal,
+  classifySlangDecision,
+  isSlangPassEnabled,
+} from '../../llm/slang.js';
 import { isMoneyContext } from '../triggers.js';
 import { toParsedExpense, type RecallMemoryInput } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
@@ -24,7 +29,7 @@ import {
   removeMemoryItem,
 } from '../../db/repos/memoryItem.repo.js';
 import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
-import { getLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
+import { getVoiceLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
 import {
@@ -32,6 +37,7 @@ import {
   setTimezone,
   getChatMode,
   isChatHumorEnabled,
+  isChatSlangEnabled,
 } from '../../db/repos/chatSettings.repo.js';
 import {
   createTask,
@@ -740,21 +746,37 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     'humorizer gate',
   );
   const safeToHumorize = decision === 'sent';
-  // The chat's learned slang now rides ONLY on the humorizer (OpenAI) — Claude
-  // saw clean history/context. So the chat's voice is applied here, at the tone
-  // pass, not in the factual answer.
-  const replyText = safeToHumorize
+  // The chat's learned slang never reaches Claude (it saw clean history/context)
+  // — it is applied here, at the tone pass. `getVoiceLexicon` honours the
+  // per-chat slang switch, so /slang off empties it for BOTH passes below.
+  const lexicon = getVoiceLexicon(chatId, cfg.LEXICON_MAX_TERMS);
+  const humorized = safeToHumorize
     ? await humorizeWithPreview(
         result.text,
         async (original) => {
           await ctx.api.sendMessage(cfg.ADMIN_TELEGRAM_ID, `🔬 До OpenAI:\n\n${original}`);
         },
-        getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({ term: e.term, gloss: e.gloss })),
+        lexicon,
         // The tone pass must speak the chat's persona: a dota chat gets the
         // schoolkid-sensei rewrite, not the surfer one.
         mode === 'dota' ? 'dota' : 'surfer',
       )
     : result.text;
+
+  // Everything the humorizer is banned from — tool/factual answers, money
+  // answers, chats with the jokes switched off — still gets the chat's WORDS,
+  // just not its jokes: the slang pass swaps vocabulary only and drops the
+  // rewrite if any number/link/@handle moved. So an exact answer speaks the
+  // group's lingo without its facts being at risk. Tutor chats stay clean.
+  const slangDecision = classifySlangDecision({
+    enabled: isSlangPassEnabled() && isChatSlangEnabled(chatId) && mode !== 'tutor',
+    humorized: safeToHumorize,
+    toned: result.toned ?? false,
+    lexiconSize: lexicon.length,
+  });
+  logger.info({ decision: slangDecision, source: args.source }, 'slang gate');
+  const replyText =
+    slangDecision === 'sent' ? await applySlangOrOriginal(humorized, lexicon) : humorized;
 
   await replyMarkdown(ctx, replyText, {
     reply_to_message_id: ctx.message?.message_id,

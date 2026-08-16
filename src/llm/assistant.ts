@@ -150,7 +150,16 @@ export type AssistantResult =
   // `humorizable` is true only for a plain-chat answer (no tool was used), so
   // the caller may run the optional tone-only humorizer over it without risking
   // factual answers (expenses, surf, web search, reminders).
-  | { kind: 'text'; text: string; scheduled?: boolean; humorizable?: boolean };
+  // `toned` marks text whose PRODUCER already ran a tone pass over it (the
+  // spending digest humorizes/slangs itself, because the figures must ship
+  // verbatim and it owns that call). The caller must not tone it a second time.
+  | {
+      kind: 'text';
+      text: string;
+      scheduled?: boolean;
+      humorizable?: boolean;
+      toned?: boolean;
+    };
 
 const MAX_ITERATIONS = 6;
 
@@ -369,7 +378,7 @@ export async function runAssistant(
         };
       }
       const text = await handlers.spendingReport(parsed.data);
-      return { kind: 'text', text, humorizable: false };
+      return { kind: 'text', text, humorizable: false, toned: true };
     }
 
     if (res.stop_reason === 'tool_use') {

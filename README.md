@@ -41,8 +41,12 @@ added without touching the core.
   Toggle with `ENABLE_EXPENSE_QUIP`.
 - **Lexicon learning**: the bot quietly reads every message and, in batches, learns the
   slang and distorted word-forms the chat uses (e.g. «тип» for «типа», «братик») via a
-  cheap model, then picks up that lingo in its own replies. View/reset per chat with
-  `/slang` (`/slang clear`).
+  cheap model, then picks up that lingo in its own replies — in ALL of them, including the
+  exact ones (dota cards, forecasts, spending digests): the humorizer carries the slang
+  when it rewrites a plain reply, and a separate vocabulary-only slang pass covers the
+  rest, swapping words while every number, link and @username is checked to have survived
+  unchanged. View/reset per chat with `/slang` (`/slang clear`); switch the voice on or
+  off with `/slang on|off` (admin), independently of `/humor`.
 - **Reminders**: ask in natural language and the bot creates a scheduled task (the first
   time it asks the chat for its timezone, then reuses it). Manage with `/tasks` and
   `/canceltask <id>`. A background scheduler fires due tasks every minute and posts the
@@ -106,6 +110,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `LEXICON_BATCH_SIZE` | no | `30` | Extract after this many buffered messages… |
 | `LEXICON_MAX_AGE_HOURS` | no | `24` | …or once the oldest is this old, whichever first |
 | `LEXICON_MAX_TERMS` | no | `40` | Learned terms fed back into context |
+| `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |
 
 ## In-chat setup
 
@@ -129,7 +134,7 @@ Then just talk:
 
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
-· reminders: `/tasks` `/canceltask <id>` · lexicon: `/slang` (`/slang clear`)
+· reminders: `/tasks` `/canceltask <id>` · lexicon: `/slang` (`/slang clear`, `/slang on|off`)
 · expense dictionary: `/trata` (`/trata <word>`, `/trata clear`)
 
 ## Architecture

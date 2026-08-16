@@ -7,8 +7,9 @@ import {
   getChatMode,
   isChatHumorEnabled,
 } from '../db/repos/chatSettings.repo.js';
-import { getLexicon } from '../db/repos/lexicon.repo.js';
+import { getVoiceLexicon } from '../db/repos/lexicon.repo.js';
 import { humorizeOrOriginal } from '../llm/humorize.js';
+import { applySlangOrOriginal } from '../llm/slang.js';
 import type { SpendingReportInput } from '../llm/schema.js';
 import {
   aggregate,
@@ -74,13 +75,14 @@ export function makeSpendingReportHandler(
       // the chat's slang too so the tone matches (facts stay locked by the
       // humorizer's hard rules).
       const plain = sections.join('\n\n');
-      // Per-chat humor off: the digest ships as exact plain text — this is the
-      // deliberate "humorize money" exception, so it obeys the chat switch too.
-      if (!isChatHumorEnabled(chatId)) return plain;
-      const lexicon = getLexicon(chatId, cfg.LEXICON_MAX_TERMS).map((e) => ({
-        term: e.term,
-        gloss: e.gloss,
-      }));
+      // The digest is `toned: true` for the caller either way — it owns its tone
+      // pass here, because the figures must ship verbatim and re-toning already
+      // toned text would risk them twice.
+      const lexicon = getVoiceLexicon(chatId, cfg.LEXICON_MAX_TERMS);
+      // Per-chat humor off: no jokes over money — but the chat's WORDS still
+      // apply, so the digest gets the fact-guarded slang pass instead of the
+      // full rewrite. Slang off as well → exact plain text.
+      if (!isChatHumorEnabled(chatId)) return applySlangOrOriginal(plain, lexicon);
       return humorizeOrOriginal(
         plain,
         lexicon,

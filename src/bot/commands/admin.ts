@@ -129,15 +129,21 @@ export async function cmdChat(ctx: Context): Promise<void> {
         .join('\n')
     : '   (нет / группа не подключена)';
 
+  // Only the top slice: the store is deep (MEMORY_MAX_ITEMS), and dumping it all
+  // would chunk into dozens of messages. Indexes still match the full list, so
+  // /editmemory, /persona and /forget address anything shown.
+  const memLimit = loadConfig().MEMORY_DISPLAY_LIMIT;
   const memItems = listMemoryItemsForDisplay(id, loadConfig().MEMORY_HALFLIFE_DAYS);
+  const memHidden = Math.max(0, memItems.length - memLimit);
   const memory = memItems.length
     ? memItems
+        .slice(0, memLimit)
         .map((it, i) => {
           const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : '';
           const who = it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : '';
           return `   ${i + 1}. ${tag}${it.content}${who}`;
         })
-        .join('\n')
+        .join('\n') + (memHidden > 0 ? `\n   …и ещё ${memHidden} (показываю ${memLimit})` : '')
     : '(пусто)';
 
   const slangCount = getLexicon(id).length;
@@ -163,7 +169,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
       roster,
-      `память:`,
+      `память: ${memItems.length} записей`,
       memory,
       slangLine,
       ``,

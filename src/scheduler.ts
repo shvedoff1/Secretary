@@ -19,7 +19,8 @@ import { makeSpendingReportHandler } from './spending/handler.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
 import { getChatMode, isChatHumorEnabled } from './db/repos/chatSettings.repo.js';
-import { getMemoryForContext } from './db/repos/memoryItem.repo.js';
+import { getMemoryForContext, memoryStats } from './db/repos/memoryItem.repo.js';
+import { makeRecallMemoryHandler } from './bot/flows/assist.js';
 import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
 import type { Member } from './core/types.js';
 import type { Config } from './config.js';
@@ -43,6 +44,7 @@ export function scheduledMemory(
   memoryChat: { content: string }[];
   memoryUsers: { subject: string; items: { content: string }[] }[];
   memoryPersona: { content: string }[];
+  memoryTotal: number;
 } {
   const sel = getMemoryForContext(chatId, {
     // No recent conversation in a scheduled run, so there are no other
@@ -63,6 +65,7 @@ export function scheduledMemory(
       items: u.items.map((i) => ({ content: i.content })),
     })),
     memoryPersona: sel.persona.map((i) => ({ content: i.content })),
+    memoryTotal: memoryStats(chatId).total,
   };
 }
 
@@ -91,7 +94,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
     // Scheduled runs fire with no chat history, but they SHOULD still see the
     // chat's durable memory so a recurring task can use what the bot knows about
     // the group (e.g. a daily joke forecast riffing on remembered facts).
-    const { memoryChat, memoryUsers, memoryPersona } = scheduledMemory(
+    const { memoryChat, memoryUsers, memoryPersona, memoryTotal } = scheduledMemory(
       task.chatId,
       task.tgUserId,
       cfg,
@@ -125,6 +128,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         memoryChat,
         memoryUsers,
         memoryPersona,
+        memoryTotal,
         senderName: 'scheduler',
         timezone: task.timezone,
         splidConnected: !!chatCfg?.provider_group_id,
@@ -145,6 +149,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       {
         remember: () => 'noop',
         editMemory: () => 'noop',
+        // Recall stays LIVE: a firing task ("напомни про днюхи на неделе") needs to
+        // reach the store just like a live turn does, and it only reads.
+        recallMemory: makeRecallMemoryHandler(task.chatId),
         learnExpense: () => 'noop',
         editLexicon: () => 'noop',
         editPingList: () => 'noop',

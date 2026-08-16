@@ -59,6 +59,12 @@ export const EditMemoryZ = z.object({
 });
 export type EditMemoryInput = z.infer<typeof EditMemoryZ>;
 
+export const RecallMemoryZ = z.object({
+  query: z.string().nullable(),
+  about: z.string().nullable(),
+});
+export type RecallMemoryInput = z.infer<typeof RecallMemoryZ>;
+
 export const LearnExpenseZ = z.object({
   keywords: z.array(z.string().min(1)).min(1).max(20),
 });
@@ -254,6 +260,24 @@ export const editMemoryJsonSchema = {
     },
   },
   required: ['find', 'replace'],
+} as const;
+
+export const recallMemoryJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    query: {
+      type: ['string', 'null'],
+      description:
+        'What to look for, in the words the fact would most likely be WRITTEN in — the store holds short Russian sentences, so search by their content words («днюха день рождения», «аллергия», «пароль от вайфая»). Give several likely wordings of the same thing rather than one; matching is per-word, so extra synonyms only help. null when you only want everything known about a person (`about`).',
+    },
+    about: {
+      type: ['string', 'null'],
+      description:
+        'Narrow to facts about ONE person, by the name the chat calls them («Гоша», «Андрей»). Use it alone (with query null) for «что ты помнишь про Гошу», or together with a query to search only that person\'s facts. null to search the whole store.',
+    },
+  },
+  required: ['query', 'about'],
 } as const;
 
 export const learnExpenseJsonSchema = {

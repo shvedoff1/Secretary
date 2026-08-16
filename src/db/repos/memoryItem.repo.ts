@@ -11,6 +11,7 @@ import {
   type ContextSelection,
 } from '../../util/memoryWeight.js';
 import { looksLikeExpense } from '../../util/money.js';
+import { searchMemory as searchMemoryItems, type MemoryHit } from '../../util/memorySearch.js';
 
 export type MemoryScope = 'chat' | 'user' | 'persona';
 
@@ -380,6 +381,38 @@ export function getMemoryForContext(
     maxOtherUsers: opts.maxOtherUsers,
     personaBudget: opts.personaBudget,
   });
+}
+
+/**
+ * Search a chat's ENTIRE memory store by free text — the deep tier behind the
+ * `recall_memory` tool. The weighted working set injected into every turn is
+ * deliberately tiny; this is how the model reaches the rest without paying for it
+ * on turns that don't need it.
+ */
+export function searchMemory(
+  chatId: number,
+  query: string,
+  opts: { about?: string | null; limit: number; halfLifeDays: number },
+): MemoryHit<MemoryItem>[] {
+  return searchMemoryItems(getAllItems(chatId), query, {
+    about: opts.about ?? null,
+    limit: opts.limit,
+    now: Date.now(),
+    halfLifeDays: opts.halfLifeDays,
+  });
+}
+
+/** How many facts the chat holds, split by tier (for the context hint and /chat). */
+export function memoryStats(chatId: number): { total: number; pinned: number; persona: number } {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN source = 'explicit' AND scope <> 'persona' THEN 1 ELSE 0 END) AS pinned,
+              SUM(CASE WHEN scope = 'persona' THEN 1 ELSE 0 END) AS persona
+       FROM chat_memory_item WHERE chat_id = ?`,
+    )
+    .get(chatId) as { total: number; pinned: number | null; persona: number | null };
+  return { total: row.total, pinned: row.pinned ?? 0, persona: row.persona ?? 0 };
 }
 
 /** A memory item prepared for `/memory` display, pinned first then by weight. */

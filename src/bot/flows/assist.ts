@@ -8,7 +8,7 @@ import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
 import { humorizeWithPreview, isHumorEnabled, classifyHumorDecision } from '../../llm/humorize.js';
 import { isMoneyContext } from '../triggers.js';
-import { toParsedExpense } from '../../llm/schema.js';
+import { toParsedExpense, type RecallMemoryInput } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
@@ -16,6 +16,8 @@ import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import {
   getMemoryForContext,
+  searchMemory,
+  memoryStats,
   insertPinned,
   findMemoryItemByText,
   editMemoryItemContent,
@@ -136,6 +138,53 @@ export function makeEditMemoryHandler(chatId: number): (input: EditMemoryInput) 
     }
     editMemoryItemContent(chatId, match.id, replace);
     return `Поправил: «${match.content}» → «${replace.trim()}». 🤙`;
+  };
+}
+
+/**
+ * Build the `recall_memory` handler for a chat: the deep tier of memory. Every turn
+ * carries a small weighted working set; this searches everything else on demand, so
+ * the store can hold thousands of facts without any of them costing tokens until the
+ * model actually reaches for one.
+ *
+ * The result is written for the model, not the user: each line carries its tier
+ * (📌 pinned / 🎭 voice) and subject, so a recalled fact can be quoted with the right
+ * confidence — and an empty result says so plainly, so "не помню" stays honest.
+ */
+export function makeRecallMemoryHandler(chatId: number): (input: RecallMemoryInput) => string {
+  return ({ query, about }) => {
+    const cfg = loadConfig();
+    if (!cfg.ENABLE_MEMORY) return 'Память выключена — отвечай без неё.';
+    const q = (query ?? '').trim();
+    const who = (about ?? '').trim();
+    if (!q && !who) {
+      return 'Пустой запрос: передай `query` (что искать) и/или `about` (про кого).';
+    }
+
+    const hits = searchMemory(chatId, q, {
+      about: who || null,
+      limit: cfg.MEMORY_RECALL_LIMIT,
+      halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
+    });
+    const scope = who ? `про «${who}»${q ? ` по запросу «${q}»` : ''}` : `по запросу «${q}»`;
+    if (hits.length === 0) {
+      const { total } = memoryStats(chatId);
+      return total === 0
+        ? 'В памяти этого чата пока пусто — честно скажи, что не знаешь.'
+        : `Ничего не нашёл ${scope} (в памяти ${total} записей). Попробуй другие слова — или честно скажи, что не помнишь, не выдумывай.`;
+    }
+
+    const lines = hits.map((h) => {
+      const tag = h.item.scope === 'persona' ? '🎭 ' : h.item.source === 'explicit' ? '📌 ' : '';
+      const subject = h.item.scope === 'user' && h.item.subject ? `[${h.item.subject}] ` : '';
+      return `- ${tag}${subject}${h.item.content}`;
+    });
+    logger.debug({ chatId, query: q, about: who, hits: hits.length }, 'recall_memory served');
+    return [
+      `Нашёл в памяти ${scope} (${hits.length} записей, самое подходящее сверху):`,
+      ...lines,
+      'Это факты из памяти чата — используй их, но не выдумывай того, чего тут нет.',
+    ].join('\n');
   };
 }
 
@@ -567,6 +616,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           items: u.items.map((i) => ({ content: i.content })),
         })),
         memoryPersona: memorySel.persona.map((i) => ({ content: i.content })),
+        // Total held, so the context block can tell the model how much is NOT shown
+        // and that recall_memory reaches the rest.
+        memoryTotal: memoryStats(chatId).total,
         senderName: senderName(ctx),
         senderUsername: ctx.from?.username ?? null,
         timezone: getTimezone(chatId),
@@ -588,6 +640,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       {
         remember: (input) => rememberNote(chatId, input.note, input.replaces),
         editMemory: makeEditMemoryHandler(chatId),
+        recallMemory: makeRecallMemoryHandler(chatId),
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         editLexicon: makeEditLexiconHandler(chatId),
         editPingList: makeEditPingListHandler(chatId, tgUserId),
@@ -794,6 +847,7 @@ async function rewordPendingInner(
     {
       remember: (input) => rememberNote(chatId, input.note, input.replaces),
       editMemory: makeEditMemoryHandler(chatId),
+      recallMemory: makeRecallMemoryHandler(chatId),
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       editLexicon: makeEditLexiconHandler(chatId),
       editPingList: makeEditPingListHandler(chatId, tgUserId),

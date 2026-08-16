@@ -3,6 +3,7 @@ import {
   recordExpenseJsonSchema,
   rememberJsonSchema,
   editMemoryJsonSchema,
+  recallMemoryJsonSchema,
   learnExpenseJsonSchema,
   editLexiconJsonSchema,
   editPingListJsonSchema,
@@ -17,6 +18,7 @@ import {
 export const RECORD_EXPENSE_TOOL = 'record_expense';
 export const REMEMBER_TOOL = 'remember';
 export const EDIT_MEMORY_TOOL = 'edit_memory';
+export const RECALL_MEMORY_TOOL = 'recall_memory';
 export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
 export const EDIT_LEXICON_TOOL = 'edit_lexicon';
 export const EDIT_PING_LIST_TOOL = 'edit_ping_list';
@@ -36,6 +38,10 @@ export interface ToolOptions {
   /** Expose the edit_memory tool (fix an existing remembered fact in place). Default
    *  true; disabled for scheduled runs (a firing task shouldn't rewrite memory). */
   enableMemoryEdit?: boolean;
+  /** Expose the recall_memory tool (search the FULL memory store, beyond the small
+   *  working set injected into every turn). Default true — it is read-only, so it
+   *  stays on for scheduled runs and tutor chats too; off when ENABLE_MEMORY is off. */
+  enableRecall?: boolean;
   /** Expose the learn_expense_pattern tool. Default true; disabled for scheduled runs. */
   enableExpenseLearning?: boolean;
   /** Expose the edit_lexicon tool (correct a slang word's meaning). Default true;
@@ -97,6 +103,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         "Fix an EXISTING remembered fact in place — the «поправь/исправь в памяти …», «запись неверная, поменяй …» flow. Call this when the user wants to correct a fact the bot already stored (a typo, a wrong detail) WITHOUT adding a new one. Pass `find` = the current fact copied verbatim from the context memory sections, `replace` = the corrected full text. To ADD a new fact use remember; to change what a slang word MEANS use edit_lexicon.",
       input_schema: editMemoryJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableRecall !== false) {
+    tools.push({
+      name: RECALL_MEMORY_TOOL,
+      description:
+        "Search the chat's FULL long-term memory. The context block shows only the handful of facts that are salient right now; everything ever remembered about this chat and its people stays in the store and is reachable ONLY through this tool. Call it BEFORE answering whenever the answer depends on something specific the chat told you earlier and you cannot see it above — a person's preferences, allergies, birthdays, plans, past decisions, «а помнишь…», «что я тебе говорил про…», «что ты знаешь про <человек>». Cheap and read-only: a miss costs nothing, while answering «не помню» when the fact is stored is the failure worth avoiding. Do NOT call it for facts already visible in the context, for general knowledge (that's web_search) or for expenses (that's spending_report).",
+      input_schema: recallMemoryJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

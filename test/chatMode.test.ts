@@ -51,6 +51,25 @@ describe('chat mode setting', () => {
     expect(repo.getChatMode(1)).toBe('secretary');
   });
 
+  it('round-trips assistant mode and back', async () => {
+    const repo = await freshRepo();
+    repo.setChatMode(1, 'assistant');
+    expect(repo.getChatMode(1)).toBe('assistant');
+    repo.setChatMode(1, 'secretary');
+    expect(repo.getChatMode(1)).toBe('secretary');
+  });
+
+  it('reads an unknown/legacy stored mode as the default instead of breaking the chat', async () => {
+    const repo = await freshRepo();
+    const { getDb } = await import('../src/db/client.js');
+    getDb()
+      .prepare(
+        `INSERT INTO chat_settings (chat_id, mode, updated_at) VALUES (?, ?, unixepoch() * 1000)`,
+      )
+      .run(9, 'butler');
+    expect(repo.getChatMode(9)).toBe('secretary');
+  });
+
   it('is per chat', async () => {
     const repo = await freshRepo();
     repo.setChatMode(7, 'tutor');

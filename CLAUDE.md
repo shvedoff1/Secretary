@@ -70,8 +70,8 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (`chat_settings.reactions_disabled`, migration 019, checked in `maybeAutoReact`
   after the probability roll).
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
-  edit_memory | learn_expense_pattern | edit_lexicon | schedule_task | surf_forecast |
-  add_poi | spending_report | web_search`. `remember` pins a fact verbatim and can
+  edit_memory | learn_expense_pattern | edit_lexicon | set_rule | schedule_task |
+  surf_forecast | add_poi | spending_report | web_search`. `remember` pins a fact verbatim and can
   SUPERSEDE contradicted facts (its `replaces` arg → the handler fuzzy-matches and
   removes them first, so a correction overrides instead of coexisting; the model pushes
   back once before overriding — prompt-driven). `edit_memory` fixes an existing fact in
@@ -129,6 +129,22 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `humorizeWithPreview` just like the live flow — passing the chat's lexicon to that call
   so its voice matches the chat. Recent chatter is still injected into a humour task's
   Claude context (see `scheduler.ts`); plain/factual tasks stay context-clean.
+- Chat RULES (`chat_rule`, migration 023, `chatRule.repo.ts`) — standing behaviour
+  instructions in the user's own words («все голосовые очищай от слов-паразитов и
+  скидывай расшифровку», «отвечай короче»). They are NOT memory: memory is what the
+  bot knows, a rule is what it must DO, so they render at the TOP of the context block
+  as a numbered order list («STANDING ORDERS … they outrank your default style») in
+  every mode, tutor included, and in scheduled runs too. Because they cost tokens on
+  every turn the list is capped (`CHAT_RULES_MAX`, default 30) and exact duplicates are
+  refused. Set in plain words via the `set_rule` tool (add/remove; off for scheduled
+  runs — a firing task must not rewrite how the bot behaves) or explicitly with
+  `/rules [<chatId>] [add <текст>|del <N>|clear]` (admin-only for another chat, same
+  parsing as `/slang`). Removal matches forgivingly (exact → unique containment) and an
+  AMBIGUOUS quote resolves to nothing rather than dropping the wrong rule. The
+  «голосовые» class of rule needs the model to know the channel: `runAndRespond`
+  prefixes a voice transcript with `VOICE_TRANSCRIPT_MARKER` (exported from
+  `prompts.ts`, explained verbatim in `SYSTEM_PROMPT` — a test pins the two together),
+  and the prompt says to answer its content normally UNLESS a rule asks for more.
 - `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
   on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
   когда появятся сеансы Титана». Created in plain words via the `watch_page` tool
@@ -228,7 +244,26 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.
-- Chat modes (`chat_settings.mode`, admin `/mode <chatId> tutor|secretary|dota`): `dota`
+- Chat modes (`chat_settings.mode`, admin `/mode <chatId> <режим>`) are described ONCE in
+  `src/modes.ts` — the registry (label, description, greeting, and the four
+  personality stances `humor`/`slang`/`chime`/`reactions`) that the picker keyboard,
+  `/modes`, `/mode`, `/chat`, the join-DM greeting and every feature gate read from,
+  so adding a mode is one entry plus a system prompt rather than a dozen
+  `Record<ChatMode, …>` maps drifting apart. The gates are `modeAllowsHumor/Slang/
+  Chime/Reactions`, applied ON TOP of the per-chat switches (`/humor`, `/slang`,
+  `/chime`, `/react`) — both must allow a feature — at every call site that can
+  produce tone: the live reply, the scheduler, the expense quip and the spending
+  digest. SELECTOR FLOW: the "bot was added" DM (`onBotMembership.ts`) shows the
+  picker built from the registry with an «ℹ️ Что за режимы?» button (`m:?:<chatId>`)
+  that renders the descriptions and keeps the picker on screen — look, then choose;
+  `/modes` prints the same card, and `/mode <chatId>` with no mode replies with the
+  buttons. Picking a mode still trusts the chat.
+  `assistant` («ассистент») is the calm one: the FULL secretary skill set with the
+  persona removed — `ASSISTANT_SYSTEM_PROMPT` is a static persona-override suffix on
+  `SYSTEM_PROMPT` (like dota, so behaviour rules are shared and the prefix stays
+  cacheable) that bans jokes/surfer slang and points behaviour at the chat's RULES.
+  It keeps memory + the learned slang (that's how it "adapts to the chat") but never
+  humorizes, never chimes in and never auto-reacts. `dota`
   keeps the FULL secretary feature set (memory, humor, slang, chime, reminders, tools) but
   swaps the persona for a schoolkid who fancies himself a Dota 2 teacher —
   `DOTA_SYSTEM_PROMPT` is a static persona-override suffix on top of `SYSTEM_PROMPT`

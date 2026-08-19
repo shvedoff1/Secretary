@@ -8,6 +8,7 @@ import { cmdRequest } from './commands/request.js';
 import { cmdApprove, cmdDeny, handleUserCallback } from './commands/approve.js';
 import { cmdWhitelist, cmdAllow } from './commands/whitelist.js';
 import { getChatMode } from '../db/repos/chatSettings.repo.js';
+import { modeAllowsReactions } from '../modes.js';
 import { cmdGroup } from './commands/group.js';
 import { cmdMembers } from './commands/members.js';
 import { cmdLink } from './commands/link.js';
@@ -17,6 +18,7 @@ import { cmdTasks, cmdCancelTask, cmdTaskHumor } from './commands/tasks.js';
 import { cmdWatch } from './commands/watch.js';
 import { cmdPoi, cmdDelPoi } from './commands/poi.js';
 import { cmdSlang } from './commands/lexicon.js';
+import { cmdRules } from './commands/rules.js';
 import { cmdTrata } from './commands/expenseTerm.js';
 import { cmdPing } from './commands/ping.js';
 import { cmdDota } from './commands/dota.js';
@@ -35,6 +37,7 @@ import {
   cmdSetLink,
   cmdUnlink,
   cmdMode,
+  cmdModes,
   cmdTrust,
   cmdChime,
   cmdHumor,
@@ -76,8 +79,9 @@ export function buildBot(token: string): Bot {
     // Any new message (of any type) means the chat is active: cancel a pending
     // spontaneous chime so the bot only ever chimes into a genuine lull.
     if (ctx.chat?.id != null) cancelChime(ctx.chat.id);
-    // No playful reactions in a tutor chat — it's a study room, not the group hang.
-    if (ctx.chat?.id == null || getChatMode(ctx.chat.id) !== 'tutor') {
+    // No playful reactions where the mode doesn't want them — a study room and a
+    // calm assistant chat are not the group hang.
+    if (ctx.chat?.id == null || modeAllowsReactions(getChatMode(ctx.chat.id))) {
       await maybeAutoReact(ctx);
     }
     await next();
@@ -104,6 +108,7 @@ export function buildBot(token: string): Bot {
   bot.command('poi', cmdPoi);
   bot.command('delpoi', cmdDelPoi);
   bot.command('slang', cmdSlang);
+  bot.command('rules', cmdRules);
   bot.command('trata', cmdTrata);
   bot.command('ping', cmdPing);
 
@@ -122,6 +127,7 @@ export function buildBot(token: string): Bot {
   bot.command('setlink', cmdSetLink);
   bot.command('unlink', cmdUnlink);
   bot.command('mode', cmdMode);
+  bot.command('modes', cmdModes);
   bot.command('trust', cmdTrust);
   bot.command('chime', cmdChime);
   bot.command('humor', cmdHumor);
@@ -170,6 +176,7 @@ export const BOT_COMMANDS = [
   { command: 'poi', description: 'Список мест (кафе, достопримечательности, планы)' },
   { command: 'delpoi', description: 'Удалить место по id' },
   { command: 'slang', description: 'Словечки, которые я подхватил из чата' },
+  { command: 'rules', description: 'Правила поведения в этом чате (/rules add <текст>)' },
   { command: 'trata', description: 'Слова, которые я считаю тратами' },
   { command: 'ping', description: 'Пингануть состав (/ping show — глянуть без пинга)' },
   { command: 'dota', description: 'База по доте: /dota, /dota sync, /dota <название>' },

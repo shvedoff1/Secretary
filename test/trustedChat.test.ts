@@ -225,6 +225,41 @@ describe('handleModeCallback', () => {
     expect(sent[0]!.text).toContain('/ping');
   });
 
+  it('one tap on «ассистент»: calm mode, chat trusted, neutral greeting', async () => {
+    await freshDb();
+    const { ensureAdmin } = await import('../src/db/repos/users.repo.js');
+    ensureAdmin(1);
+    const { handleModeCallback } = await import('../src/bot/handlers/onBotMembership.js');
+    const repo = await import('../src/db/repos/chatSettings.repo.js');
+
+    const { ctx, sent, edits } = callbackCtx('m:a:-100500', 1);
+    await handleModeCallback(ctx);
+
+    expect(repo.getChatMode(-100500)).toBe('assistant');
+    expect(repo.isChatTrusted(-100500)).toBe(true);
+    expect(edits[0]).toContain('доступ открыт');
+    // The greeting points at the rules — that's how behaviour is configured here.
+    expect(sent[0]!.text).toContain('/rules');
+  });
+
+  it('«что за режимы?» describes them and keeps the picker on screen', async () => {
+    await freshDb();
+    const { ensureAdmin } = await import('../src/db/repos/users.repo.js');
+    ensureAdmin(1);
+    const { handleModeCallback } = await import('../src/bot/handlers/onBotMembership.js');
+    const repo = await import('../src/db/repos/chatSettings.repo.js');
+    const { MODES } = await import('../src/modes.js');
+
+    const { ctx, edits, sent } = callbackCtx('m:?:-100500', 1);
+    await handleModeCallback(ctx);
+
+    // Nothing is decided by looking — no mode, no trust, no greeting.
+    expect(repo.getChatMode(-100500)).toBe('secretary');
+    expect(repo.isChatTrusted(-100500)).toBe(false);
+    expect(sent).toHaveLength(0);
+    for (const m of MODES) expect(edits[0]).toContain(m.description);
+  });
+
   it('«игнорить» leaves the chat untrusted', async () => {
     await freshDb();
     const { ensureAdmin } = await import('../src/db/repos/users.repo.js');

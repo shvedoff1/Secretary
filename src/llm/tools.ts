@@ -7,6 +7,7 @@ import {
   learnExpenseJsonSchema,
   editLexiconJsonSchema,
   editPingListJsonSchema,
+  setRuleJsonSchema,
   scheduleTaskJsonSchema,
   watchPageJsonSchema,
   dotaLookupJsonSchema,
@@ -22,6 +23,7 @@ export const RECALL_MEMORY_TOOL = 'recall_memory';
 export const LEARN_EXPENSE_TOOL = 'learn_expense_pattern';
 export const EDIT_LEXICON_TOOL = 'edit_lexicon';
 export const EDIT_PING_LIST_TOOL = 'edit_ping_list';
+export const SET_RULE_TOOL = 'set_rule';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const WATCH_PAGE_TOOL = 'watch_page';
 export const DOTA_LOOKUP_TOOL = 'dota_lookup';
@@ -50,6 +52,10 @@ export interface ToolOptions {
   /** Expose the edit_ping_list tool (edit the /ping roll-call rosters in plain
    *  words). Default true; disabled for scheduled runs and tutor chats. */
   enablePingEdit?: boolean;
+  /** Expose the set_rule tool (standing behaviour rules for the chat, set in plain
+   *  words). Default true; disabled for scheduled runs — a firing task must not
+   *  rewrite how the bot behaves. Available in every mode, tutor included. */
+  enableRules?: boolean;
   /** Expose the schedule_task tool. Default true; disabled for scheduled runs so a
    *  firing reminder can't create more reminders. */
   enableReminders?: boolean;
@@ -139,6 +145,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         "Edit THIS chat's ping rosters — the named lists the /ping roll-call command pings — and personal quiet hours. Call this when the user asks IN PLAIN WORDS to add or remove people («добавь @vasya в основной пинг», «убери @petya и @kolya из пинга») OR to set do-not-ping windows for themselves/someone («не тегай меня до 19:00 по будням», «в воскресенье с 18 до 21 меня не пинговать» => action mute with those windows; «снимай мой мут», «можно снова тегать» => unmute). For mute, set `replace` from the phrasing: an ADDITION to an existing schedule («ещё…», «а также…») => replace false (append); a full restatement/correction («только до 18», «теперь так», the first rule) => replace true. A combined ask («добавь меня в пинг, но не тегай до 19») = TWO calls in one turn: add, then mute. «Исправь меншн X на Y» / «у него ник другой» => action rename (members=[old], renameTo=new) — applies across all lists, quiet hours survive; never model it as remove+add. Copy members AS WRITTEN (keep the @); «меня» = the sender's @username from the context block (ask once if it's not there). NEVER invent a handle: a username is latin-only, so a Cyrillic «@Имя» is a fabrication that pings nobody — if the real ник is unknown, ask and suggest the person reply in the chat so it becomes visible. Times default to Europe/Moscow unless another zone is named. `list` = the named list or null for the default; quiet hours apply per person chat-wide. This only edits data: the actual ping is the user's /ping command, and /ping show displays rosters + quiet hours without pinging. IMPORTANT: in your confirmation reply do NOT repeat the @usernames (that would ping them) — refer to them without the @ or by count.",
       input_schema: editPingListJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableRules !== false) {
+    tools.push({
+      name: SET_RULE_TOOL,
+      description:
+        "Set or drop a STANDING behaviour rule for THIS chat — how you must work here from now on, said by the user in plain words: «с этого момента все голосовые очищай от слов-паразитов и скидывай расшифровку», «отвечай короче», «не используй эмодзи», «всегда пиши по-английски». Call it with action 'add' the moment the user states such a standing instruction, then follow the rule starting with this very reply; call it with action 'remove' when they cancel one («забудь правило про голосовые»), passing the rule as it appears under \"Chat rules\" in the context block. Rules already listed there are IN FORCE — never re-add one. NOT for facts to know (that's remember), NOT for a one-off ask about the current reply (just do it), NOT for anything time-based (that's schedule_task).",
+      input_schema: setRuleJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

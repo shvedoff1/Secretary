@@ -47,6 +47,18 @@ added without touching the core.
   rest, swapping words while every number, link and @username is checked to have survived
   unchanged. View/reset per chat with `/slang` (`/slang clear`); switch the voice on or
   off with `/slang on|off` (admin), independently of `/humor`.
+- **Chat modes**: every chat has a mode that decides the persona and how playful the bot
+  is — `secretary` (the chill surfer default), `assistant` (calm helper: same skills, no
+  jokes, no chime-ins, no random reactions — it still adapts via memory and the chat's
+  slang), `tutor` (accuracy-first exam prep) and `dota` (schoolkid-sensei + the current-patch
+  Dota base). When the bot is added to a chat, the admin gets a DM with the mode picker;
+  the «Что за режимы?» button describes them all before choosing. Later: `/modes` to read
+  them, `/mode <chatId>` for the same buttons, `/mode <chatId> <режим>` to set one directly.
+- **Chat rules**: standing behaviour instructions in your own words — «все голосовые
+  очищай от слов-паразитов и скидывай мне расшифровку», «отвечай короче», «без эмодзи».
+  Just tell the bot («с этого момента …») and it records the rule itself, or use
+  `/rules add <текст>`; they are injected into every turn as orders and apply in every
+  mode. List with `/rules`, drop with `/rules del <N>` / `/rules clear`.
 - **Reminders**: ask in natural language and the bot creates a scheduled task (the first
   time it asks the chat for its timezone, then reuses it). Manage with `/tasks` and
   `/canceltask <id>`. A background scheduler fires due tasks every minute and posts the
@@ -110,6 +122,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `LEXICON_BATCH_SIZE` | no | `30` | Extract after this many buffered messages… |
 | `LEXICON_MAX_AGE_HOURS` | no | `24` | …or once the oldest is this old, whichever first |
 | `LEXICON_MAX_TERMS` | no | `40` | Learned terms fed back into context |
+| `CHAT_RULES_MAX` | no | `30` | Max standing chat rules per chat (they go into every turn's context) |
 | `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |
 
 ## In-chat setup

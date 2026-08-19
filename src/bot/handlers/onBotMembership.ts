@@ -2,11 +2,8 @@ import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { isAdmin } from '../../db/repos/users.repo.js';
-import {
-  setChatMode,
-  setChatTrusted,
-  type ChatMode,
-} from '../../db/repos/chatSettings.repo.js';
+import { setChatMode, setChatTrusted } from '../../db/repos/chatSettings.repo.js';
+import { modeByCode, renderModeCard } from '../../modes.js';
 import { modeKeyboard } from '../keyboards.js';
 
 /**
@@ -42,8 +39,9 @@ export async function onBotMembership(ctx: Context): Promise<void> {
       await ctx.api.sendMessage(
         cfg.ADMIN_TELEGRAM_ID,
         `🆕 Меня добавили в чат «${title}»\nid: ${upd.chat.id}\nдобавил: ${by}\n\n` +
-          `Выбери режим — это откроет доступ всем участникам чата. «Игнорить» — ` +
-          `оставить чат без доступа (я буду молчать).`,
+          `Выбери режим — это откроет доступ всем участникам чата. Не знаешь, какой — ` +
+          `жми «Что за режимы?», там описания. «Игнорить» — оставить чат без доступа ` +
+          `(я буду молчать).`,
         { reply_markup: modeKeyboard(upd.chat.id) },
       );
     } else {
@@ -59,22 +57,6 @@ export async function onBotMembership(ctx: Context): Promise<void> {
   }
 }
 
-// What the bot says in the chat right after the admin picks a mode — instant
-// feedback for the group that the bot is live, in the chosen persona's voice.
-const MODE_GREETING: Record<ChatMode, string> = {
-  dota: 'Так, класс, ваш учитель по доте на месте. Записывайтесь на урок: /ping add @ник …, сбор — /ping. Опоздавших отмечаю в журнале.',
-  secretary: 'Йоу, я на связи! Чем могу — /help. 🤙',
-  tutor: 'Привет! Я репетитор. Присылай задачу — разберём по шагам.',
-};
-
-const MODE_BY_CODE: Record<string, ChatMode> = { d: 'dota', s: 'secretary', t: 'tutor' };
-
-const MODE_DONE_LABEL: Record<ChatMode, string> = {
-  dota: '🎮 дота',
-  secretary: '🤙 секретарь',
-  tutor: '🎓 репетитор',
-};
-
 /** Callback handler for the mode-picker buttons (prefix `m:`, admin only). */
 export async function handleModeCallback(ctx: Context): Promise<void> {
   if (!ctx.from || !isAdmin(ctx.from.id)) {
@@ -89,6 +71,19 @@ export async function handleModeCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  // «Что за режимы?» — describe them and keep the picker on screen, so the admin
+  // can read what each one does and pick right there. This is the whole selector
+  // flow: added to a chat → see the modes → choose.
+  if (code === '?') {
+    await ctx.answerCallbackQuery();
+    await editSafe(
+      ctx,
+      `Режимы для чата ${chatId}:\n\n${renderModeCard()}\n\nВыбор режима открывает доступ всем участникам чата.`,
+      modeKeyboard(chatId),
+    );
+    return;
+  }
+
   if (code === 'x') {
     setChatTrusted(chatId, false);
     await ctx.answerCallbackQuery({ text: 'Игнорим' });
@@ -96,32 +91,36 @@ export async function handleModeCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  const mode = MODE_BY_CODE[code];
-  if (!mode) {
+  const spec = modeByCode(code);
+  if (!spec) {
     await ctx.answerCallbackQuery();
     return;
   }
-  setChatMode(chatId, mode);
+  setChatMode(chatId, spec.mode);
   setChatTrusted(chatId, true);
   await ctx.answerCallbackQuery({ text: 'Готово' });
   await editSafe(
     ctx,
-    `✅ Чат ${chatId} → ${MODE_DONE_LABEL[mode]}, доступ открыт всем участникам.\n` +
-      `Сменить: /mode ${chatId} <режим> · закрыть доступ: /trust ${chatId} off`,
+    `✅ Чат ${chatId} → ${spec.label}, доступ открыт всем участникам.\n` +
+      `Сменить: /mode ${chatId} — покажу список кнопками · закрыть доступ: /trust ${chatId} off`,
   );
   // Say hi in the chat so the squad sees the bot is live. Best-effort: the admin
   // action already succeeded; a failed greeting must not roll anything back.
   try {
-    await ctx.api.sendMessage(chatId, MODE_GREETING[mode]);
+    await ctx.api.sendMessage(chatId, spec.greeting);
   } catch (err) {
     logger.warn({ err, chatId }, 'could not greet the newly configured chat');
   }
 }
 
-async function editSafe(ctx: Context, text: string): Promise<void> {
+async function editSafe(
+  ctx: Context,
+  text: string,
+  keyboard?: ReturnType<typeof modeKeyboard>,
+): Promise<void> {
   try {
-    await ctx.editMessageText(text);
+    await ctx.editMessageText(text, keyboard ? { reply_markup: keyboard } : undefined);
   } catch {
-    /* message may be too old to edit */
+    /* message may be too old to edit (or identical text — the info card re-tapped) */
   }
 }

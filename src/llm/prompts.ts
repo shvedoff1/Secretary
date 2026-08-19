@@ -206,6 +206,12 @@ Rules for \`record_expense\` (only relevant when Splid is connected):
   person — the sender. Do NOT invent a separate member for the sender's own name or
   nickname, and don't stall over who paid: if they say «платил я», the payer is the
   sender, full stop.
+- MEMORY NEVER NAMES THE PAYER. Who paid comes from THIS message and from
+  "Message sender" — never from a fact you read in the memory sections. When the
+  message says «я»/«платил я», put "я" in payerHints and LEAVE it as "я": it
+  resolves to the sender deterministically, while a name or nickname you dug out of
+  memory is a guess that can land on the wrong member (or on nobody). Name a person
+  in payerHints/profiteerHints only when THIS message names them.
 - If nothing indicates who paid, leave payerHints empty (the sender is assumed).
 - If nothing indicates how it's split, leave profiteerHints empty (everyone is assumed).
 - "Everyone EXCEPT X" ("на всех кроме Иры", "all but Sam"): you have the full
@@ -249,6 +255,13 @@ Who's talking — names & mentions (READ CAREFULLY, this matters):
   in the text sent the message, and don't attribute one person's words to another.
 - When you're unsure who someone is, use "Group members" in the context block to map a
   name/nickname to a real person; if it's still ambiguous, ask instead of guessing.
+- MEMORY NEVER DECIDES WHO IS SPEAKING. The sender is whoever "Message sender"
+  names, full stop — nothing in "Chat memory" or in an "About <name>" block can
+  re-attribute the current message to someone else. Facts are stored in the words
+  the chat used, so an "About X" block may well say «я …»: inside that block «я»
+  means X, never the person talking right now. If a remembered fact seems to
+  disagree with "Message sender", "Message sender" wins — and don't puzzle over it
+  out loud in your reply ("это же и есть X?"); just answer.
 - DON'T @-tag or @-mention anyone — no «@username», no «@Имя». You are ALWAYS replying
   directly to the sender's message (Telegram threads your answer under it), so the
   person already sees it's for them. You don't know people's real @usernames anyway, so
@@ -491,6 +504,16 @@ export function buildContextBlock(args: {
   memoryTotal?: number;
   /** Standing behaviour rules set for this chat (see chat_rule / the set_rule tool). */
   rules?: string[];
+  /**
+   * EXPENSE-ONLY turn (the silent auto-expense scan): the run can end in a recorded
+   * expense or in nothing at all — any text it produces is thrown away. So everything
+   * that only feeds CONVERSATION is left out: memory, reminders, watches, places.
+   * Memory is not merely dead weight here, it actively misfires — a remembered «я —
+   * Швед» invites the model to name a payer from memory instead of the sender. What
+   * stays is what an expense actually needs: currency, roster, sender, time — plus
+   * the chat's standing rules, which are orders and apply everywhere.
+   */
+  expenseOnly?: boolean;
 }): string {
   const roster =
     args.members.length > 0
@@ -519,13 +542,20 @@ export function buildContextBlock(args: {
       ? places.map((p) => `${p.name} (${p.category})`).join('; ')
       : '(none)';
 
+  const expenseOnly = args.expenseOnly === true;
+
   const lines = [
     `Current time (UTC): ${new Date().toISOString()}`,
     `Chat timezone: ${tz}`,
     `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
-    `Active reminders: ${remindersLine}`,
-    `Active page watches: ${watchesLine}`,
-    `Saved places: ${placesLine}`,
+    // Conversation-only context, skipped on an expense-only scan (see `expenseOnly`).
+    ...(expenseOnly
+      ? []
+      : [
+          `Active reminders: ${remindersLine}`,
+          `Active page watches: ${watchesLine}`,
+          `Saved places: ${placesLine}`,
+        ]),
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,
     // The @username rides along for TOOL INPUTS only (e.g. edit_ping_list for
@@ -536,6 +566,11 @@ export function buildContextBlock(args: {
   // Standing rules FIRST: they are orders, not context, and the model must not have
   // to dig past the roster and memory to find them.
   pushRules(lines, args.rules ?? []);
+
+  // An expense-only scan gets NO memory at all: it can't use a fact (there is no
+  // reply), and it can be misled by one — the identity rules in the system prompt
+  // guard the addressed path, this removes the temptation entirely from the silent one.
+  if (expenseOnly) return lines.join('\n');
 
   // Voice/style directives for this chat (how to talk, running gags, persona). Kept
   // in their own section so they read as instructions, not facts, and don't crowd the

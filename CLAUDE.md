@@ -218,6 +218,23 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   scheduling. The handler runs its output through the humorizer (the one deliberate
   exception to "humorizer skips money") and `assistant.ts` short-circuits the tool so the
   exact figures reach the user verbatim instead of being re-phrased by the model.
+- Expense-only scan: a group message that was NOT addressed to the bot but looks like
+  a spend (`routeMessage` → `auto-expense`, `addressed:false`) can only end in a
+  `record_expense` preview or in silence — any text it produces is dropped. So that run
+  is stripped to exactly that job (`expenseOnly` on `AssistantContext`, set in
+  `runAndRespond` from `!addressed`): `record_expense` is the ONLY tool, and the context
+  block carries no memory / reminders / watches / places (chat RULES stay — they're
+  orders). Memory there wasn't just dead weight, it MISFIRED: a remembered «я — Швед»
+  had the model take the payer from memory instead of from the sender («Швед купил
+  круассан», sent by Андрей Шведов) and reason about the identity out loud. Cutting the
+  tools also stops an unaddressed scan from quietly WRITING (`remember`, `set_rule`,
+  `schedule_task`) on a message nobody sent to the bot. On the ADDRESSED path memory
+  stays (it's needed for «дели как в прошлый раз»), and two static prompt rules keep it
+  out of identity: «MEMORY NEVER NAMES THE PAYER» (the payer comes from this message;
+  «я» stays «я», it resolves to the sender deterministically) and «MEMORY NEVER DECIDES
+  WHO IS SPEAKING» (facts are stored in the chat's own words, so «я» inside an
+  «About X» block means X — «Message sender» always wins). `rewordPending` was already
+  memory-free.
 - Concurrency: `index.ts` polls via `@grammyjs/runner` (`run(bot)`), so updates are
   processed CONCURRENTLY — a slow LLM turn in one chat no longer blocks every other chat
   (the old `bot.start()` handled updates one-at-a-time). Per-chat ordering is kept by a

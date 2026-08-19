@@ -190,6 +190,35 @@ describe('per-chat chime toggle', () => {
   });
 });
 
+describe('per-mode chime stance', () => {
+  it('a calm assistant chat never chimes, however long the silence', async () => {
+    const chime = await load();
+    const { setChatMode } = await import('../src/db/repos/chatSettings.repo.js');
+    setChatMode(1, 'assistant');
+
+    chime.recordChatMessage(1, 'Аня', 'тишина');
+    chime.recordChatMessage(2, 'Петя', 'а тут можно');
+    chime.armChime(ctx(1));
+    chime.armChime(ctx(2));
+    await vi.advanceTimersByTimeAsync(HOUR_MS);
+
+    // Only the secretary chat chimed — the assistant one has no business butting in.
+    expect(runMock).toHaveBeenCalledOnce();
+    const usedCtx = runMock.mock.calls[0]![0] as { chat: { id: number } };
+    expect(usedCtx.chat.id).toBe(2);
+  });
+
+  it('a tutor chat never chimes either', async () => {
+    const chime = await load();
+    const { setChatMode } = await import('../src/db/repos/chatSettings.repo.js');
+    setChatMode(1, 'tutor');
+    chime.recordChatMessage(1, 'Ученик', 'молчание');
+    chime.armChime(ctx(1));
+    await vi.advanceTimersByTimeAsync(HOUR_MS);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('chime persona (dota mode)', () => {
   it('in a dota chat the chime instruction demands a concrete Dota tactic', async () => {
     const chime = await load();

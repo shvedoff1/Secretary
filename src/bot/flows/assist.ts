@@ -30,6 +30,12 @@ import {
 } from '../../db/repos/memoryItem.repo.js';
 import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getVoiceLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
+import {
+  addRule,
+  listRules,
+  removeRule,
+  findRule,
+} from '../../db/repos/chatRule.repo.js';
 import { addPoi, listPois } from '../../db/repos/poi.repo.js';
 import { normalizeCategory } from '../../util/poi.js';
 import {
@@ -62,6 +68,7 @@ import type {
   EditLexiconInput,
   EditPingListInput,
   EditMemoryInput,
+  SetRuleInput,
 } from '../../llm/schema.js';
 import {
   DEFAULT_PING_LIST,
@@ -91,6 +98,8 @@ import {
 import { previewKeyboard } from '../keyboards.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 import { looksLikeExpense } from '../../util/money.js';
+import { VOICE_TRANSCRIPT_MARKER } from '../../llm/prompts.js';
+import { modeAllowsHumor, modeAllowsSlang } from '../../modes.js';
 
 /**
  * Handle the `remember` tool / explicit "запомни …": pin the note, but keep recorded
@@ -410,6 +419,41 @@ export function makeEditLexiconHandler(
 }
 
 /**
+ * Build the `set_rule` handler for a chat — the «с этого момента все голосовые
+ * очищай от слов-паразитов и скидывай расшифровку» flow. A rule is a standing
+ * ORDER (as opposed to memory, which is a fact), so it lands in its own small,
+ * capped list that is injected into every turn as directives.
+ *
+ * Removal matches forgivingly (the model quotes the rule back in its own words);
+ * an ambiguous or unknown quote is reported rather than guessed at, so a wrong
+ * rule is never dropped silently.
+ */
+export function makeSetRuleHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: SetRuleInput) => string {
+  return ({ action, text }) => {
+    const max = loadConfig().CHAT_RULES_MAX;
+    if (action === 'remove') {
+      const found = findRule(chatId, text);
+      if (!found) {
+        return `Не нашёл такого правила. Текущие правила: /rules`;
+      }
+      removeRule(chatId, found.id);
+      return `Убрал правило: «${found.text}». Что осталось — /rules`;
+    }
+    const res = addRule({ chatId, text, tgUserId, max });
+    if (res.status === 'duplicate') {
+      return `Такое правило уже действует: «${res.rule.text}». Ничего не менял.`;
+    }
+    if (res.status === 'full') {
+      return `Правил уже ${res.max} — это максимум. Удали лишнее (/rules del <N>) и повтори.`;
+    }
+    return `Записал правило: «${res.rule.text}». Действует со следующего ответа. Все правила — /rules`;
+  };
+}
+
+/**
  * Build the `edit_ping_list` handler for a chat — the "добавь @vasya в основной
  * пинг" flow. Adds/removes members on a /ping roster and returns a short
  * confirmation. Names in the confirmation are given WITHOUT the @ so the model's
@@ -609,6 +653,17 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   });
 
   const mode = getChatMode(chatId);
+
+  // A voice note reaches the model as its machine transcript. Marking it as such is
+  // what lets a chat RULE key on the channel («все голосовые очищай от слов-паразитов
+  // и скидывай расшифровку») — without the marker the model cannot tell a transcript
+  // from a typed message. The prompt says to answer the content normally unless a
+  // rule asks for more, so unmarked behaviour is unchanged.
+  const userContent =
+    args.source === 'voice' && typeof args.userContent === 'string'
+      ? `${VOICE_TRANSCRIPT_MARKER}\n${args.userContent}`
+      : args.userContent;
+
   let result: AssistantResult;
   try {
     result = await runAssistant(
@@ -640,8 +695,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           url: w.url,
         })),
         places: listPois(chatId).map((p) => ({ name: p.name, category: p.category })),
+        // Standing behaviour rules for this chat — orders, not context (see
+        // chat_rule / the set_rule tool). They apply in every mode.
+        rules: listRules(chatId).map((r) => r.text),
         history,
-        userContent: args.userContent,
+        userContent,
       },
       {
         remember: (input) => rememberNote(chatId, input.note, input.replaces),
@@ -650,6 +708,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
         editLexicon: makeEditLexiconHandler(chatId),
         editPingList: makeEditPingListHandler(chatId, tgUserId),
+        setRule: makeSetRuleHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         watchPage: makeWatchPageHandler(chatId, tgUserId),
         dotaLookup: makeDotaLookupHandler(),
@@ -732,9 +791,10 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     chatId,
   });
   const decision = classifyHumorDecision({
-    // The humorizer runs only when it's on globally AND not switched off for
-    // THIS chat (/humor <chatId> off) — a silenced chat gets Claude's text as-is.
-    enabled: isHumorEnabled() && isChatHumorEnabled(chatId),
+    // The humorizer runs only when it's on globally, allowed by the chat's MODE
+    // (a calm assistant / a tutor never jokes) AND not switched off for THIS chat
+    // (/humor <chatId> off) — a silenced chat gets Claude's text as-is.
+    enabled: isHumorEnabled() && modeAllowsHumor(mode) && isChatHumorEnabled(chatId),
     humorizable: result.humorizable ?? false,
     money,
   });
@@ -769,7 +829,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // rewrite if any number/link/@handle moved. So an exact answer speaks the
   // group's lingo without its facts being at risk. Tutor chats stay clean.
   const slangDecision = classifySlangDecision({
-    enabled: isSlangPassEnabled() && isChatSlangEnabled(chatId) && mode !== 'tutor',
+    enabled: isSlangPassEnabled() && modeAllowsSlang(mode) && isChatSlangEnabled(chatId),
     humorized: safeToHumorize,
     toned: result.toned ?? false,
     lexiconSize: lexicon.length,
@@ -873,6 +933,7 @@ async function rewordPendingInner(
       learnExpense: makeLearnExpenseHandler(chatId, tgUserId),
       editLexicon: makeEditLexiconHandler(chatId),
       editPingList: makeEditPingListHandler(chatId, tgUserId),
+      setRule: makeSetRuleHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       watchPage: makeWatchPageHandler(chatId, tgUserId),
       dotaLookup: makeDotaLookupHandler(),

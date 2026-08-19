@@ -17,6 +17,8 @@ import {
   isSlangPassEnabled,
 } from './llm/slang.js';
 import { getVoiceLexicon } from './db/repos/lexicon.repo.js';
+import { listRules } from './db/repos/chatRule.repo.js';
+import { modeAllowsHumor, modeAllowsSlang } from './modes.js';
 import { getRecentChat } from './bot/recentChat.js';
 import { makeSurfForecastHandler } from './surf/index.js';
 import { makeDotaLookupHandler } from './dota/lookup.js';
@@ -140,6 +142,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         memoryTotal,
         senderName: 'scheduler',
         timezone: task.timezone,
+        // The chat's standing rules apply to a scheduled post exactly as they do to
+        // a live reply — «без эмодзи» must not lapse just because a timer fired it.
+        rules: listRules(task.chatId).map((r) => r.text),
         splidConnected: !!chatCfg?.provider_group_id,
         // A firing reminder just produces text (optionally via web search). It must
         // NOT be able to create reminders or write memory — otherwise a reminder
@@ -148,6 +153,8 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         allowExpenseLearning: false,
         allowLexiconEdit: false,
         allowPingEdit: false,
+        // A firing task must not rewrite how the bot behaves in the chat either.
+        allowRules: false,
         allowReminders: false,
         // A firing task must not arm page watches either — same self-spawning risk.
         allowWatch: false,
@@ -164,6 +171,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         learnExpense: () => 'noop',
         editLexicon: () => 'noop',
         editPingList: () => 'noop',
+        setRule: () => 'noop',
         scheduleTask: () => 'noop',
         watchPage: () => 'noop',
         // Dota lookup stays live: a recurring "разбор патча по утрам" task needs
@@ -194,6 +202,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       const humorRan = !!(
         task.humor &&
         result.humorizable &&
+        modeAllowsHumor(mode) &&
         isChatHumorEnabled(task.chatId)
       );
       const humorized = humorRan
@@ -219,7 +228,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       // as the live flow, so a chat reads consistently whoever is talking.
       const slangDecision = classifySlangDecision({
         enabled:
-          isSlangPassEnabled() && isChatSlangEnabled(task.chatId) && mode !== 'tutor',
+          isSlangPassEnabled() && modeAllowsSlang(mode) && isChatSlangEnabled(task.chatId),
         humorized: humorRan,
         toned: result.toned ?? false,
         lexiconSize: lexicon.length,

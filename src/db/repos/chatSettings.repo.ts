@@ -21,19 +21,27 @@ export function setTimezone(chatId: number, timezone: string): void {
 
 /**
  * How the assistant behaves in this chat. 'secretary' is the default chill
- * assistant; 'tutor' is the strict accuracy-first study tutor (no humor/slang,
- * no expense/surf skills — just precise dialogue and problem solving); 'dota' is
- * the full secretary feature set (memory, humor, slang, chime) with a different
- * persona — a schoolkid who fancies himself a Dota 2 teacher — plus the /dota
- * ping-list roll call.
+ * surfer assistant; 'assistant' is the same full skill set with the persona taken
+ * OUT — calm, neutral, no jokes/chime/reactions, steered by the chat's own rules
+ * (see chat_rule); 'tutor' is the strict accuracy-first study tutor (no
+ * humor/slang, no expense/surf skills — just precise dialogue and problem
+ * solving); 'dota' is the full secretary feature set (memory, humor, slang,
+ * chime) with a different persona — a schoolkid who fancies himself a Dota 2
+ * teacher — plus the /dota ping-list roll call.
+ *
+ * Everything user-facing about a mode (labels, descriptions, which personality
+ * features it allows) lives in `src/modes.ts`; this type is just the stored value.
  */
-export type ChatMode = 'secretary' | 'tutor' | 'dota';
+export type ChatMode = 'secretary' | 'assistant' | 'tutor' | 'dota';
+
+const MODE_VALUES: readonly string[] = ['secretary', 'assistant', 'tutor', 'dota'];
 
 export function getChatMode(chatId: number): ChatMode {
   const row = getDb()
     .prepare('SELECT mode FROM chat_settings WHERE chat_id = ?')
     .get(chatId) as { mode: string | null } | undefined;
-  return row?.mode === 'tutor' || row?.mode === 'dota' ? row.mode : 'secretary';
+  // Unknown/legacy values read as the default rather than breaking the chat.
+  return row?.mode && MODE_VALUES.includes(row.mode) ? (row.mode as ChatMode) : 'secretary';
 }
 
 export function setChatMode(chatId: number, mode: ChatMode): void {

@@ -8,6 +8,7 @@ import {
   isChatHumorEnabled,
 } from '../db/repos/chatSettings.repo.js';
 import { getVoiceLexicon } from '../db/repos/lexicon.repo.js';
+import { modeAllowsHumor, modeAllowsSlang } from '../modes.js';
 import { humorizeOrOriginal } from '../llm/humorize.js';
 import { applySlangOrOriginal } from '../llm/slang.js';
 import type { SpendingReportInput } from '../llm/schema.js';
@@ -78,16 +79,22 @@ export function makeSpendingReportHandler(
       // The digest is `toned: true` for the caller either way — it owns its tone
       // pass here, because the figures must ship verbatim and re-toning already
       // toned text would risk them twice.
-      const lexicon = getVoiceLexicon(chatId, cfg.LEXICON_MAX_TERMS);
-      // Per-chat humor off: no jokes over money — but the chat's WORDS still
-      // apply, so the digest gets the fact-guarded slang pass instead of the
-      // full rewrite. Slang off as well → exact plain text.
-      if (!isChatHumorEnabled(chatId)) return applySlangOrOriginal(plain, lexicon);
+      const mode = getChatMode(chatId);
+      const lexicon = modeAllowsSlang(mode)
+        ? getVoiceLexicon(chatId, cfg.LEXICON_MAX_TERMS)
+        : [];
+      // Humor off for this chat — or a mode that never jokes (the calm assistant):
+      // no jokes over money, but the chat's WORDS still apply, so the digest gets
+      // the fact-guarded slang pass instead of the full rewrite. Slang off as well
+      // → exact plain text.
+      if (!modeAllowsHumor(mode) || !isChatHumorEnabled(chatId)) {
+        return applySlangOrOriginal(plain, lexicon);
+      }
       return humorizeOrOriginal(
         plain,
         lexicon,
         // The digest speaks the chat's persona (dota → schoolkid-sensei rewrite).
-        getChatMode(chatId) === 'dota' ? 'dota' : 'surfer',
+        mode === 'dota' ? 'dota' : 'surfer',
       );
     } catch (err) {
       logger.error({ err, chatId }, 'spending_report failed');

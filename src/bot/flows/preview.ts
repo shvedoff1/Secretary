@@ -6,17 +6,19 @@ import { previewKeyboard } from '../keyboards.js';
 import { setEditTarget } from '../editTargets.js';
 import { setQuip } from '../quipCache.js';
 import { expenseQuip } from '../../llm/expenseQuip.js';
-import { isChatHumorEnabled } from '../../db/repos/chatSettings.repo.js';
+import { getChatMode, isChatHumorEnabled } from '../../db/repos/chatSettings.repo.js';
+import { modeAllowsHumor } from '../../modes.js';
 
 /**
  * Generate the expense's comic riff in the BACKGROUND and stash it by pendingId,
  * so the confirmation can render it instantly without an OpenAI call on the button
  * tap. Fire-and-forget and best-effort: any failure just leaves no cached joke.
  * Called when a preview is shown (and again after a reword changes the title).
- * Skipped entirely for a chat whose humor was switched off (/humor <chatId> off).
+ * Skipped entirely for a chat whose humor was switched off (/humor <chatId> off)
+ * or whose MODE doesn't joke at all (the calm assistant, the tutor).
  */
 export function prepareQuip(pendingId: string, title: string, chatId: number): void {
-  if (!isChatHumorEnabled(chatId)) return;
+  if (!modeAllowsHumor(getChatMode(chatId)) || !isChatHumorEnabled(chatId)) return;
   void expenseQuip(title)
     .then((quip) => {
       if (quip) setQuip(pendingId, quip);

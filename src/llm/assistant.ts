@@ -4,6 +4,7 @@ import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
 import {
   SYSTEM_PROMPT,
+  ASSISTANT_SYSTEM_PROMPT,
   TUTOR_SYSTEM_PROMPT,
   DOTA_SYSTEM_PROMPT,
   buildContextBlock,
@@ -19,6 +20,7 @@ import {
   LEARN_EXPENSE_TOOL,
   EDIT_LEXICON_TOOL,
   EDIT_PING_LIST_TOOL,
+  SET_RULE_TOOL,
   SCHEDULE_TASK_TOOL,
   WATCH_PAGE_TOOL,
   DOTA_LOOKUP_TOOL,
@@ -34,6 +36,7 @@ import {
   LearnExpenseZ,
   EditLexiconZ,
   EditPingListZ,
+  SetRuleZ,
   ScheduleTaskZ,
   WatchPageZ,
   DotaLookupZ,
@@ -48,6 +51,7 @@ import {
   type LearnExpenseInput,
   type EditLexiconInput,
   type EditPingListInput,
+  type SetRuleInput,
   type ScheduleTaskInput,
   type WatchPageInput,
   type DotaLookupInput,
@@ -64,7 +68,9 @@ export interface AssistantContext {
    * expense/surf/poi/slang tools (memory, reminders and web search stay), adaptive
    * thinking with a bigger token budget, and replies are never humorized. 'dota'
    * behaves exactly like secretary (full toolset, humorizable replies) but speaks
-   * as the schoolkid-turned-Dota-teacher persona.
+   * as the schoolkid-turned-Dota-teacher persona. 'assistant' is secretary with the
+   * persona removed: same toolset, calm neutral voice, no jokes — how it behaves is
+   * steered by the chat's own rules instead.
    */
   mode?: ChatMode;
   defaultCurrency: string;
@@ -86,6 +92,10 @@ export interface AssistantContext {
   allowLexiconEdit?: boolean;
   /** Expose the edit_ping_list tool (default true; false for scheduled runs). */
   allowPingEdit?: boolean;
+  /** Expose the set_rule tool (default true; false for scheduled runs). */
+  allowRules?: boolean;
+  /** The chat's standing behaviour rules, injected as orders into the context block. */
+  rules?: string[];
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
   /** Expose the watch_page tool (default true; false for scheduled runs). */
@@ -124,6 +134,8 @@ export interface AssistantHandlers {
   editLexicon: (input: EditLexiconInput) => string;
   /** Add/remove people on a /ping roll-call roster; return a short confirmation. */
   editPingList: (input: EditPingListInput) => string;
+  /** Add/remove a standing behaviour rule for the chat; return a short confirmation. */
+  setRule: (input: SetRuleInput) => string;
   /** Create a reminder / recurring task; return a short human confirmation. */
   scheduleTask: (input: ScheduleTaskInput) => string;
   /** Arm a page watch (poll a URL for an event); return a short confirmation. */
@@ -223,6 +235,9 @@ export async function runAssistant(
     enableExpenseLearning: !tutor && ctx.allowExpenseLearning !== false,
     enableLexiconEdit: !tutor && ctx.allowLexiconEdit !== false,
     enablePingEdit: !tutor && ctx.allowPingEdit !== false,
+    // Rules steer behaviour in EVERY mode (a study chat sets them too), and are
+    // off only for scheduled runs — a firing task must not rewrite the chat's rules.
+    enableRules: ctx.allowRules !== false,
     enableReminders: ctx.allowReminders !== false,
     enableWatch: !tutor && cfg.ENABLE_WATCH && ctx.allowWatch !== false,
     // Dota reference data is only ever relevant in a dota chat, and keeping it
@@ -241,6 +256,7 @@ export async function runAssistant(
         memoryChat: ctx.memoryChat ?? [],
         memoryUsers: ctx.memoryUsers ?? [],
         memoryTotal: ctx.memoryTotal ?? 0,
+        rules: ctx.rules ?? [],
       })
     : buildContextBlock({
         defaultCurrency: ctx.defaultCurrency,
@@ -255,6 +271,7 @@ export async function runAssistant(
         memoryChat: ctx.memoryChat ?? [],
         memoryUsers: ctx.memoryUsers ?? [],
         memoryPersona: ctx.memoryPersona ?? [],
+        rules: ctx.rules ?? [],
       });
 
   let scheduled = false;
@@ -311,7 +328,9 @@ export async function runAssistant(
             ? TUTOR_SYSTEM_PROMPT
             : ctx.mode === 'dota'
               ? DOTA_SYSTEM_PROMPT
-              : SYSTEM_PROMPT,
+              : ctx.mode === 'assistant'
+                ? ASSISTANT_SYSTEM_PROMPT
+                : SYSTEM_PROMPT,
           cache_control: { type: 'ephemeral' },
         },
       ],
@@ -448,6 +467,20 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.editLexicon(parsed.data)
             : 'Could not parse the slang edit.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === SET_RULE_TOOL) {
+          const parsed = SetRuleZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'set_rule input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.setRule(parsed.data)
+            : 'Could not parse the rule.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

@@ -112,6 +112,11 @@ const ConfigSchema = z.object({
   // cap is generous and exists only to stop unbounded growth. Anything beyond the
   // working set stays reachable through the `recall_memory` tool.
   MEMORY_MAX_ITEMS: z.coerce.number().int().positive().default(2000),
+  // Chat rules: standing behaviour instructions set in plain words («все голосовые
+  // очищай от слов-паразитов», «отвечай короче»). Every rule is injected into
+  // EVERY turn's context block, so the list must stay short — this cap is what
+  // keeps a chat from turning its whole style guide into per-turn tokens.
+  CHAT_RULES_MAX: z.coerce.number().int().positive().default(30),
   // How many memory items /memory and /chat print. The store is deep now, so a full
   // dump would be dozens of Telegram messages (and a single reply would exceed the
   // 4096-char cap outright); /forget <N> still addresses the full list by index.

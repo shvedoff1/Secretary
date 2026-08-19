@@ -76,6 +76,12 @@ export const EditLexiconZ = z.object({
 });
 export type EditLexiconInput = z.infer<typeof EditLexiconZ>;
 
+export const SetRuleZ = z.object({
+  action: z.enum(['add', 'remove']),
+  text: z.string().min(1),
+});
+export type SetRuleInput = z.infer<typeof SetRuleZ>;
+
 export const MuteWindowInputZ = z.object({
   days: z.array(z.number().int().min(1).max(7)).min(1),
   from: z.string().regex(/^\d{1,2}:\d{2}$/),
@@ -312,6 +318,25 @@ export const editLexiconJsonSchema = {
     },
   },
   required: ['term', 'gloss'],
+} as const;
+
+export const setRuleJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['add', 'remove'],
+      description:
+        "'add' — the user states a new standing rule; 'remove' — they cancel one that is already listed under \"Chat rules\" in the context block.",
+    },
+    text: {
+      type: 'string',
+      description:
+        'For add: the rule as ONE short self-contained imperative sentence in the user\'s language, e.g. «Все голосовые расшифровывай, чисти от слов-паразитов и присылай расшифровку» or «Отвечай без эмодзи». Write it so it makes sense with no conversation around it. For remove: the existing rule, copied from the "Chat rules" section of the context block (near-verbatim is enough).',
+    },
+  },
+  required: ['action', 'text'],
 } as const;
 
 export const editPingListJsonSchema = {

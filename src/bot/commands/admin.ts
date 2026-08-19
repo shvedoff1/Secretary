@@ -39,11 +39,13 @@ import {
   setChatHumorEnabled,
   isReactionsEnabled,
   setReactionsEnabled,
-  type ChatMode,
 } from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { replyLong } from '../../util/telegramText.js';
+import { modeSpec, parseMode, renderModeCard, MODE_NAMES } from '../../modes.js';
+import { modeKeyboard } from '../keyboards.js';
+import { countRules } from '../../db/repos/chatRule.repo.js';
 
 /** Gate: supreme admin only, and only in a private chat (other chats' data must
  * not leak into a group). Returns false (and replies) if not allowed. */
@@ -147,6 +149,12 @@ export async function cmdChat(ctx: Context): Promise<void> {
         .join('\n') + (memHidden > 0 ? `\n   …и ещё ${memHidden} (показываю ${memLimit})` : '')
     : '(пусто)';
 
+  const ruleCount = countRules(id);
+  const rulesLine =
+    ruleCount > 0
+      ? `правила поведения: ${ruleCount} (посмотреть: /rules ${id})`
+      : `правила поведения: нет (задать: /rules ${id} add <текст>)`;
+
   const slangCount = getLexicon(id).length;
   const slangState = isChatSlangEnabled(id) ? 'вкл' : 'выкл';
   const slangLine =
@@ -164,11 +172,12 @@ export async function cmdChat(ctx: Context): Promise<void> {
     [
       `Чат: ${cfg?.title ?? '(без названия)'}`,
       `id: ${id}`,
-      `режим: ${MODE_LABEL[getChatMode(id)]} (сменить: /mode ${id} tutor|secretary|dota)`,
+      `режим: ${modeSpec(getChatMode(id)).label} (сменить: /mode ${id} — кнопками, или /mode ${id} ${MODE_NAMES})`,
       `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (/trust ${id} on|off)`,
       `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (/chime ${id} on|off)`,
       `юморайзер: ${isChatHumorEnabled(id) ? 'вкл' : 'выкл'} (/humor ${id} on|off)`,
       `рандомные реакции: ${isReactionsEnabled(id) ? 'вкл' : 'выкл'} (/react ${id} on|off)`,
+      rulesLine,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
       `участники:`,
@@ -231,20 +240,30 @@ export async function cmdSetCurrency(ctx: Context): Promise<void> {
   await ctx.reply(`✅ Валюта чата ${id} → ${cur.toUpperCase()}.`);
 }
 
-// --- /mode <id> [tutor|secretary] : chat persona ------------------------------
-
-const MODE_LABEL: Record<ChatMode, string> = {
-  secretary: '🤙 секретарь (обычный ассистент)',
-  tutor: '🎓 репетитор (подготовка к экзаменам, точность, без юмора)',
-  dota: '🎮 дота (пинг пати через /dota, школьник-«сенсей» по Dota 2)',
-};
+// --- /modes, /mode <id> [<режим>] : chat persona ------------------------------
 
 /**
- * `/mode <chatId>` shows the chat's persona; `/mode <chatId> tutor|secretary|dota`
- * switches it. For a personal chat the chatId is just the person's telegram id —
- * so `/mode <kid_tg_id> tutor` turns the kid's DM with the bot into a strict
- * exam-prep tutor, and `/mode <group_id> dota` turns a group into the dota
- * ping-bot (full secretary feature set, dota-teacher persona).
+ * `/modes` — what the modes are, in one message. The same card the picker's
+ * «Что за режимы?» button shows, so an admin can read it before touching a chat.
+ */
+export async function cmdModes(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  await replyLong(
+    ctx,
+    `Режимы чата:\n\n${renderModeCard()}\n\n` +
+      `Поставить: /mode <chatId> ${MODE_NAMES} — или /mode <chatId> без режима, ` +
+      `тогда покажу кнопками. Выбор режима открывает доступ всем участникам чата.\n` +
+      `Поведение внутри режима донастраивается правилами: /rules <chatId> add <текст>.`,
+  );
+}
+
+/**
+ * `/mode <chatId>` shows the chat's persona AND the picker buttons (the same one
+ * the "bot was added" DM offers, so switching is a tap, not a memorised word);
+ * `/mode <chatId> <режим>` switches it straight away. For a personal chat the
+ * chatId is just the person's telegram id — so `/mode <kid_tg_id> tutor` turns the
+ * kid's DM into a strict exam-prep tutor, and `/mode <group_id> assistant` turns a
+ * group into the calm, personality-free helper.
  */
 export async function cmdMode(ctx: Context): Promise<void> {
   if (!(await ensureAdminDM(ctx))) return;
@@ -252,27 +271,33 @@ export async function cmdMode(ctx: Context): Promise<void> {
   const id = parseChatId(idTok);
   if (id === null) {
     await ctx.reply(
-      'Использование: /mode <chatId> [tutor|secretary|dota]\n' +
-        'Для лички chatId = telegram id человека (см. /whitelist).',
+      `Использование: /mode <chatId> [${MODE_NAMES}]\n` +
+        'Для лички chatId = telegram id человека (см. /whitelist).\n' +
+        'Что за режимы — /modes.',
     );
     return;
   }
-  const want = rest.trim().toLowerCase();
+  const want = rest.trim();
   if (!want) {
     const trust = isChatTrusted(id) ? 'доверенный (доступ у всех участников)' : 'не доверенный';
-    await ctx.reply(`Режим чата ${id}: ${MODE_LABEL[getChatMode(id)]}\nДоступ: ${trust}`);
+    await ctx.reply(
+      `Режим чата ${id}: ${modeSpec(getChatMode(id)).label}\nДоступ: ${trust}\n\n` +
+        `Сменить — кнопкой ниже (описания: «Что за режимы?»).`,
+      { reply_markup: modeKeyboard(id) },
+    );
     return;
   }
-  if (want !== 'tutor' && want !== 'secretary' && want !== 'dota') {
-    await ctx.reply('Режим бывает только tutor, secretary или dota.');
+  const mode = parseMode(want);
+  if (!mode) {
+    await ctx.reply(`Такого режима нет. Бывают: ${MODE_NAMES} (описания — /modes).`);
     return;
   }
-  setChatMode(id, want);
+  setChatMode(id, mode);
   // Setting a mode is an explicit admin act of configuring the chat — trust it,
   // so a group switched to e.g. dota immediately works for every participant.
   setChatTrusted(id, true);
   await ctx.reply(
-    `✅ Чат ${id} → ${MODE_LABEL[want]}. Чат доверенный — доступ у всех участников ` +
+    `✅ Чат ${id} → ${modeSpec(mode).label}. Чат доверенный — доступ у всех участников ` +
       `(закрыть: /trust ${id} off).`,
   );
 }

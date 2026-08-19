@@ -55,6 +55,22 @@ describe('SYSTEM_PROMPT memory guidance', () => {
   });
 });
 
+// Memory must never be what decides who is speaking or who paid. A remembered
+// «я — Швед» once made the bot take the payer from memory instead of the sender
+// («Швед купил круассан», sent by Андрей Шведов) and reason about it out loud.
+describe('SYSTEM_PROMPT identity vs memory', () => {
+  it('forbids taking the payer from memory', () => {
+    expect(SYSTEM_PROMPT).toContain('MEMORY NEVER NAMES THE PAYER');
+    // «я» must survive as «я» — it resolves to the sender deterministically.
+    expect(SYSTEM_PROMPT).toMatch(/LEAVE it as "я"/);
+  });
+
+  it('pins «я» inside an About block to that block’s subject', () => {
+    expect(SYSTEM_PROMPT).toContain('MEMORY NEVER DECIDES WHO IS SPEAKING');
+    expect(SYSTEM_PROMPT).toMatch(/"Message sender" wins/);
+  });
+});
+
 // A receipt with items belonging to different people must split into several
 // expenses, and "everyone except X" must be expanded from the roster — both were
 // the cases the bot used to fluff, so guard the guidance against silent removal.
@@ -172,6 +188,61 @@ describe('buildContextBlock memory sections', () => {
     expect(out).toContain('- говори как серфер, эмодзи 🤙 уместны');
     // Style comes before the factual chat memory.
     expect(out.indexOf('Voice & style')).toBeLessThan(out.indexOf('Chat memory'));
+  });
+});
+
+// The expense-only scan (an unaddressed "looks like a spend" message) renders a
+// stripped block: nothing that only feeds conversation, because that turn can only
+// record an expense or produce nothing — and a remembered «я — Швед» was actively
+// misleading the payer.
+describe('buildContextBlock expense-only scan', () => {
+  const base = {
+    defaultCurrency: 'EUR',
+    members: [{ name: 'Андрей Шведов' }],
+    senderName: 'Андрей Шведов',
+    timezone: 'Asia/Makassar',
+    splidConnected: true,
+    memoryChat: [{ content: 'едут на Бали' }],
+    memoryUsers: [{ subject: 'Андрей Шведов', items: [{ content: 'Швед — это я' }] }],
+    memoryPersona: [{ content: 'говори как серфер' }],
+    memoryTotal: 30,
+    activeReminders: [{ id: 1, title: 'встать', when: 'завтра' }],
+    activeWatches: [{ id: 2, title: 'сеансы', url: 'https://x.test' }],
+    places: [{ name: 'Кафе', category: 'cafe' }],
+  };
+
+  it('drops memory and every conversation-only section', () => {
+    const out = buildContextBlock({ ...base, expenseOnly: true });
+    expect(out).not.toContain('Chat memory');
+    expect(out).not.toContain('About Андрей Шведов');
+    expect(out).not.toContain('Швед — это я');
+    expect(out).not.toContain('Voice & style');
+    expect(out).not.toContain('Memory store');
+    expect(out).not.toContain('Active reminders');
+    expect(out).not.toContain('Active page watches');
+    expect(out).not.toContain('Saved places');
+  });
+
+  it('keeps what an expense needs — sender, roster, currency, timezone, rules', () => {
+    const out = buildContextBlock({
+      ...base,
+      expenseOnly: true,
+      rules: ['отвечай короче'],
+    });
+    expect(out).toContain('Message sender: Андрей Шведов');
+    expect(out).toContain('Group members: Андрей Шведов');
+    expect(out).toContain('Chat default currency: EUR');
+    expect(out).toContain('Chat timezone: Asia/Makassar');
+    expect(out).toContain('Splid: connected');
+    expect(out).toContain('1. отвечай короче');
+  });
+
+  it('renders everything as before without the flag', () => {
+    const out = buildContextBlock(base);
+    expect(out).toContain('Chat memory');
+    expect(out).toContain('About Андрей Шведов');
+    expect(out).toContain('Active reminders');
+    expect(out).toContain('Memory store: 30 facts total, 3 shown above');
   });
 });
 

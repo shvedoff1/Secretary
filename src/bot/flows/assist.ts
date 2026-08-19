@@ -640,17 +640,26 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         .map((t) => t.tgUserId as number),
     ),
   ];
-  const memorySel = getMemoryForContext(chatId, {
-    senderTgUserId: tgUserId,
-    recentParticipantIds,
-    halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
-    chatBudget: cfg.MEMORY_CONTEXT_CHAT,
-    userBudget: cfg.MEMORY_CONTEXT_USER,
-    pinnedChatBudget: cfg.MEMORY_CONTEXT_PINNED,
-    otherUserBudget: cfg.MEMORY_CONTEXT_OTHER,
-    maxOtherUsers: cfg.MEMORY_CONTEXT_MAX_OTHERS,
-    personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
-  });
+  // An UNADDRESSED message that merely looks like a spend is an expense-only scan:
+  // the assistant may record an expense or produce nothing, and any text it writes is
+  // dropped below. Memory has no job there — and it actively hurts, because a
+  // remembered «я — Швед» tempts the model to take the payer from memory instead of
+  // from the sender. So skip the memory work entirely (also saves the queries and
+  // the tokens) and tell runAssistant to run in expense-only shape.
+  const expenseOnly = !args.addressed;
+  const memorySel = expenseOnly
+    ? { chat: [], users: [], persona: [] }
+    : getMemoryForContext(chatId, {
+        senderTgUserId: tgUserId,
+        recentParticipantIds,
+        halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
+        chatBudget: cfg.MEMORY_CONTEXT_CHAT,
+        userBudget: cfg.MEMORY_CONTEXT_USER,
+        pinnedChatBudget: cfg.MEMORY_CONTEXT_PINNED,
+        otherUserBudget: cfg.MEMORY_CONTEXT_OTHER,
+        maxOtherUsers: cfg.MEMORY_CONTEXT_MAX_OTHERS,
+        personaBudget: cfg.MEMORY_CONTEXT_PERSONA,
+      });
 
   const mode = getChatMode(chatId);
 
@@ -679,7 +688,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         memoryPersona: memorySel.persona.map((i) => ({ content: i.content })),
         // Total held, so the context block can tell the model how much is NOT shown
         // and that recall_memory reaches the rest.
-        memoryTotal: memoryStats(chatId).total,
+        memoryTotal: expenseOnly ? 0 : memoryStats(chatId).total,
+        expenseOnly,
         senderName: senderName(ctx),
         senderUsername: ctx.from?.username ?? null,
         timezone: getTimezone(chatId),

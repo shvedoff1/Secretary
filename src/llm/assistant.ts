@@ -116,6 +116,21 @@ export interface AssistantContext {
   memoryPersona?: { content: string }[];
   /** Total facts stored for this chat, so the context can point at the deeper tier. */
   memoryTotal?: number;
+  /**
+   * EXPENSE-ONLY run: the silent auto-expense scan (a group message that was NOT
+   * addressed to the bot but looks like a spend). Such a turn can only end in a
+   * recorded expense or in silence — any text it produces is discarded by the
+   * caller. So it is stripped down to exactly that job: `record_expense` is the ONLY
+   * tool, and the context block carries no memory (nor reminders/watches/places).
+   *
+   * Memory is not just dead weight here, it MISFIRES: a remembered «я — Швед» led
+   * the model to name the payer from memory instead of from the sender («Швед купил
+   * круассан», with the sender being Андрей Шведов) and to reason about the identity
+   * out loud. An unaddressed scan also must not WRITE anything — with the toolset cut
+   * it can no longer quietly `remember`, `set_rule` or `schedule_task` on a message
+   * nobody sent to the bot.
+   */
+  expenseOnly?: boolean;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -221,31 +236,41 @@ export async function runAssistant(
   const cfg = loadConfig();
   const anthropic = getAnthropic();
   const tutor = ctx.mode === 'tutor';
+  // An expense-only scan (an unaddressed message that merely looks like a spend) is
+  // cut to the single tool it may use: it can only record an expense or stay silent,
+  // and anything else it called would either be discarded or — for remember /
+  // set_rule / schedule_task — silently write on a message nobody sent to the bot.
+  // Guarded on splidConnected so the cut can never produce an empty tool list
+  // (without a Splid group record_expense isn't exposed either — such a chat runs as usual).
+  const expenseOnly = ctx.expenseOnly === true && ctx.splidConnected && !tutor;
+
   // Tutor mode keeps only what a study chat needs: memory (exam dates, weak
   // topics), reminders (study schedule) and web search. Everything money/surf/
   // slang-flavoured is off so the model can't wander back into secretary land.
   const tools = buildTools({
-    enableWebSearch: cfg.ENABLE_WEB_SEARCH,
+    enableWebSearch: !expenseOnly && cfg.ENABLE_WEB_SEARCH,
     enableExpense: !tutor && ctx.splidConnected,
-    enableRemember: ctx.allowRemember !== false,
-    enableMemoryEdit: ctx.allowRemember !== false,
+    enableRemember: !expenseOnly && ctx.allowRemember !== false,
+    enableMemoryEdit: !expenseOnly && ctx.allowRemember !== false,
     // Recall is READ-ONLY, so unlike remember/edit it stays on everywhere memory is:
-    // scheduled runs and tutor chats need to look things up just as much.
-    enableRecall: cfg.ENABLE_MEMORY,
-    enableExpenseLearning: !tutor && ctx.allowExpenseLearning !== false,
-    enableLexiconEdit: !tutor && ctx.allowLexiconEdit !== false,
-    enablePingEdit: !tutor && ctx.allowPingEdit !== false,
+    // scheduled runs and tutor chats need to look things up just as much. (An
+    // expense-only scan is the one place it's off — that turn has no memory at all.)
+    enableRecall: !expenseOnly && cfg.ENABLE_MEMORY,
+    enableExpenseLearning: !expenseOnly && !tutor && ctx.allowExpenseLearning !== false,
+    enableLexiconEdit: !expenseOnly && !tutor && ctx.allowLexiconEdit !== false,
+    enablePingEdit: !expenseOnly && !tutor && ctx.allowPingEdit !== false,
     // Rules steer behaviour in EVERY mode (a study chat sets them too), and are
     // off only for scheduled runs — a firing task must not rewrite the chat's rules.
-    enableRules: ctx.allowRules !== false,
-    enableReminders: ctx.allowReminders !== false,
-    enableWatch: !tutor && cfg.ENABLE_WATCH && ctx.allowWatch !== false,
+    enableRules: !expenseOnly && ctx.allowRules !== false,
+    enableReminders: !expenseOnly && ctx.allowReminders !== false,
+    enableWatch: !expenseOnly && !tutor && cfg.ENABLE_WATCH && ctx.allowWatch !== false,
     // Dota reference data is only ever relevant in a dota chat, and keeping it
     // out of the default tool list leaves every other chat's cached prefix alone.
-    enableDota: ctx.mode === 'dota' && cfg.ENABLE_DOTA && ctx.allowDota !== false,
-    enableSurf: !tutor && cfg.ENABLE_SURF,
-    enablePoi: !tutor && ctx.allowPoi !== false,
-    enableSpending: !tutor && ctx.splidConnected,
+    enableDota:
+      !expenseOnly && ctx.mode === 'dota' && cfg.ENABLE_DOTA && ctx.allowDota !== false,
+    enableSurf: !expenseOnly && !tutor && cfg.ENABLE_SURF,
+    enablePoi: !expenseOnly && !tutor && ctx.allowPoi !== false,
+    enableSpending: !expenseOnly && !tutor && ctx.splidConnected,
   });
 
   const contextBlock = tutor
@@ -268,10 +293,15 @@ export async function runAssistant(
         activeReminders: ctx.activeReminders ?? [],
         activeWatches: ctx.activeWatches ?? [],
         places: ctx.places ?? [],
-        memoryChat: ctx.memoryChat ?? [],
-        memoryUsers: ctx.memoryUsers ?? [],
-        memoryPersona: ctx.memoryPersona ?? [],
+        memoryChat: expenseOnly ? [] : (ctx.memoryChat ?? []),
+        memoryUsers: expenseOnly ? [] : (ctx.memoryUsers ?? []),
+        memoryPersona: expenseOnly ? [] : (ctx.memoryPersona ?? []),
+        // Total held, so the block can tell the model how much memory it does NOT
+        // see and that recall_memory reaches the rest (the hint is skipped when
+        // nothing is hidden, and on an expense-only scan there is no memory at all).
+        memoryTotal: expenseOnly ? 0 : (ctx.memoryTotal ?? 0),
         rules: ctx.rules ?? [],
+        expenseOnly,
       });
 
   let scheduled = false;

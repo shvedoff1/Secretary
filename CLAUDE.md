@@ -158,6 +158,25 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `passiveLearningAllowed` makes both `onMessage` and `onVoice` skip forwards
   unless `LEARN_FROM_FORWARDS=true` — a forwarded article's facts and a forwarded
   meme's words otherwise land in the chat's memory and voice.
+  FORWARD BATCH (`src/bot/forwardBuffer.ts`): forwards are NOT answered one by
+  one — onMessage/onVoice/onPhoto park each in a per-chat in-memory pack (text /
+  ready transcript / photo caption + origin label) and mark the message with the
+  🫡 reaction. The pack is consumed by whichever comes first: an ADDRESSED ask
+  («сделай саммари») — `runAndRespond` drains it (opt-in `includeForwardBatch`,
+  set only by the real entry points so a chime/reword can never swallow it),
+  prepends `renderForwardBatch` to the turn and stores only a compact
+  `[+пачка из N пересланных]` history tag (the pack would blow the history
+  window); OR a TAP on the 🫡 mark — `onForwardReaction` (message_reaction
+  update; `allowed_updates` in index.ts must list it explicitly, and in GROUPS
+  Telegram only delivers reaction updates to admin bots) runs the pack with a
+  "no typed request" instruction, which is also the no-typing answer path for a
+  single forwarded voice note; OR the sliding TTL (`FORWARD_BUFFER_TTL_MINUTES`,
+  default 10) expires it silently, clearing the marks. Capped by
+  `FORWARD_BUFFER_MAX` (default 50, overflow counted and admitted to the model);
+  `ENABLE_FORWARD_BUFFER=false` restores per-message processing. Buffering also
+  keeps forwards out of the auto-expense scan and the DM reply-to-everything
+  path, and a forward whose TEXT happens to mention the bot's name is still
+  buffered (the words are the original author's, not the sender's).
 - `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
   on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
   когда появятся сеансы Титана». Created in plain words via the `watch_page` tool

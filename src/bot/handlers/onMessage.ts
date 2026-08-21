@@ -14,7 +14,12 @@ import { getTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
 import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { modeAllowsChime, modeAllowsSlang } from '../../modes.js';
-import { passiveLearningAllowed } from '../forwarded.js';
+import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
+import {
+  bufferForward,
+  isForwardBufferEnabled,
+  FORWARD_MARK,
+} from '../forwardBuffer.js';
 
 export async function onMessage(ctx: Context): Promise<void> {
   const text = ctx.message?.text;
@@ -45,6 +50,27 @@ export async function onMessage(ctx: Context): Promise<void> {
   // Keep a rolling buffer of recent chatter so a later spontaneous chime has the
   // conversation to continue from — independent of whether we reply to this one.
   recordChatMessage(ctx.chat.id, senderName(ctx), text);
+
+  // FORWARDED message → the batch, not a reply. Forwards are someone else's words
+  // passed along: answering each one (or scanning it for expenses) is noise, so it
+  // is collected into the per-chat pack and marked with a reaction. The pack is
+  // consumed by the user's next addressed message («сделай саммари») or by a tap
+  // on the mark — see forwardBuffer.ts. In a DM this also stops the bot from
+  // replying to every single forward.
+  if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+    bufferForward(ctx.chat.id, {
+      messageId: ctx.message!.message_id,
+      origin: forwardOrigin(ctx.message) ?? 'источник неизвестен',
+      kind: 'text',
+      text,
+    });
+    try {
+      await ctx.react(FORWARD_MARK);
+    } catch {
+      /* reactions are best-effort */
+    }
+    return;
+  }
 
   const replyTo = ctx.message?.reply_to_message;
   if (replyTo) {
@@ -115,5 +141,8 @@ export async function onMessage(ctx: Context): Promise<void> {
     addressed: decision === 'process',
     source: 'text',
     historyText: text,
+    // An addressed message right after a forwarded pack is the ask the pack was
+    // forwarded for («сделай саммари») — pull it into this turn.
+    includeForwardBatch: true,
   });
 }

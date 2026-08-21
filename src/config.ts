@@ -119,6 +119,17 @@ const ConfigSchema = z.object({
   // cap is generous and exists only to stop unbounded growth. Anything beyond the
   // working set stays reachable through the `recall_memory` tool.
   MEMORY_MAX_ITEMS: z.coerce.number().int().positive().default(2000),
+  // Forward batch: forwarded messages are not answered one by one — they are
+  // collected per chat (text, voice transcripts, photo captions), each marked
+  // with a 🫡 reaction, and processed together when the user asks (or taps the
+  // reaction). Off restores the old per-message behaviour.
+  ENABLE_FORWARD_BUFFER: boolish.default(true),
+  // How long an unclaimed batch waits before quietly expiring (sliding from the
+  // last forwarded message).
+  FORWARD_BUFFER_TTL_MINUTES: z.coerce.number().int().positive().default(10),
+  // Max messages kept per batch — the batch lands in one LLM turn, so this caps
+  // the context it can consume. Extra forwards are counted but not stored.
+  FORWARD_BUFFER_MAX: z.coerce.number().int().positive().default(50),
   // Chat rules: standing behaviour instructions set in plain words («все голосовые
   // очищай от слов-паразитов», «отвечай короче»). Every rule is injected into
   // EVERY turn's context block, so the list must stay short — this cap is what

@@ -9,7 +9,12 @@ import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
 import { setTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
-import { passiveLearningAllowed } from '../forwarded.js';
+import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
+import {
+  bufferForward,
+  isForwardBufferEnabled,
+  FORWARD_MARK,
+} from '../forwardBuffer.js';
 
 // "Writing it down" marker. We react with ✍️ as soon as a voice note arrives, so
 // the chat sees it was heard; the mark stays only if it became an expense and is
@@ -131,6 +136,26 @@ export async function onVoice(ctx: Context): Promise<void> {
     void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript);
   }
 
+  // A FORWARDED voice note is someone else's voice, not the sender talking to the
+  // bot — so it joins the forward batch instead of getting an instant reply. The
+  // transcript is ready (cached above, admin already DM'd), the ✍ ack is swapped
+  // for the pack mark, and the content is answered when the user asks — or the
+  // moment they tap the mark, which is the no-typing path for a single note.
+  if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+    bufferForward(ctx.chat.id, {
+      messageId: ctx.message!.message_id,
+      origin: forwardOrigin(ctx.message) ?? 'источник неизвестен',
+      kind: 'voice',
+      text: transcript,
+    });
+    try {
+      await ctx.react(FORWARD_MARK);
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
+
   // A voice note REPLYING to a photo is a receipt split spoken aloud — the amounts
   // are in the picture, the voice says who had what. Feed BOTH the photo and the
   // transcript to the receipt handler (mirroring the text «reply to a photo» path in
@@ -163,6 +188,8 @@ export async function onVoice(ctx: Context): Promise<void> {
     source: 'voice',
     historyText: `[голос] ${transcript}`,
     manageReaction: false,
+    // A spoken ask consumes a pending forwarded pack exactly like a typed one.
+    includeForwardBatch: true,
   });
   if (outcome !== 'expense') await clearWriting(ctx);
 }

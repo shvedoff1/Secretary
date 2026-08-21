@@ -47,6 +47,8 @@ import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
 import { onVoice } from './handlers/onVoice.js';
 import { onBotMembership, handleModeCallback } from './handlers/onBotMembership.js';
+import { onForwardReaction } from './handlers/onForwardReaction.js';
+import { registerExpiryApi } from './forwardBuffer.js';
 import { handleExpenseCallback } from './flows/confirm.js';
 import { maybeAutoReact } from './reactions.js';
 import { cancelChime } from './flows/chime.js';
@@ -138,9 +140,17 @@ export function buildBot(token: string): Bot {
   bot.callbackQuery(/^e:/, handleExpenseCallback);
   bot.callbackQuery(/^m:/, handleModeCallback);
 
+  // Reaction taps: the forward batch's "process now" button. Delivered only
+  // because index.ts requests message_reaction in allowed_updates; runs behind
+  // the auth gate like everything else.
+  bot.on('message_reaction', onForwardReaction);
+
   bot.on('message:photo', onPhoto);
   bot.on('message:voice', onVoice);
   bot.on('message:text', onMessage);
+
+  // Let the batch-expiry timer clear its reaction marks (it has no ctx of its own).
+  registerExpiryApi(bot.api);
 
   bot.catch(async (err) => {
     logger.error({ err: err.error, update: err.ctx.update.update_id }, 'bot error');

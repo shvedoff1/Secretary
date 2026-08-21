@@ -11,12 +11,38 @@ import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
 import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { runAndRespond } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
+import { forwardOrigin, isForwarded } from '../forwarded.js';
+import {
+  bufferForward,
+  isForwardBufferEnabled,
+  FORWARD_MARK,
+} from '../forwardBuffer.js';
 
 export async function onPhoto(ctx: Context): Promise<void> {
   const photos = ctx.message?.photo;
   if (!photos || photos.length === 0 || !ctx.chat || !ctx.from) return;
 
   const caption = ctx.message?.caption?.trim() ?? '';
+
+  // A FORWARDED photo goes to the forward batch, not the receipt flow: it's
+  // someone else's picture (an album arrives as one such message per photo), and
+  // parsing each as a чек — or nagging about Splid in a DM — is exactly the spam
+  // the batch exists to avoid. Buffered as caption-only: the batch is a text
+  // digest; the model can ask for the photo if the caption isn't enough.
+  if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+    bufferForward(ctx.chat.id, {
+      messageId: ctx.message!.message_id,
+      origin: forwardOrigin(ctx.message) ?? 'источник неизвестен',
+      kind: 'photo',
+      text: caption,
+    });
+    try {
+      await ctx.react(FORWARD_MARK);
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
   // Addressed = DM / @mention / reply to the bot, OR the caption talks to it by
   // name ("Скай, на меня Ивана и Антона") — the user is clearly talking to us, so
   // we both look at the photo and answer.
@@ -86,5 +112,7 @@ export async function handleReceiptPhoto(
     addressed,
     source: 'photo',
     historyText: caption ? `${tag} ${caption}` : tag,
+    // A photo with an addressed caption is a real ask too — consume the pack.
+    includeForwardBatch: true,
   });
 }

@@ -23,6 +23,11 @@ vi.mock('../src/bot/flows/assist.js', () => ({
   runAndRespond: vi.fn(),
   senderName: () => 'Tester',
 }));
+vi.mock('../src/bot/forwardBuffer.js', () => ({
+  bufferForward: vi.fn(() => true),
+  isForwardBufferEnabled: vi.fn(() => true),
+  FORWARD_MARK: '🫡',
+}));
 vi.mock('../src/bot/flows/lexicon.js', () => ({
   learnFromMessage: vi.fn(() => Promise.resolve()),
 }));
@@ -40,6 +45,7 @@ import { runAndRespond } from '../src/bot/flows/assist.js';
 import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 import { learnMemoryFromMessage } from '../src/bot/flows/memory.js';
+import { bufferForward } from '../src/bot/forwardBuffer.js';
 
 const mockEnabled = vi.mocked(isTranscriptionEnabled);
 const mockTranscribe = vi.mocked(transcribeAudio);
@@ -312,15 +318,25 @@ describe('onVoice and forwarded notes', () => {
     expect(vi.mocked(learnMemoryFromMessage)).toHaveBeenCalledOnce();
   });
 
-  it('does not learn from a forwarded note, but still answers it', async () => {
+  it('buffers a forwarded note (transcribed, marked) instead of answering it', async () => {
     mockEnabled.mockReturnValue(true);
     mockTranscribe.mockResolvedValue('привет, это чужой голос');
-    const { ctx } = fakeCtx({ message: { forward_from: { first_name: 'Вася' } } });
+    const { ctx, react } = fakeCtx({
+      message: { message_id: 88, forward_from: { first_name: 'Вася' } },
+    });
 
     await onVoice(ctx);
 
     expect(vi.mocked(learnFromMessage)).not.toHaveBeenCalled();
     expect(vi.mocked(learnMemoryFromMessage)).not.toHaveBeenCalled();
-    expect(mockRun).toHaveBeenCalledOnce();
+    // Not answered — parked in the batch as a ready transcript, mark swapped to 🫡.
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(vi.mocked(bufferForward)).toHaveBeenCalledWith(1, {
+      messageId: 88,
+      origin: 'Вася',
+      kind: 'voice',
+      text: 'привет, это чужой голос',
+    });
+    expect(react).toHaveBeenLastCalledWith('🫡');
   });
 });

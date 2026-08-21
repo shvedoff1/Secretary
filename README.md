@@ -60,6 +60,15 @@ added without touching the core.
   «потратил 500 на такси» is no longer read as the sender's own spend. Passive learning
   (slang + memory) skips forwards outright, since a rule can't reach those batched passes;
   set `LEARN_FROM_FORWARDS=true` to restore the old behaviour.
+- **Forward batch + summary**: forward a pile of messages (text, voice, photos) and the
+  bot won't answer each one — it collects them into a pack, marking every message with a
+  🫡 reaction. Then either just ask («сделай саммари», «что тут важного» — in a group,
+  mentioning the bot) or **tap the 🫡 reaction** on any of them to process the pack right
+  away with no typing (that's also how a single forwarded voice note gets answered).
+  Voice notes are transcribed as they arrive, so the summary is instant. An unclaimed
+  pack quietly expires after `FORWARD_BUFFER_TTL_MINUTES` (default 10). NOTE: in groups
+  Telegram only delivers reaction taps to bots that are **admins**; asking in words works
+  regardless.
 - **Chat rules**: standing behaviour instructions in your own words — «все голосовые
   очищай от слов-паразитов и скидывай мне расшифровку», «отвечай короче», «без эмодзи».
   Just tell the bot («с этого момента …») and it records the rule itself, or use
@@ -128,6 +137,9 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `LEXICON_BATCH_SIZE` | no | `30` | Extract after this many buffered messages… |
 | `LEXICON_MAX_AGE_HOURS` | no | `24` | …or once the oldest is this old, whichever first |
 | `LEXICON_MAX_TERMS` | no | `40` | Learned terms fed back into context |
+| `ENABLE_FORWARD_BUFFER` | no | `true` | Collect forwarded messages into a per-chat pack (🫡-marked) instead of reacting to each; `false` = old per-message behaviour |
+| `FORWARD_BUFFER_TTL_MINUTES` | no | `10` | How long an unclaimed pack waits (sliding from the last forward) before quietly expiring |
+| `FORWARD_BUFFER_MAX` | no | `50` | Max messages kept per pack (the pack lands in one LLM turn) |
 | `LEARN_FROM_FORWARDS` | no | `false` | Let passive learning (slang + memory) read **forwarded** messages too. Off by default: a forward is someone else's words about someone else's life |
 | `CHAT_RULES_MAX` | no | `30` | Max standing chat rules per chat (they go into every turn's context) |
 | `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |

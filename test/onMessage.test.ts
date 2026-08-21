@@ -35,6 +35,11 @@ vi.mock('../src/bot/editTargets.js', () => ({
 vi.mock('../src/bot/handlers/onPhoto.js', () => ({
   handleReceiptPhoto: vi.fn(),
 }));
+vi.mock('../src/bot/forwardBuffer.js', () => ({
+  bufferForward: vi.fn(() => true),
+  isForwardBufferEnabled: vi.fn(() => true),
+  FORWARD_MARK: '🫡',
+}));
 vi.mock('../src/db/repos/chatSettings.repo.js', () => ({
   getChatMode: vi.fn(() => 'secretary'),
 }));
@@ -53,6 +58,7 @@ import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
 import { recordChatMessage, armChime } from '../src/bot/flows/chime.js';
 import { getEditTarget } from '../src/bot/editTargets.js';
 import { getChatMode } from '../src/db/repos/chatSettings.repo.js';
+import { bufferForward, isForwardBufferEnabled } from '../src/bot/forwardBuffer.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
@@ -342,18 +348,25 @@ describe('onMessage in tutor mode', () => {
 
 
 // Forwarded messages are someone else's words: passive learning (slang + memory)
-// must not read them, or a forwarded article's facts and a forwarded meme's words
-// end up in this chat's memory and voice. The message itself still reaches the
-// assistant (marked as forwarded) — that part is the flow's job, tested elsewhere.
+// must not read them, and instead of being answered (or routed as expenses) one
+// by one they join the per-chat forward batch, marked with the 🫡 reaction. The
+// batch is consumed later — by an addressed ask or a tap on the mark.
 function forwardedCtx(text: string): Context {
-  return {
-    message: { text, forward_origin: { type: 'channel', chat: { title: 'Новости' } } },
+  const react = vi.fn(async () => {});
+  const c = {
+    message: {
+      message_id: 77,
+      text,
+      forward_origin: { type: 'channel', chat: { title: 'Новости' } },
+    },
     chat: { id: 1, type: 'group' },
     from: { id: 2 },
+    react,
   } as unknown as Context;
+  return c;
 }
 
-describe('passive learning and forwarded messages', () => {
+describe('forwarded messages go to the batch', () => {
   it('learns slang and memory from a message written in the chat', async () => {
     mockRoute.mockReturnValue('ignore');
     await onMessage(ctx('да ну ты гонишь'));
@@ -362,22 +375,46 @@ describe('passive learning and forwarded messages', () => {
     expect(mockLearnMemory).toHaveBeenCalledOnce();
   });
 
-  it('learns nothing from a forwarded message', async () => {
+  it('buffers a forward with its origin and marks it, learning nothing', async () => {
     mockRoute.mockReturnValue('ignore');
-    await onMessage(forwardedCtx('В Москве открыли новый мост'));
+    const c = forwardedCtx('В Москве открыли новый мост');
+    await onMessage(c);
 
     expect(mockLearn).not.toHaveBeenCalled();
     expect(mockLearnMemory).not.toHaveBeenCalled();
-    // Everything else is unchanged: the chatter buffer and the chime still see it.
+    expect(vi.mocked(bufferForward)).toHaveBeenCalledWith(1, {
+      messageId: 77,
+      origin: 'канал «Новости»',
+      kind: 'text',
+      text: 'В Москве открыли новый мост',
+    });
+    expect((c as unknown as { react: unknown }).react).toHaveBeenCalledWith('🫡');
+    // Buffered means handled: no per-message reply, no auto-expense scan, no chime.
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(mockRoute).not.toHaveBeenCalled();
+    expect(mockChime).not.toHaveBeenCalled();
+    // The chatter buffer still records it (chat activity is chat activity).
     expect(mockRecord).toHaveBeenCalledOnce();
-    expect(mockChime).toHaveBeenCalledOnce();
   });
 
-  it('still ANSWERS a forwarded message addressed to the bot', async () => {
+  it('does NOT reply to a forward even when its text happens to address the bot', async () => {
+    // The text was written by the original author, not the sender — a forward
+    // from another chat with this bot must not trigger an answer here.
     mockRoute.mockReturnValue('process');
     await onMessage(forwardedCtx('@bot что думаешь?'));
 
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(vi.mocked(bufferForward)).toHaveBeenCalledOnce();
+  });
+
+  it('processes a forward the old way when the buffer is disabled', async () => {
+    vi.mocked(isForwardBufferEnabled).mockReturnValueOnce(false);
+    mockRoute.mockReturnValue('process');
+    await onMessage(forwardedCtx('@bot что думаешь?'));
+
+    expect(vi.mocked(bufferForward)).not.toHaveBeenCalled();
     expect(mockRun).toHaveBeenCalledOnce();
+    // Passive learning still skips forwards regardless of the buffer flag.
     expect(mockLearnMemory).not.toHaveBeenCalled();
   });
 });

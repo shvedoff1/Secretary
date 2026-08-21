@@ -91,7 +91,18 @@ async function main(): Promise<void> {
   // Concurrent long polling: the runner processes updates concurrently instead of
   // one-at-a-time, so a slow LLM turn in one chat no longer blocks every other chat.
   // Per-chat ordering is preserved by the `sequentialize` middleware (see bot.ts).
-  const runner = run(bot);
+  // allowed_updates must name message_reaction EXPLICITLY — Telegram's default
+  // set omits it, and without it the forward batch's reaction-button taps never
+  // reach the bot. The rest mirrors what the handlers actually consume. (In
+  // groups Telegram additionally requires the bot to be an admin to deliver
+  // reaction updates at all.)
+  const runner = run(bot, {
+    runner: {
+      fetch: {
+        allowed_updates: ['message', 'callback_query', 'my_chat_member', 'message_reaction'],
+      },
+    },
+  });
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');

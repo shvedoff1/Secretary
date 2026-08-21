@@ -100,6 +100,7 @@ import { sendRichMarkdown } from '../../util/richMessage.js';
 import { looksLikeExpense } from '../../util/money.js';
 import { FORWARDED_MESSAGE_MARKER, VOICE_TRANSCRIPT_MARKER } from '../../llm/prompts.js';
 import { forwardOrigin } from '../forwarded.js';
+import { takeForwards, renderForwardBatch, clearMarks } from '../forwardBuffer.js';
 import { modeAllowsHumor, modeAllowsSlang } from '../../modes.js';
 
 /**
@@ -583,6 +584,14 @@ interface RunArgs {
    * voice handler keeps a ✍️ on recorded expenses) pass false.
    */
   manageReaction?: boolean;
+  /**
+   * Consume the chat's pending forward batch into this turn (see
+   * forwardBuffer.ts). Opt-in and set ONLY by the real user-facing entry points
+   * (onMessage / onVoice / onPhoto / the mark-tap handler) — a chime or a reword
+   * must never swallow a pack the user forwarded for a question they haven't
+   * asked yet.
+   */
+  includeForwardBatch?: boolean;
 }
 
 /**
@@ -691,10 +700,24 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   if (args.source === 'voice') markers.push(VOICE_TRANSCRIPT_MARKER);
   const prefix = markers.length > 0 ? `${markers.join('\n')}\n` : '';
 
-  const userContent = applyPrefix(args.userContent, prefix);
-  // History keeps the tag too: without it, a forwarded message read back from
-  // history next turn looks like something the sender said themselves.
-  const historyText = origin ? `[переслано] ${args.historyText}` : args.historyText;
+  // A pending forward batch (messages forwarded just before this ask) becomes the
+  // turn's leading context, and its reaction marks come off — the pack is consumed.
+  // Drained only на addressed turns from real entry points (see the flag docs).
+  const batch =
+    args.includeForwardBatch && args.addressed ? takeForwards(chatId) : { entries: [], overflow: 0 };
+  if (batch.entries.length > 0) {
+    void clearMarks(ctx.api, chatId, batch.entries);
+  }
+  const batchBlock =
+    batch.entries.length > 0 ? `${renderForwardBatch(batch.entries, batch.overflow)}\n` : '';
+
+  const userContent = applyPrefix(args.userContent, `${batchBlock}${prefix}`);
+  // History keeps the tags too: without them, a forwarded message read back from
+  // history next turn looks like something the sender said themselves, and a
+  // batch-consuming exchange loses what it was about. The batch itself is NOT
+  // stored (it would blow the small history window) — the reply carries the gist.
+  const batchTag = batch.entries.length > 0 ? `[+пачка из ${batch.entries.length} пересланных] ` : '';
+  const historyText = `${batchTag}${origin ? `[переслано] ` : ''}${args.historyText}`;
 
   let result: AssistantResult;
   try {

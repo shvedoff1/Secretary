@@ -54,6 +54,12 @@ added without touching the core.
   Dota base). When the bot is added to a chat, the admin gets a DM with the mode picker;
   the «Что за режимы?» button describes them all before choosing. Later: `/modes` to read
   them, `/mode <chatId>` for the same buttons, `/mode <chatId> <режим>` to set one directly.
+- **Forwarded vs. written here**: the bot can tell a forwarded message from one written
+  in the chat, and says so to the model («[пересланное сообщение] (источник: канал «X»)»),
+  so a rule like «ничего не запоминай из пересланных» actually works — and a forwarded
+  «потратил 500 на такси» is no longer read as the sender's own spend. Passive learning
+  (slang + memory) skips forwards outright, since a rule can't reach those batched passes;
+  set `LEARN_FROM_FORWARDS=true` to restore the old behaviour.
 - **Chat rules**: standing behaviour instructions in your own words — «все голосовые
   очищай от слов-паразитов и скидывай мне расшифровку», «отвечай короче», «без эмодзи».
   Just tell the bot («с этого момента …») and it records the rule itself, or use
@@ -122,6 +128,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `LEXICON_BATCH_SIZE` | no | `30` | Extract after this many buffered messages… |
 | `LEXICON_MAX_AGE_HOURS` | no | `24` | …or once the oldest is this old, whichever first |
 | `LEXICON_MAX_TERMS` | no | `40` | Learned terms fed back into context |
+| `LEARN_FROM_FORWARDS` | no | `false` | Let passive learning (slang + memory) read **forwarded** messages too. Off by default: a forward is someone else's words about someone else's life |
 | `CHAT_RULES_MAX` | no | `30` | Max standing chat rules per chat (they go into every turn's context) |
 | `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |
 

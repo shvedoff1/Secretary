@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  FORWARDED_MESSAGE_MARKER,
   SYSTEM_PROMPT,
   ASSISTANT_SYSTEM_PROMPT,
   TUTOR_SYSTEM_PROMPT,
@@ -74,6 +75,18 @@ describe('SYSTEM_PROMPT rule guidance', () => {
     // The marker string is applied in the flow and explained here — they must match.
     expect(SYSTEM_PROMPT).toContain(VOICE_TRANSCRIPT_MARKER);
     expect(SYSTEM_PROMPT).toContain('слов-паразитов');
+  });
+});
+
+describe('SYSTEM_PROMPT forwarded-message guidance', () => {
+  it('explains the forwarded marker verbatim, so a rule can key on it', () => {
+    // The marker is applied in the flow and explained here — they must match.
+    expect(SYSTEM_PROMPT).toContain(FORWARDED_MESSAGE_MARKER);
+  });
+
+  it('says a forward is not the sender’s own words or spend, and that rules win', () => {
+    expect(SYSTEM_PROMPT).toMatch(/never attribute the\s+content to the sender/);
+    expect(SYSTEM_PROMPT).toContain('пересланных');
   });
 });
 

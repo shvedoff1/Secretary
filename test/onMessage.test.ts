@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Context } from 'grammy';
 
+// onMessage now consults the config (the LEARN_FROM_FORWARDS gate), which is
+// validated on first read — give it a valid environment.
+process.env.BOT_TOKEN = 'x';
+process.env.ANTHROPIC_API_KEY = 'x';
+process.env.ADMIN_TELEGRAM_ID = '1';
+process.env.DATABASE_PATH = ':memory:';
+
 vi.mock('../src/bot/triggers.js', () => ({
   routeMessage: vi.fn(),
   isAddressed: vi.fn(),
@@ -41,6 +48,7 @@ import {
 } from '../src/bot/triggers.js';
 import { runAndRespond, rewordPending } from '../src/bot/flows/assist.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
+import { learnMemoryFromMessage } from '../src/bot/flows/memory.js';
 import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
 import { recordChatMessage, armChime } from '../src/bot/flows/chime.js';
 import { getEditTarget } from '../src/bot/editTargets.js';
@@ -53,6 +61,7 @@ const mockFresh = vi.mocked(isFreshBotRequest);
 const mockRun = vi.mocked(runAndRespond);
 const mockReword = vi.mocked(rewordPending);
 const mockLearn = vi.mocked(learnFromMessage);
+const mockLearnMemory = vi.mocked(learnMemoryFromMessage);
 const mockPhoto = vi.mocked(handleReceiptPhoto);
 const mockRecord = vi.mocked(recordChatMessage);
 const mockChime = vi.mocked(armChime);
@@ -328,5 +337,47 @@ describe('onMessage in tutor mode', () => {
 
     expect(mockLearn).toHaveBeenCalledOnce();
     expect(mockChime).toHaveBeenCalledOnce();
+  });
+});
+
+
+// Forwarded messages are someone else's words: passive learning (slang + memory)
+// must not read them, or a forwarded article's facts and a forwarded meme's words
+// end up in this chat's memory and voice. The message itself still reaches the
+// assistant (marked as forwarded) — that part is the flow's job, tested elsewhere.
+function forwardedCtx(text: string): Context {
+  return {
+    message: { text, forward_origin: { type: 'channel', chat: { title: 'Новости' } } },
+    chat: { id: 1, type: 'group' },
+    from: { id: 2 },
+  } as unknown as Context;
+}
+
+describe('passive learning and forwarded messages', () => {
+  it('learns slang and memory from a message written in the chat', async () => {
+    mockRoute.mockReturnValue('ignore');
+    await onMessage(ctx('да ну ты гонишь'));
+
+    expect(mockLearn).toHaveBeenCalledOnce();
+    expect(mockLearnMemory).toHaveBeenCalledOnce();
+  });
+
+  it('learns nothing from a forwarded message', async () => {
+    mockRoute.mockReturnValue('ignore');
+    await onMessage(forwardedCtx('В Москве открыли новый мост'));
+
+    expect(mockLearn).not.toHaveBeenCalled();
+    expect(mockLearnMemory).not.toHaveBeenCalled();
+    // Everything else is unchanged: the chatter buffer and the chime still see it.
+    expect(mockRecord).toHaveBeenCalledOnce();
+    expect(mockChime).toHaveBeenCalledOnce();
+  });
+
+  it('still ANSWERS a forwarded message addressed to the bot', async () => {
+    mockRoute.mockReturnValue('process');
+    await onMessage(forwardedCtx('@bot что думаешь?'));
+
+    expect(mockRun).toHaveBeenCalledOnce();
+    expect(mockLearnMemory).not.toHaveBeenCalled();
   });
 });

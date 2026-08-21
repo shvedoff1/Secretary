@@ -14,6 +14,7 @@ import { getTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
 import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { modeAllowsChime, modeAllowsSlang } from '../../modes.js';
+import { passiveLearningAllowed } from '../forwarded.js';
 
 export async function onMessage(ctx: Context): Promise<void> {
   const text = ctx.message?.text;
@@ -27,13 +28,20 @@ export async function onMessage(ctx: Context): Promise<void> {
   const learnsSlang = modeAllowsSlang(mode);
   const chimes = modeAllowsChime(mode);
 
+  // FORWARDED messages are someone else's words about someone else's life: learning
+  // slang from them makes the bot speak a stranger's voice, and learning facts from
+  // them fills the chat's memory with things nobody here said. Skipped by default
+  // (LEARN_FROM_FORWARDS brings it back) — the model still SEES the message, marked
+  // as forwarded, so chat rules decide the rest.
+  const learnable = passiveLearningAllowed(ctx.message);
+
   // Passively learn the chat's slang from every message — even ones we won't reply
   // to (that's the point: read the whole room). Fire-and-forget and best-effort, so
   // it never delays or breaks the reply below.
-  if (learnsSlang) void learnFromMessage(ctx.chat.id, text);
+  if (learnsSlang && learnable) void learnFromMessage(ctx.chat.id, text);
   // Likewise build the chat's weighted long-term memory (durable facts about the
   // group and its people) from every message. Fire-and-forget and best-effort.
-  void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), text);
+  if (learnable) void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), text);
   // Keep a rolling buffer of recent chatter so a later spontaneous chime has the
   // conversation to continue from — independent of whether we reply to this one.
   recordChatMessage(ctx.chat.id, senderName(ctx), text);

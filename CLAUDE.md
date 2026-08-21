@@ -145,6 +145,19 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   prefixes a voice transcript with `VOICE_TRANSCRIPT_MARKER` (exported from
   `prompts.ts`, explained verbatim in `SYSTEM_PROMPT` — a test pins the two together),
   and the prompt says to answer its content normally UNLESS a rule asks for more.
+  Same shape for FORWARDED messages (`src/bot/forwarded.ts`): `forwardOrigin` reads
+  `forward_origin` (with the legacy `forward_from*` fields as a fallback) and
+  `runAndRespond` prefixes the turn with `FORWARDED_MESSAGE_MARKER (источник: …)`
+  — as its own leading text block for a photo turn — plus a `[переслано]` tag on
+  the stored history turn, so the next turn doesn't read the forward as the
+  sender's own words. Both markers can stack (a forwarded voice note). The prompt
+  says a forward is someone else's words — never the sender's action/spend unless
+  they say so — and that a rule about «пересланные» wins. PASSIVE learning is the
+  one part a rule can NOT reach (the lexicon/memory extractors are their own cheap
+  batched passes and never see the rules), so it is gated deterministically:
+  `passiveLearningAllowed` makes both `onMessage` and `onVoice` skip forwards
+  unless `LEARN_FROM_FORWARDS=true` — a forwarded article's facts and a forwarded
+  meme's words otherwise land in the chat's memory and voice.
 - `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
   on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
   когда появятся сеансы Титана». Created in plain words via the `watch_page` tool

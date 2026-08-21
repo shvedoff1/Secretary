@@ -289,6 +289,19 @@ Voice notes:
   letter (e.g. «очищай от слов-паразитов и скидывай расшифровку» = post the
   cleaned-up text of what was said).
 
+Forwarded messages:
+- A message beginning with «[пересланное сообщение]» was FORWARDED into the chat;
+  the marker names where it came from. Its text was written by SOMEONE ELSE
+  SOMEWHERE ELSE — the sender only passed it along. So: never attribute the
+  content to the sender, never treat what it describes as the sender's own action,
+  spend or promise («потратил 500 на такси» inside a forward is NOT the sender's
+  expense) unless they say in their own words that it's about them. Answer what
+  they're asking about it as usual.
+- A chat rule may restrict what you do with forwarded messages (e.g. «ничего не
+  запоминай из пересланных»). Such a rule wins over your defaults — including over
+  an explicit «запомни» about forwarded content, which you should then decline in
+  one line, naming the rule.
+
 Style — talk like a chill mate in the group chat, not a corporate assistant:
 - Keep it SHORT. A line or two, max. No walls of text, no formal phrasing, no
   bullet-point lectures unless the user asks.
@@ -448,6 +461,14 @@ Dota 2:
  * sync — a test asserts the prompt contains this literal.
  */
 export const VOICE_TRANSCRIPT_MARKER = '[голосовое сообщение — автоматическая расшифровка]';
+
+/**
+ * The exact marker a FORWARDED message is prefixed with before it reaches the
+ * model (the origin is appended after it by the flow). Like the voice marker, the
+ * SYSTEM_PROMPT explains it verbatim — a test pins the two together — so a chat
+ * rule can key on «пересланные».
+ */
+export const FORWARDED_MESSAGE_MARKER = '[пересланное сообщение]';
 
 // Assistant mode: the FULL secretary skill set with the PERSONA taken out — a
 // calm, neutral helper for a personal chat or a working group. It still adapts to

@@ -38,6 +38,8 @@ import { isTranscriptionEnabled, transcribeAudio } from '../src/llm/transcribe.j
 import { isAddressed, routeMessage, addressesBotByName } from '../src/bot/triggers.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
 import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
+import { learnFromMessage } from '../src/bot/flows/lexicon.js';
+import { learnMemoryFromMessage } from '../src/bot/flows/memory.js';
 
 const mockEnabled = vi.mocked(isTranscriptionEnabled);
 const mockTranscribe = vi.mocked(transcribeAudio);
@@ -51,12 +53,12 @@ const mockPhoto = vi.mocked(handleReceiptPhoto);
 // accepts as a reaction.
 const WRITING = '✍';
 
-function fakeCtx(over: { chat?: Record<string, unknown> } = {}) {
+function fakeCtx(over: { chat?: Record<string, unknown>; message?: Record<string, unknown> } = {}) {
   const react = vi.fn(async () => {});
   const reply = vi.fn(async () => {});
   const sendMessage = vi.fn(async () => {});
   const ctx = {
-    message: { voice: { file_id: 'f', mime_type: 'audio/ogg' } },
+    message: { voice: { file_id: 'f', mime_type: 'audio/ogg' }, ...over.message },
     chat: { id: 1, type: 'group', title: 'Surf Crew', ...over.chat },
     from: { id: 2, first_name: 'Ваня' },
     react,
@@ -292,5 +294,33 @@ describe('onVoice reply to a photo (spoken receipt split)', () => {
 
     expect(react).toHaveBeenNthCalledWith(1, WRITING);
     expect(react).toHaveBeenNthCalledWith(2, []);
+  });
+});
+
+
+// A forwarded voice note is someone else's voice: it is still transcribed and
+// answered, but passive learning (slang + memory) must not read it.
+describe('onVoice and forwarded notes', () => {
+  it('learns from a note recorded in the chat', async () => {
+    mockEnabled.mockReturnValue(true);
+    mockTranscribe.mockResolvedValue('ну чё, погнали кататься');
+    const { ctx } = fakeCtx();
+
+    await onVoice(ctx);
+
+    expect(vi.mocked(learnFromMessage)).toHaveBeenCalledOnce();
+    expect(vi.mocked(learnMemoryFromMessage)).toHaveBeenCalledOnce();
+  });
+
+  it('does not learn from a forwarded note, but still answers it', async () => {
+    mockEnabled.mockReturnValue(true);
+    mockTranscribe.mockResolvedValue('привет, это чужой голос');
+    const { ctx } = fakeCtx({ message: { forward_from: { first_name: 'Вася' } } });
+
+    await onVoice(ctx);
+
+    expect(vi.mocked(learnFromMessage)).not.toHaveBeenCalled();
+    expect(vi.mocked(learnMemoryFromMessage)).not.toHaveBeenCalled();
+    expect(mockRun).toHaveBeenCalledOnce();
   });
 });

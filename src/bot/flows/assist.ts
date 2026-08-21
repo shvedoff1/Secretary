@@ -98,7 +98,8 @@ import {
 import { previewKeyboard } from '../keyboards.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 import { looksLikeExpense } from '../../util/money.js';
-import { VOICE_TRANSCRIPT_MARKER } from '../../llm/prompts.js';
+import { FORWARDED_MESSAGE_MARKER, VOICE_TRANSCRIPT_MARKER } from '../../llm/prompts.js';
+import { forwardOrigin } from '../forwarded.js';
 import { modeAllowsHumor, modeAllowsSlang } from '../../modes.js';
 
 /**
@@ -603,6 +604,20 @@ export async function runAndRespond(ctx: Context, args: RunArgs): Promise<Respon
   }
 }
 
+/**
+ * Put the channel markers in front of the user's content. A photo/receipt turn is
+ * a block array, so the prefix becomes its own leading text block rather than
+ * being glued onto a caption that may not exist.
+ */
+function applyPrefix(
+  content: string | Anthropic.ContentBlockParam[],
+  prefix: string,
+): string | Anthropic.ContentBlockParam[] {
+  if (!prefix) return content;
+  if (typeof content === 'string') return `${prefix}${content}`;
+  return [{ type: 'text', text: prefix.trimEnd() }, ...content];
+}
+
 async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondOutcome> {
   const cfg = loadConfig();
   const chatId = ctx.chat!.id;
@@ -663,15 +678,23 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
 
   const mode = getChatMode(chatId);
 
-  // A voice note reaches the model as its machine transcript. Marking it as such is
-  // what lets a chat RULE key on the channel («все голосовые очищай от слов-паразитов
-  // и скидывай расшифровку») — without the marker the model cannot tell a transcript
-  // from a typed message. The prompt says to answer the content normally unless a
-  // rule asks for more, so unmarked behaviour is unchanged.
-  const userContent =
-    args.source === 'voice' && typeof args.userContent === 'string'
-      ? `${VOICE_TRANSCRIPT_MARKER}\n${args.userContent}`
-      : args.userContent;
+  // Channel markers. A voice note reaches the model as a machine transcript and a
+  // forwarded message carries someone else's words — the model cannot tell either
+  // from a plain typed message on its own, and a chat RULE can only key on what it
+  // can see («все голосовые очищай от слов-паразитов», «ничего не запоминай из
+  // пересланных»). Both markers are explained verbatim in the system prompt, which
+  // also says to answer the content normally unless a rule asks for more, so an
+  // unmarked message behaves exactly as before.
+  const origin = forwardOrigin(ctx.message);
+  const markers: string[] = [];
+  if (origin) markers.push(`${FORWARDED_MESSAGE_MARKER} (источник: ${origin})`);
+  if (args.source === 'voice') markers.push(VOICE_TRANSCRIPT_MARKER);
+  const prefix = markers.length > 0 ? `${markers.join('\n')}\n` : '';
+
+  const userContent = applyPrefix(args.userContent, prefix);
+  // History keeps the tag too: without it, a forwarded message read back from
+  // history next turn looks like something the sender said themselves.
+  const historyText = origin ? `[переслано] ${args.historyText}` : args.historyText;
 
   let result: AssistantResult;
   try {
@@ -797,7 +820,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // before/after can be compared.
   const money = isMoneyContext({
     source: args.source,
-    userText: args.historyText,
+    userText: historyText,
     chatId,
   });
   const decision = classifyHumorDecision({
@@ -856,7 +879,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   if (result.scheduled) return 'replied';
   // Record this conversational exchange (and only this) for future context.
   // Store what we actually sent (the humorized text) so history matches the chat.
-  addTurn({ chatId, role: 'user', tgUserId, senderName: senderName(ctx), content: args.historyText });
+  addTurn({ chatId, role: 'user', tgUserId, senderName: senderName(ctx), content: historyText });
   addTurn({ chatId, role: 'assistant', tgUserId: null, content: replyText });
   pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
   return 'replied';

@@ -9,6 +9,7 @@ import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
 import { setTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
+import { passiveLearningAllowed } from '../forwarded.js';
 
 // "Writing it down" marker. We react with ✍️ as soon as a voice note arrives, so
 // the chat sees it was heard; the mark stays only if it became an expense and is
@@ -120,10 +121,13 @@ export async function onVoice(ctx: Context): Promise<void> {
   void dmTranscriptToAdmin(ctx, transcript);
 
   // Learn the chat's slang from the transcript too — every message counts, not
-  // just the ones we reply to. Fire-and-forget and best-effort.
-  void learnFromMessage(ctx.chat.id, transcript);
+  // just the ones we reply to. Fire-and-forget and best-effort. A FORWARDED voice
+  // note is someone else's voice, so passive learning skips it exactly like a
+  // forwarded text message does (see passiveLearningAllowed).
+  const learnable = passiveLearningAllowed(ctx.message);
+  if (learnable) void learnFromMessage(ctx.chat.id, transcript);
   // Build weighted long-term memory from the transcript too. Best-effort.
-  if (ctx.from) {
+  if (learnable && ctx.from) {
     void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript);
   }
 

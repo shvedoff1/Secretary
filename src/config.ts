@@ -84,6 +84,13 @@ const ConfigSchema = z.object({
   LEXICON_BATCH_SIZE: z.coerce.number().int().positive().default(30),
   // ...or once the oldest buffered message is this old, whichever comes first.
   LEXICON_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
+  // Passive learning (lexicon + memory) from FORWARDED messages. Off by default:
+  // a forward is someone else's words about someone else's life, so learning from
+  // it teaches the bot a stranger's voice and fills the chat's memory with facts
+  // nobody here stated. Set true to restore the old (learn-from-everything)
+  // behaviour. The model still SEES forwarded messages — they are just marked as
+  // forwarded, so chat rules can decide what to do with them.
+  LEARN_FROM_FORWARDS: boolish.default(false),
   // How many learned terms to feed back into the assistant context.
   LEXICON_MAX_TERMS: z.coerce.number().int().positive().default(40),
   // Slang pass: apply the chat's learned lexicon to replies the HUMORIZER never

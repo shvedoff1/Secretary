@@ -15,6 +15,7 @@ import { handleReceiptPhoto } from './onPhoto.js';
 import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { modeAllowsChime, modeAllowsSlang } from '../../modes.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
+import { recordChatLog } from '../chatLog.js';
 import {
   bufferForward,
   isForwardBufferEnabled,
@@ -50,6 +51,20 @@ export async function onMessage(ctx: Context): Promise<void> {
   // Keep a rolling buffer of recent chatter so a later spontaneous chime has the
   // conversation to continue from — independent of whether we reply to this one.
   recordChatMessage(ctx.chat.id, senderName(ctx), text);
+
+  // Persist the same line to the chat's raw log — the durable, per-chat record the
+  // `summarize_chat` tool reads back («перескажи последние 200 сообщений»). Unlike
+  // the ring buffer above it survives restarts, and unlike conversation_turn it
+  // keeps the messages the bot never replied to. A forward is tagged as such.
+  recordChatLog({
+    chatId: ctx.chat.id,
+    role: 'user',
+    kind: 'text',
+    tgUserId: ctx.from.id,
+    senderName: senderName(ctx),
+    content: text,
+    forwarded: isForwarded(ctx.message),
+  });
 
   // FORWARDED message → the batch, not a reply. Forwards are someone else's words
   // passed along: answering each one (or scanning it for expenses) is noise, so it

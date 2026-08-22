@@ -27,6 +27,7 @@ import {
   SURF_FORECAST_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
+  SUMMARIZE_CHAT_TOOL,
 } from './tools.js';
 import {
   RecordExpenseZ,
@@ -43,6 +44,7 @@ import {
   SurfForecastZ,
   AddPoiZ,
   SpendingReportZ,
+  SummarizeChatZ,
   toParsedExpense,
   type RecordExpenseInput,
   type RememberInput,
@@ -58,6 +60,7 @@ import {
   type SurfForecastInput,
   type AddPoiInput,
   type SpendingReportInput,
+  type SummarizeChatInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 
@@ -106,6 +109,12 @@ export interface AssistantContext {
   allowDota?: boolean;
   /** Expose the add_poi tool (default true; false for scheduled runs). */
   allowPoi?: boolean;
+  /**
+   * Expose the summarize_chat tool (recap the chat's raw message log). Read-only
+   * like recall_memory, so it stays on for scheduled runs — a recurring «утром
+   * перескажи вчерашнее» task needs exactly this. Off when chat logging is off.
+   */
+  allowSummary?: boolean;
   /** Saved places in this chat, shown so the model can recall them and not duplicate. */
   places?: { name: string; category: string }[];
   /** Top shared facts about the group (human-like weighted memory). */
@@ -163,6 +172,8 @@ export interface AssistantHandlers {
   addPoi: (input: AddPoiInput) => string;
   /** Build a spending/balances report; return the ready-to-send (humorized) text. */
   spendingReport: (input: SpendingReportInput) => Promise<string>;
+  /** Read back the chat's message log; return the transcript for the model to recap. */
+  summarizeChat: (input: SummarizeChatInput) => string;
 }
 
 export type AssistantResult =
@@ -271,6 +282,11 @@ export async function runAssistant(
     enableSurf: !expenseOnly && !tutor && cfg.ENABLE_SURF,
     enablePoi: !expenseOnly && !tutor && ctx.allowPoi !== false,
     enableSpending: !expenseOnly && !tutor && ctx.splidConnected,
+    // Recapping the log is read-only, so (like recall_memory) it survives scheduled
+    // runs; a tutor room has no chatter to recap, and without the log there is
+    // nothing to read.
+    enableSummary:
+      !expenseOnly && !tutor && cfg.ENABLE_CHAT_LOG && ctx.allowSummary !== false,
   });
 
   const contextBlock = tutor
@@ -586,6 +602,23 @@ export async function runAssistant(
             type: 'tool_result',
             tool_use_id: block.id,
             content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === SUMMARIZE_CHAT_TOOL) {
+          const parsed = SummarizeChatZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'summarize_chat input failed validation');
+          }
+          // Deliberately NOT a short-circuit like spending_report: the transcript
+          // goes back to the model, which writes the recap in the chat's voice and
+          // can then answer follow-ups about it from the same window.
+          const transcript = parsed.success
+            ? handlers.summarizeChat(parsed.data)
+            : 'Could not parse the summary request.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: transcript,
             is_error: !parsed.success,
           });
         } else if (block.name === ADD_POI_TOOL) {

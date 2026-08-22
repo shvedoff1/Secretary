@@ -72,6 +72,24 @@ const ConfigSchema = z.object({
   // exchanges push it out — in a quiet chat that can be days. The age cutoff lets
   // yesterday's tangent expire on its own.
   CONVERSATION_HISTORY_MAX_AGE_HOURS: z.coerce.number().int().positive().default(12),
+  // Raw chat log: record EVERY message the bot sees (plus its own posts) so it can
+  // summarise what was said — including the chatter it never replied to. The
+  // assistant's own history window (CONVERSATION_HISTORY_LIMIT) is far too small and
+  // too selective for that: it holds only turns the bot took part in. Read back by
+  // the `summarize_chat` tool; storage costs no tokens, only the summary does.
+  ENABLE_CHAT_LOG: boolish.default(true),
+  // Hard bounds on the log, applied per chat: keep at most this many lines...
+  CHAT_LOG_KEEP_PER_CHAT: z.coerce.number().int().positive().default(4000),
+  // ...and drop anything older than this, whichever bites first.
+  CHAT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  // How many messages a summary reads when the user doesn't name a number.
+  SUMMARY_DEFAULT_MESSAGES: z.coerce.number().int().positive().default(200),
+  // Ceiling on one summarize_chat call (the transcript lands in the model's context).
+  SUMMARY_MAX_MESSAGES: z.coerce.number().int().positive().default(500),
+  // Character budget for the rendered transcript; older lines are dropped first and
+  // the model is told how many were cut, so a huge window degrades instead of blowing
+  // the context window.
+  SUMMARY_CHAR_BUDGET: z.coerce.number().int().positive().default(14_000),
   ENABLE_WEB_SEARCH: boolish.default(true),
   // surf_forecast tool (Open-Meteo marine API; no key needed).
   ENABLE_SURF: boolish.default(true),

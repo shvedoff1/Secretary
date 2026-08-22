@@ -23,6 +23,8 @@ import { getRecentChat } from './bot/recentChat.js';
 import { makeSurfForecastHandler } from './surf/index.js';
 import { makeDotaLookupHandler } from './dota/lookup.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
+import { makeSummarizeChatHandler } from './summary/handler.js';
+import { recordChatLog } from './bot/chatLog.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
 import {
@@ -184,6 +186,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // Spending report stays live too: a recurring task can post the daily
         // spending digest (it short-circuits to ready, humorized text).
         spendingReport: makeSpendingReportHandler(task.chatId),
+        // Recapping the chat log stays live as well: «каждое утро перескажи, что
+        // было вчера» is exactly a scheduled summary, and the tool only reads.
+        summarizeChat: makeSummarizeChatHandler(task.chatId),
       },
     );
     if (result.kind === 'text' && result.text.trim()) {
@@ -246,6 +251,8 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       // and answers blind. Stored as an assistant turn (no author); the history
       // normaliser handles the lone/back-to-back assistant turns this creates.
       addTurn({ chatId: task.chatId, role: 'assistant', tgUserId: null, content: posted });
+      // …and into the raw chat log, so a later recap includes what the bot posted.
+      recordChatLog({ chatId: task.chatId, role: 'assistant', tgUserId: null, content: posted });
       pruneOld(task.chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
     }
   } catch (err) {

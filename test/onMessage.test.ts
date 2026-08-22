@@ -43,6 +43,9 @@ vi.mock('../src/bot/forwardBuffer.js', () => ({
 vi.mock('../src/db/repos/chatSettings.repo.js', () => ({
   getChatMode: vi.fn(() => 'secretary'),
 }));
+vi.mock('../src/bot/chatLog.js', () => ({
+  recordChatLog: vi.fn(),
+}));
 
 import { onMessage } from '../src/bot/handlers/onMessage.js';
 import {
@@ -59,6 +62,7 @@ import { recordChatMessage, armChime } from '../src/bot/flows/chime.js';
 import { getEditTarget } from '../src/bot/editTargets.js';
 import { getChatMode } from '../src/db/repos/chatSettings.repo.js';
 import { bufferForward, isForwardBufferEnabled } from '../src/bot/forwardBuffer.js';
+import { recordChatLog } from '../src/bot/chatLog.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
@@ -73,6 +77,7 @@ const mockRecord = vi.mocked(recordChatMessage);
 const mockChime = vi.mocked(armChime);
 const mockEditTarget = vi.mocked(getEditTarget);
 const mockMode = vi.mocked(getChatMode);
+const mockLog = vi.mocked(recordChatLog);
 
 function ctx(text: string): Context {
   return {
@@ -416,5 +421,41 @@ describe('forwarded messages go to the batch', () => {
     expect(mockRun).toHaveBeenCalledOnce();
     // Passive learning still skips forwards regardless of the buffer flag.
     expect(mockLearnMemory).not.toHaveBeenCalled();
+  });
+});
+
+describe('onMessage chat log', () => {
+  it('logs a message the bot IGNORES — that is the whole point of the log', async () => {
+    // conversation_turn only ever holds turns the bot took part in, so without this
+    // «перескажи, что тут было» would summarise a chat it never heard.
+    mockRoute.mockReturnValue('ignore');
+
+    await onMessage(ctx('да ну его, поехали завтра'));
+
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith({
+      chatId: 1,
+      role: 'user',
+      kind: 'text',
+      tgUserId: 2,
+      senderName: 'Tester',
+      content: 'да ну его, поехали завтра',
+      forwarded: false,
+    });
+  });
+
+  it('tags a forwarded message as forwarded, and logs it despite the batch', async () => {
+    mockRoute.mockReturnValue('ignore');
+
+    await onMessage(forwardedCtx('В Москве открыли новый мост'));
+
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'В Москве открыли новый мост', forwarded: true }),
+    );
+  });
+
+  it('does not log commands (they are not chat)', async () => {
+    await onMessage(ctx('/help'));
+    expect(mockLog).not.toHaveBeenCalled();
   });
 });

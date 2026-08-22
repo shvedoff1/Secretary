@@ -8,6 +8,7 @@ import {
   type PageWatch,
 } from '../db/repos/pageWatch.repo.js';
 import { addTurn, pruneOld } from '../db/repos/conversation.repo.js';
+import { recordChatLog } from '../bot/chatLog.js';
 import { fetchPageHtml } from './fetch.js';
 import { findKeywords, buildExcerpt, hashText } from './extract.js';
 import { checkWatchCondition } from '../llm/watchCheck.js';
@@ -95,6 +96,8 @@ async function checkWatch(bot: Bot, watch: PageWatch): Promise<void> {
   // Mirror the scheduler: record what was posted as an assistant turn so a
   // follow-up in the chat («а во сколько сеансы?») has the context it refers to.
   addTurn({ chatId: watch.chatId, role: 'assistant', tgUserId: null, content: posted });
+  // Raw log too, so «что я пропустил» includes the watch firing.
+  recordChatLog({ chatId: watch.chatId, role: 'assistant', tgUserId: null, content: posted });
   pruneOld(watch.chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
 }
 

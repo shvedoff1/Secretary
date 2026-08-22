@@ -17,6 +17,8 @@ import { toParsedExpense, type RecallMemoryInput } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
+import { makeSummarizeChatHandler } from '../../summary/handler.js';
+import { recordChatLog } from '../chatLog.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import {
@@ -771,6 +773,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
         spendingReport: makeSpendingReportHandler(chatId),
+        summarizeChat: makeSummarizeChatHandler(chatId),
       },
     );
   } catch (err) {
@@ -897,6 +900,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   await replyMarkdown(ctx, replyText, {
     reply_to_message_id: ctx.message?.message_id,
   });
+  // The bot's own post belongs in the raw log too — a recap that shows only what
+  // people said reads as a monologue and loses what was answered/decided.
+  recordChatLog({ chatId, role: 'assistant', tgUserId: null, content: replyText });
   // A reminder request is a completed side-action, not dialogue — keep it out of
   // history so it can't replay and re-create the reminder on a later message.
   if (result.scheduled) return 'replied';
@@ -996,6 +1002,7 @@ async function rewordPendingInner(
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
       spendingReport: makeSpendingReportHandler(chatId),
+      summarizeChat: makeSummarizeChatHandler(chatId),
     },
   );
 

@@ -39,9 +39,12 @@ import {
   setChatHumorEnabled,
   isReactionsEnabled,
   setReactionsEnabled,
+  getTimezone,
 } from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
+import { clearLog, countLog, oldestLoggedAt } from '../../db/repos/chatLog.repo.js';
+import { formatInTimezone } from '../../util/schedule.js';
 import { replyLong } from '../../util/telegramText.js';
 import { modeSpec, parseMode, renderModeCard, MODE_NAMES } from '../../modes.js';
 import { modeKeyboard } from '../keyboards.js';
@@ -82,6 +85,48 @@ async function membersOf(providerName: string, groupId: string): Promise<Member[
   } catch {
     return [];
   }
+}
+
+// --- /chatlog : inspect or wipe a chat's raw message log --------------------
+
+/**
+ * The raw log is what `summarize_chat` reads back, so the admin needs to see how
+ * far it reaches (and be able to wipe it — the one thing nobody wants to discover
+ * they can't do about a recording of their group chat).
+ */
+export async function cmdChatLog(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const cfg = loadConfig();
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /chatlog <chatId> [clear]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (want === 'clear') {
+    clearLog(id);
+    await ctx.reply(`🧹 Чат ${id}: лог сообщений очищен — пересказывать больше нечего.`);
+    return;
+  }
+  if (want) {
+    await ctx.reply('Использование: /chatlog <chatId> [clear]');
+    return;
+  }
+  if (!cfg.ENABLE_CHAT_LOG) {
+    await ctx.reply('Логирование сообщений выключено глобально (ENABLE_CHAT_LOG=false).');
+    return;
+  }
+  const total = countLog(id);
+  const oldest = oldestLoggedAt(id);
+  const since = oldest
+    ? formatInTimezone(oldest, getTimezone(id) ?? cfg.DEFAULT_TIMEZONE)
+    : '—';
+  await ctx.reply(
+    `Чат ${id}: в логе ${total} сообщений, самое старое от ${since}.\n` +
+      `Держу максимум ${cfg.CHAT_LOG_KEEP_PER_CHAT} и не старше ${cfg.CHAT_LOG_RETENTION_DAYS} дней.\n` +
+      `Очистить: /chatlog ${id} clear`,
+  );
 }
 
 // --- /chats : list every configured chat -----------------------------------

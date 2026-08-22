@@ -14,6 +14,7 @@ import {
   surfForecastJsonSchema,
   addPoiJsonSchema,
   spendingReportJsonSchema,
+  summarizeChatJsonSchema,
 } from './schema.js';
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
@@ -30,6 +31,7 @@ export const DOTA_LOOKUP_TOOL = 'dota_lookup';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
 export const SPENDING_REPORT_TOOL = 'spending_report';
+export const SUMMARIZE_CHAT_TOOL = 'summarize_chat';
 
 export interface ToolOptions {
   enableWebSearch: boolean;
@@ -77,6 +79,11 @@ export interface ToolOptions {
    *  reads expenses/balances back from the group). Stays on for scheduled runs so
    *  a recurring "сводка трат в 9 утра" task can produce the digest. */
   enableSpending?: boolean;
+  /** Expose the summarize_chat tool (recap the chat's raw message log). Read-only,
+   *  so like recall_memory it stays on for scheduled runs — a recurring "утренний
+   *  пересказ вчерашнего" task needs it. Off when ENABLE_CHAT_LOG is off (nothing
+   *  is recorded) and in tutor chats. */
+  enableSummary?: boolean;
 }
 
 export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
@@ -208,6 +215,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         "Summarise recorded spending and/or who-owes-whom for the chat's Splid group. Call this when the user asks about PAST spending (\"сколько потратили за неделю\", \"траты за вчера\", \"скинь траты за последние 3 дня\", \"how much did we spend\") or about balances/debts (\"сколько кто кому должен\", \"who owes what\", \"мы в расчёте?\"). For the spending summary, pass fromDate/toDate as chat-LOCAL YYYY-MM-DD computed from the context block's current time + timezone (single day => equal dates; null/null => yesterday). Set balances=true for the settlement summary. It returns ready-formatted figures — relay them as-is, don't recompute. This READS the data; it does not record anything (use record_expense for that).",
       input_schema: spendingReportJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableSummary) {
+    tools.push({
+      name: SUMMARIZE_CHAT_TOOL,
+      description:
+        "Read back what was actually SAID in this chat — the raw message log, including every message you never replied to — and recap it. Call this whenever the user asks what happened/was discussed here: «что было в последних 200 сообщениях», «перескажи, что я пропустил», «о чём тут болтали вчера», «краткая выжимка за сегодня», «what did I miss». Ask by COUNT (limit) when the user names a number of messages, or by chat-LOCAL DATES (fromDate/toDate) when they name a period. The tool returns the transcript itself — YOU write the summary from it, in the user's language and your usual voice, and you never invent anything that isn't there. This is NOT memory (recall_memory searches remembered FACTS; this reads the literal chat log) and NOT money (that's spending_report). The log is bounded in size and age, so it may not reach as far back as asked — the tool says so, and you must pass that on rather than filling the gap.",
+      input_schema: summarizeChatJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

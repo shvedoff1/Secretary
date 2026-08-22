@@ -69,6 +69,15 @@ added without touching the core.
   pack quietly expires after `FORWARD_BUFFER_TTL_MINUTES` (default 10). NOTE: in groups
   Telegram only delivers reaction taps to bots that are **admins**; asking in words works
   regardless.
+- **Chat recap («что тут было?»)**: the bot keeps a rolling log of what is actually said
+  in a chat — every message, not just the ones addressed to it — and can summarise it on
+  request: «перескажи, что было в последних 200 сообщениях», «что я пропустил», «о чём
+  болтали вчера». Ask by a number of messages or by a period; the bot reads that window
+  of the log and writes the recap in its usual voice, and says so when the window reaches
+  further back than the log keeps. The log is bounded per chat (`CHAT_LOG_KEEP_PER_CHAT`
+  messages, `CHAT_LOG_RETENTION_DAYS` days), can be inspected/wiped by the admin with
+  `/chatlog <chatId>` (`/chatlog <chatId> clear`), and switched off entirely with
+  `ENABLE_CHAT_LOG=false`.
 - **Chat rules**: standing behaviour instructions in your own words — «все голосовые
   очищай от слов-паразитов и скидывай мне расшифровку», «отвечай короче», «без эмодзи».
   Just tell the bot («с этого момента …») and it records the rule itself, or use
@@ -141,6 +150,12 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `FORWARD_BUFFER_TTL_MINUTES` | no | `10` | How long an unclaimed pack waits (sliding from the last forward) before quietly expiring |
 | `FORWARD_BUFFER_MAX` | no | `50` | Max messages kept per pack (the pack lands in one LLM turn) |
 | `LEARN_FROM_FORWARDS` | no | `false` | Let passive learning (slang + memory) read **forwarded** messages too. Off by default: a forward is someone else's words about someone else's life |
+| `ENABLE_CHAT_LOG` | no | `true` | Keep a rolling per-chat log of every message (incl. the ones the bot never answers) so it can recap what was said. `false` = nothing is recorded and the `summarize_chat` tool disappears |
+| `CHAT_LOG_KEEP_PER_CHAT` | no | `4000` | Max messages kept per chat |
+| `CHAT_LOG_RETENTION_DAYS` | no | `30` | Drop logged messages older than this |
+| `SUMMARY_DEFAULT_MESSAGES` | no | `200` | How many messages a recap reads when no count/period is named |
+| `SUMMARY_MAX_MESSAGES` | no | `500` | Ceiling on one recap (the transcript goes into the model's context) |
+| `SUMMARY_CHAR_BUDGET` | no | `14000` | Size cap on the rendered transcript; the oldest lines are dropped first and the model is told how many |
 | `CHAT_RULES_MAX` | no | `30` | Max standing chat rules per chat (they go into every turn's context) |
 | `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |
 
@@ -168,6 +183,7 @@ Then just talk:
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
 · reminders: `/tasks` `/canceltask <id>` · lexicon: `/slang` (`/slang clear`, `/slang on|off`)
 · expense dictionary: `/trata` (`/trata <word>`, `/trata clear`)
+· chat log: admin `/chatlog <chatId>` (`/chatlog <chatId> clear`)
 
 ## Architecture
 

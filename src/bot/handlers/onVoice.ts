@@ -10,6 +10,7 @@ import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js
 import { setTranscript } from '../transcriptCache.js';
 import { handleReceiptPhoto } from './onPhoto.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
+import { recordChatLog } from '../chatLog.js';
 import {
   bufferForward,
   isForwardBufferEnabled,
@@ -119,6 +120,18 @@ export async function onVoice(ctx: Context): Promise<void> {
   // later REPLIES to it («запомни, это трата» / «это была трата») the reply handler
   // can recover what was said — a voice note carries no text/caption of its own.
   setTranscript(ctx.chat.id, ctx.message!.message_id, transcript);
+
+  // The transcript is what this message SAID, so it goes into the chat's raw log
+  // like any typed line — otherwise a voice-heavy chat would recap as silence.
+  recordChatLog({
+    chatId: ctx.chat.id,
+    role: 'user',
+    kind: 'voice',
+    tgUserId: ctx.from.id,
+    senderName: senderName(ctx),
+    content: transcript,
+    forwarded: isForwarded(ctx.message),
+  });
 
   // DM the admin what we heard, so they can catch flaky transcriptions even in
   // chats they don't actively watch. Best-effort; skip when the admin themselves

@@ -172,8 +172,11 @@ export interface AssistantHandlers {
   addPoi: (input: AddPoiInput) => string;
   /** Build a spending/balances report; return the ready-to-send (humorized) text. */
   spendingReport: (input: SpendingReportInput) => Promise<string>;
-  /** Read back the chat's message log; return the transcript for the model to recap. */
-  summarizeChat: (input: SummarizeChatInput) => string;
+  /**
+   * Read back the chat's message log; return the transcript (or, for a big window,
+   * cheap-model notes plus a verbatim tail) for the model to recap.
+   */
+  summarizeChat: (input: SummarizeChatInput) => Promise<string>;
 }
 
 export type AssistantResult =
@@ -613,7 +616,7 @@ export async function runAssistant(
           // goes back to the model, which writes the recap in the chat's voice and
           // can then answer follow-ups about it from the same window.
           const transcript = parsed.success
-            ? handlers.summarizeChat(parsed.data)
+            ? await handlers.summarizeChat(parsed.data)
             : 'Could not parse the summary request.';
           toolResults.push({
             type: 'tool_result',

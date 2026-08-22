@@ -74,7 +74,10 @@ added without touching the core.
   request: «перескажи, что было в последних 200 сообщениях», «что я пропустил», «о чём
   болтали вчера». Ask by a number of messages or by a period; the bot reads that window
   of the log and writes the recap in its usual voice, and says so when the window reaches
-  further back than the log keeps. The log is bounded per chat (`CHAT_LOG_KEEP_PER_CHAT`
+  further back than the log keeps. A big window (500+ messages) is handled in two tiers:
+  a cheap model first compresses the older part into dense notes and only the newest
+  slice stays word-for-word, so the recap really covers the whole period instead of its
+  tail (`ENABLE_SUMMARY_CONDENSE=false` turns that off and falls back to truncation). The log is bounded per chat (`CHAT_LOG_KEEP_PER_CHAT`
   messages, `CHAT_LOG_RETENTION_DAYS` days), can be inspected/wiped by the admin with
   `/chatlog <chatId>` (`/chatlog <chatId> clear`), and switched off entirely with
   `ENABLE_CHAT_LOG=false`.
@@ -154,8 +157,13 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CHAT_LOG_KEEP_PER_CHAT` | no | `4000` | Max messages kept per chat |
 | `CHAT_LOG_RETENTION_DAYS` | no | `30` | Drop logged messages older than this |
 | `SUMMARY_DEFAULT_MESSAGES` | no | `200` | How many messages a recap reads when no count/period is named |
-| `SUMMARY_MAX_MESSAGES` | no | `500` | Ceiling on one recap (the transcript goes into the model's context) |
-| `SUMMARY_CHAR_BUDGET` | no | `14000` | Size cap on the rendered transcript; the oldest lines are dropped first and the model is told how many |
+| `SUMMARY_MAX_MESSAGES` | no | `1000` | Ceiling on one recap |
+| `SUMMARY_CHAR_BUDGET` | no | `14000` | How much transcript may reach the main model **verbatim**; a bigger window goes through the compression pass below |
+| `ENABLE_SUMMARY_CONDENSE` | no | `true` | For a window that doesn't fit verbatim, compress the older part with a cheap model and keep only the newest slice word-for-word. `false` = plain oldest-first truncation |
+| `ANTHROPIC_SUMMARY_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model used only for that compression (never for the recap itself) |
+| `SUMMARY_TAIL_CHAR_BUDGET` | no | `6000` | Newest slice kept verbatim inside a compressed recap |
+| `SUMMARY_CONDENSE_CHUNK_CHARS` | no | `20000` | Transcript per compression call |
+| `SUMMARY_CONDENSE_MAX_CHUNKS` | no | `8` | Max compression calls per recap (they run in parallel); chunk × max is how far back one recap can reach |
 | `CHAT_RULES_MAX` | no | `30` | Max standing chat rules per chat (they go into every turn's context) |
 | `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |
 

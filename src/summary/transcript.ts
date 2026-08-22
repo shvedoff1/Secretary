@@ -131,28 +131,117 @@ export function renderTranscript(
   opts: { tz: string; charBudget: number },
 ): RenderedTranscript {
   if (messages.length === 0) return { text: '', used: 0, dropped: 0 };
+  const kept = takeNewestWithin(messages, opts.tz, opts.charBudget);
+  return {
+    text: renderLines(kept, opts.tz),
+    used: kept.length,
+    dropped: messages.length - kept.length,
+  };
+}
 
-  // Build newest-first while the budget allows, then flip back to chronological.
-  const kept: { line: string; dateStr: string }[] = [];
+/**
+ * Render messages (oldest first) as transcript lines with a day separator whenever
+ * the local date changes. Shared by the verbatim path and the condense planner, so
+ * both feed the models exactly the same shape of text.
+ */
+export function renderLines(messages: LoggedMessage[], tz: string): string {
+  const out: string[] = [];
+  let currentDay = '';
+  for (const msg of messages) {
+    const dateStr = zonedParts(msg.createdAt, tz).dateStr;
+    if (dateStr !== currentDay) {
+      currentDay = dateStr;
+      out.push(`— ${humanDay(dateStr, tz)} —`);
+    }
+    out.push(oneLine(msg, tz));
+  }
+  return out.join('\n');
+}
+
+/**
+ * The newest run of messages whose rendered lines fit `charBudget` (chronological).
+ * Always keeps at least the newest one: a window that can't fit even a single line
+ * should still show the last thing said rather than nothing.
+ */
+function takeNewestWithin(
+  messages: LoggedMessage[],
+  tz: string,
+  charBudget: number,
+): LoggedMessage[] {
+  const kept: LoggedMessage[] = [];
   let size = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!;
-    const line = oneLine(msg, opts.tz);
-    // +1 for the newline, plus slack for the day separator this line may pull in.
-    if (size + line.length + 1 > opts.charBudget && kept.length > 0) break;
-    size += line.length + 1;
-    kept.push({ line, dateStr: zonedParts(msg.createdAt, opts.tz).dateStr });
+    const cost = oneLine(msg, tz).length + 1;
+    if (size + cost > charBudget && kept.length > 0) break;
+    size += cost;
+    kept.push(msg);
   }
-  kept.reverse();
+  return kept.reverse();
+}
 
-  const out: string[] = [];
-  let currentDay = '';
-  for (const entry of kept) {
-    if (entry.dateStr !== currentDay) {
-      currentDay = entry.dateStr;
-      out.push(`— ${humanDay(entry.dateStr, opts.tz)} —`);
-    }
-    out.push(entry.line);
+export interface CondensePlan {
+  /** Older part, oldest-first, split into chunks small enough for one cheap call. */
+  chunks: string[];
+  /** Newest messages, rendered verbatim. */
+  tail: string;
+  tailCount: number;
+  condensedCount: number;
+  /** Messages beyond the plan's reach (oldest), dropped and worth reporting. */
+  dropped: number;
+}
+
+/**
+ * Split a window that is too big to pass verbatim into "compress the old part,
+ * keep the recent part word-for-word".
+ *
+ * The newest slice stays verbatim because that's what follow-up questions land on
+ * («а что там про рыбалку?») and what the recap's last paragraph is about; the
+ * older part is what a cheap model can compress without the recap losing anything
+ * that matters. Chunks are filled from the NEWEST end so that when the window
+ * exceeds `maxChunks`, what falls off is the OLDEST material — same rule as the
+ * verbatim path, and reported the same way.
+ */
+export function planCondense(
+  messages: LoggedMessage[],
+  opts: { tz: string; tailChars: number; chunkChars: number; maxChunks: number },
+): CondensePlan {
+  if (messages.length === 0) {
+    return { chunks: [], tail: '', tailCount: 0, condensedCount: 0, dropped: 0 };
   }
-  return { text: out.join('\n'), used: kept.length, dropped: messages.length - kept.length };
+  const tailMessages = takeNewestWithin(messages, opts.tz, opts.tailChars);
+  const older = messages.slice(0, messages.length - tailMessages.length);
+
+  // Pack the older part newest-first, then flip everything back to chronological.
+  const packed: LoggedMessage[][] = [];
+  let current: LoggedMessage[] = [];
+  let size = 0;
+  for (let i = older.length - 1; i >= 0; i--) {
+    const msg = older[i]!;
+    const cost = oneLine(msg, opts.tz).length + 1;
+    if (current.length > 0 && size + cost > opts.chunkChars) {
+      packed.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(msg);
+    size += cost;
+  }
+  if (current.length > 0) packed.push(current);
+
+  const within = packed.slice(0, opts.maxChunks);
+  const dropped = packed
+    .slice(opts.maxChunks)
+    .reduce((n, chunk) => n + chunk.length, 0);
+  const chunks = within
+    .map((chunk) => renderLines(chunk.slice().reverse(), opts.tz))
+    .reverse();
+
+  return {
+    chunks,
+    tail: renderLines(tailMessages, opts.tz),
+    tailCount: tailMessages.length,
+    condensedCount: within.reduce((n, chunk) => n + chunk.length, 0),
+    dropped,
+  };
 }

@@ -19,7 +19,7 @@ vi.mock('../src/llm/client.js', () => ({
   getAnthropic: () => ({ messages: { create: createMock } }),
 }));
 
-const summarizeMock = vi.fn(() => 'CHAT TRANSCRIPT …\n[10:00] Гоша: погнали на серф');
+const summarizeMock = vi.fn(async () => 'CHAT TRANSCRIPT …\n[10:00] Гоша: погнали на серф');
 
 const handlers = {
   remember: () => 'ok',

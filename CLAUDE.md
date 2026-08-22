@@ -200,6 +200,20 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   LOG and always states what didn't fit, so the model never fills the gap itself. Stays
   live for scheduled runs (read-only, so «каждое утро перескажи вчерашнее» works); off
   in tutor chats and on the expense-only scan.
+  TWO TIERS by size, because «перескажи последние 500 сообщений» is several times what
+  the main model should read verbatim (500 messages ≈ 35–70k chars; a flat budget showed
+  only the last ~150–200 of them). A window inside `SUMMARY_CHAR_BUDGET` goes over
+  untouched; a bigger one is split by `planCondense` into a verbatim TAIL
+  (`SUMMARY_TAIL_CHAR_BUDGET`, the newest slice — that's what follow-ups land on) plus
+  older chunks (`SUMMARY_CONDENSE_CHUNK_CHARS` × `SUMMARY_CONDENSE_MAX_CHUNKS`, filled
+  from the newest end so overflow drops the OLDEST) that a cheap model compresses in
+  PARALLEL (`src/llm/summarize.ts`, `ANTHROPIC_SUMMARY_MODEL`, Haiku at temperature 0 —
+  notes, never a recap: this tier drops wording, not facts, since anything it invents is
+  invisible to the tier above). The assembled text labels which part is notes and which
+  is verbatim, and every failure mode is stated rather than hidden: chunks that failed to
+  compress are a reported GAP, all-failed falls back to the truncated verbatim window,
+  and overflow says the recap starts partway in. Off via `ENABLE_SUMMARY_CONDENSE=false`
+  (back to plain oldest-first truncation). The handler is async because of this pass.
 - `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
   on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
   когда появятся сеансы Титана». Created in plain words via the `watch_page` tool

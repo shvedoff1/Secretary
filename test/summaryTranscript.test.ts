@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { LoggedMessage } from '../src/db/repos/chatLog.repo.js';
 import {
   MAX_LINE_CHARS,
+  planCondense,
   renderTranscript,
   resolveSummaryWindow,
 } from '../src/summary/transcript.js';
@@ -141,6 +142,56 @@ describe('renderTranscript', () => {
     expect(renderTranscript([], { tz: TZ, charBudget: 100 })).toEqual({
       text: '',
       used: 0,
+      dropped: 0,
+    });
+  });
+});
+
+describe('planCondense', () => {
+  // The split behind «перескажи последние 500 сообщений»: compress the old part,
+  // keep the recent part word-for-word.
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      msg({ content: `реплика ${String(i).padStart(3, '0')}`, createdAt: NOW + i * 60_000 }),
+    );
+
+  it('keeps the newest messages verbatim and chunks the rest oldest-first', () => {
+    const plan = planCondense(many(60), { tz: TZ, tailChars: 200, chunkChars: 300, maxChunks: 20 });
+
+    expect(plan.tailCount).toBeGreaterThan(0);
+    expect(plan.tail).toContain('реплика 059');
+    expect(plan.dropped).toBe(0);
+    expect(plan.condensedCount + plan.tailCount).toBe(60);
+    // Chunks run oldest → newest, and each chunk is itself chronological.
+    expect(plan.chunks[0]).toContain('реплика 000');
+    expect(plan.chunks.at(-1)).not.toContain('реплика 000');
+    const first = plan.chunks[0]!.split('\n').filter((l) => l.startsWith('['));
+    expect(first[0]! < first[first.length - 1]!).toBe(true);
+    // Nothing is both condensed and verbatim.
+    expect(plan.chunks.join('\n')).not.toContain('реплика 059');
+  });
+
+  it('respects the per-chunk size so one compression call stays cheap', () => {
+    const plan = planCondense(many(60), { tz: TZ, tailChars: 100, chunkChars: 300, maxChunks: 20 });
+    for (const chunk of plan.chunks) expect(chunk.length).toBeLessThanOrEqual(400);
+  });
+
+  it('drops the OLDEST material when the window exceeds the chunk cap', () => {
+    const plan = planCondense(many(60), { tz: TZ, tailChars: 100, chunkChars: 300, maxChunks: 2 });
+    expect(plan.chunks).toHaveLength(2);
+    expect(plan.dropped).toBeGreaterThan(0);
+    expect(plan.chunks.join('\n')).not.toContain('реплика 000');
+    // What survives is the newest end, as everywhere else in the skill.
+    expect(plan.tail).toContain('реплика 059');
+  });
+
+  it('handles a window with nothing to condense', () => {
+    const plan = planCondense(many(2), { tz: TZ, tailChars: 10_000, chunkChars: 300, maxChunks: 5 });
+    expect(plan.chunks).toEqual([]);
+    expect(plan.tailCount).toBe(2);
+    expect(planCondense([], { tz: TZ, tailChars: 100, chunkChars: 100, maxChunks: 2 })).toMatchObject({
+      chunks: [],
+      tail: '',
       dropped: 0,
     });
   });

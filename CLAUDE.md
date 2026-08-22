@@ -71,7 +71,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   after the probability roll).
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   edit_memory | learn_expense_pattern | edit_lexicon | set_rule | schedule_task |
-  surf_forecast | add_poi | spending_report | web_search`. `remember` pins a fact verbatim and can
+  surf_forecast | add_poi | spending_report | summarize_chat | web_search`. `remember` pins a fact verbatim and can
   SUPERSEDE contradicted facts (its `replaces` arg → the handler fuzzy-matches and
   removes them first, so a correction overrides instead of coexisting; the model pushes
   back once before overriding — prompt-driven). `edit_memory` fixes an existing fact in
@@ -177,6 +177,43 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   keeps forwards out of the auto-expense scan and the DM reply-to-everything
   path, and a forward whose TEXT happens to mention the bot's name is still
   buffered (the words are the original author's, not the sender's).
+- `src/summary/` — `summarize_chat` skill: recap what was actually SAID in a chat
+  («перескажи, что было в последних 200 сообщениях», «что я пропустил», «о чём
+  болтали вчера»). It needed a new store: `conversation_turn` is the assistant's
+  context window (only turns the bot took part in, pruned to a couple of dozen rows),
+  the chime's ring buffer holds 12 lines in memory, and `chat_lexicon_sample` rows are
+  DELETED as soon as a learning batch claims them — so nothing held the chat's own
+  chatter. `chat_message_log` (migration 024, `chatLog.repo.ts`) is that raw record:
+  every incoming message (text / voice transcript / photo caption, forwards tagged
+  `[переслано]`) plus the bot's own posts, written through `src/bot/chatLog.ts`
+  (`recordChatLog` — best-effort, never throws, trims amortised every 50 inserts) from
+  onMessage/onVoice/onPhoto and from every place that posts (live reply, scheduler,
+  watch poller). Bounded per chat by `CHAT_LOG_KEEP_PER_CHAT` + `CHAT_LOG_RETENTION_DAYS`;
+  admin `/chatlog <chatId>` shows depth, `/chatlog <chatId> clear` wipes it; off via
+  `ENABLE_CHAT_LOG=false` (which also removes the tool). Window resolution + transcript
+  rendering are pure (`transcript.ts`: count-window vs local-day range, day separators,
+  per-line cut, char budget that drops the OLDEST lines and REPORTS how many); the tool
+  handler (`handler.ts`) reads the window and hands the transcript BACK to the model —
+  deliberately NOT a short-circuit like `spending_report`, because a recap is prose, so
+  the chat's persona should write it and follow-ups («а что там про рыбалку?») can be
+  answered from the same window. The handler distinguishes an empty PERIOD from an empty
+  LOG and always states what didn't fit, so the model never fills the gap itself. Stays
+  live for scheduled runs (read-only, so «каждое утро перескажи вчерашнее» works); off
+  in tutor chats and on the expense-only scan.
+  TWO TIERS by size, because «перескажи последние 500 сообщений» is several times what
+  the main model should read verbatim (500 messages ≈ 35–70k chars; a flat budget showed
+  only the last ~150–200 of them). A window inside `SUMMARY_CHAR_BUDGET` goes over
+  untouched; a bigger one is split by `planCondense` into a verbatim TAIL
+  (`SUMMARY_TAIL_CHAR_BUDGET`, the newest slice — that's what follow-ups land on) plus
+  older chunks (`SUMMARY_CONDENSE_CHUNK_CHARS` × `SUMMARY_CONDENSE_MAX_CHUNKS`, filled
+  from the newest end so overflow drops the OLDEST) that a cheap model compresses in
+  PARALLEL (`src/llm/summarize.ts`, `ANTHROPIC_SUMMARY_MODEL`, Haiku at temperature 0 —
+  notes, never a recap: this tier drops wording, not facts, since anything it invents is
+  invisible to the tier above). The assembled text labels which part is notes and which
+  is verbatim, and every failure mode is stated rather than hidden: chunks that failed to
+  compress are a reported GAP, all-failed falls back to the truncated verbatim window,
+  and overflow says the recap starts partway in. Off via `ENABLE_SUMMARY_CONDENSE=false`
+  (back to plain oldest-first truncation). The handler is async because of this pass.
 - `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
   on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
   когда появятся сеансы Титана». Created in plain words via the `watch_page` tool

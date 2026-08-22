@@ -9,9 +9,10 @@ import {
 } from '../triggers.js';
 import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
 import { getChatMode } from '../../db/repos/chatSettings.repo.js';
-import { runAndRespond } from '../flows/assist.js';
+import { runAndRespond, senderName } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { forwardOrigin, isForwarded } from '../forwarded.js';
+import { recordChatLog } from '../chatLog.js';
 import {
   bufferForward,
   isForwardBufferEnabled,
@@ -23,6 +24,18 @@ export async function onPhoto(ctx: Context): Promise<void> {
   if (!photos || photos.length === 0 || !ctx.chat || !ctx.from) return;
 
   const caption = ctx.message?.caption?.trim() ?? '';
+
+  // A photo is part of what happened in the chat even when the bot ignores it, so
+  // it lands in the raw log (caption, or a bare marker) for later recaps.
+  recordChatLog({
+    chatId: ctx.chat.id,
+    role: 'user',
+    kind: 'photo',
+    tgUserId: ctx.from.id,
+    senderName: senderName(ctx),
+    content: caption || '(фото без подписи)',
+    forwarded: isForwarded(ctx.message),
+  });
 
   // A FORWARDED photo goes to the forward batch, not the receipt flow: it's
   // someone else's picture (an album arrives as one such message per photo), and

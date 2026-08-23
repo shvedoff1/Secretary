@@ -1,7 +1,7 @@
 import { getDb } from '../client.js';
 
 /**
- * One closed conversation session (see migration 026): a cheap-model condensation
+ * One closed conversation session (see migration 027): a cheap-model condensation
  * of a stretch of chat_message_log, bounded by silence on both sides. `topics` is
  * a short list of lowercase tags used for the context topic index and for search.
  */

@@ -37,11 +37,19 @@ export function splitTelegramMessage(text: string, limit = TELEGRAM_MAX_MESSAGE)
 
 /**
  * Reply with `text`, transparently splitting it across several messages when it
- * exceeds Telegram's per-message limit. Plain text (no parse mode), used by the
- * inventory-style commands whose output has no fixed length.
+ * exceeds Telegram's per-message limit. Plain text by default; pass
+ * `{ html: true }` for parse_mode HTML (the caller must escape dynamic content —
+ * commands wrapped in <code> become tap-to-copy in Telegram, which is what the
+ * admin lists use so nobody types chat ids by hand). Chunking prefers newline
+ * boundaries and the HTML we emit keeps tags within a line, so a split can't
+ * tear a tag apart.
  */
-export async function replyLong(ctx: Context, text: string): Promise<void> {
+export async function replyLong(
+  ctx: Context,
+  text: string,
+  opts?: { html?: boolean },
+): Promise<void> {
   for (const chunk of splitTelegramMessage(text)) {
-    await ctx.reply(chunk);
+    await ctx.reply(chunk, opts?.html ? { parse_mode: 'HTML' } : undefined);
   }
 }

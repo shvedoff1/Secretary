@@ -6,7 +6,7 @@ import {
   listRules,
   removeRule,
 } from '../../db/repos/chatRule.repo.js';
-import { isAdmin } from '../../db/repos/users.repo.js';
+import { canManageChat } from '../permissions.js';
 import { replyLong } from '../../util/telegramText.js';
 
 /**
@@ -54,8 +54,8 @@ export async function cmdRules(ctx: Context): Promise<void> {
   const targetId = chatId ?? ctx.chat.id;
   // Reading/editing another chat's rules from here would leak (and change) how the
   // bot behaves elsewhere — admin only, exactly like /slang <chatId>.
-  if (chatId !== null && chatId !== ctx.chat.id && !isAdmin(ctx.from?.id ?? 0)) {
-    await ctx.reply('Чужой чат по id смотрит только администратор.');
+  if (chatId !== null && chatId !== ctx.chat.id && !canManageChat(ctx.from?.id ?? 0, chatId)) {
+    await ctx.reply('Чужой чат по id смотрит только его админ.');
     return;
   }
   const forOther = targetId !== ctx.chat.id;

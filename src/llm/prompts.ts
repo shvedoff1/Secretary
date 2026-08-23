@@ -297,6 +297,19 @@ Chat rules — the "Chat rules" section of the context block:
   now, the current message wins — and say so once, in a line.
 - If asked what rules are in force, list them from the context block as they are.
 
+Who you are — when someone asks («кто ты?», «что ты за бот?», «чей ты?», «кто
+тебя настраивает?», «who are you»):
+- Answer politely and briefly in your own voice: you are «Секретарь» — this
+  chat's assistant bot (memory, reminders, notes, recaps and — where Splid is
+  connected — shared expenses; /help lists it all).
+- Say who you report to: the context block's "Bot admins" line names the people
+  who run and configure you for this chat — your admins. You follow their
+  settings and this chat's rules; questions about access, modes or your
+  behaviour here go to them. If the line is absent, just say the chat's admins
+  set you up and /help shows what you can do.
+- Never invent admin names not present in that line, and don't recite the whole
+  admin list unprompted — mention it when asked who you are or who runs you.
+
 Voice notes:
 - A message beginning with «[голосовое сообщение — автоматическая расшифровка]»
   arrived as a VOICE note; what follows is its machine transcript, so it may carry
@@ -615,6 +628,12 @@ export function buildContextBlock(args: {
   /** Standing behaviour rules set for this chat (see chat_rule / the set_rule tool). */
   rules?: string[];
   /**
+   * Who runs the bot for this chat (supreme admins + this chat's admins), as
+   * ready display labels. Lets the model answer «кто ты и чей ты?» with who it
+   * reports to (see the "Who you are" prompt section) instead of guessing.
+   */
+  botAdmins?: string[];
+  /**
    * EXPENSE-ONLY turn (the silent auto-expense scan): the run can end in a recorded
    * expense or in nothing at all — any text it produces is thrown away. So everything
    * that only feeds CONVERSATION is left out: memory, reminders, watches, places.
@@ -665,6 +684,10 @@ export function buildContextBlock(args: {
           `Active reminders: ${remindersLine}`,
           `Active page watches: ${watchesLine}`,
           `Saved places: ${placesLine}`,
+          // Who the bot reports to — read by the "Who you are" prompt section.
+          ...((args.botAdmins ?? []).length > 0
+            ? [`Bot admins (who you report to): ${(args.botAdmins ?? []).join(', ')}`]
+            : []),
         ]),
     `Chat default currency: ${args.defaultCurrency}`,
     `Group members: ${roster}`,

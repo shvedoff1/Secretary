@@ -4,7 +4,15 @@ import { getProvider } from '../../core/registry.js';
 import { ProviderError } from '../../core/provider.js';
 import type { Member } from '../../core/types.js';
 import { normalizeName } from '../../util/ids.js';
-import { isAdmin } from '../../db/repos/users.repo.js';
+import {
+  canManageChat,
+  chatLabel,
+  isBotManager,
+  isSupremeAdmin,
+  managedChatIds,
+  userLabel,
+} from '../permissions.js';
+import { listChatAdmins } from '../../db/repos/chatAdmin.repo.js';
 import {
   getChatConfig,
   listChatConfigs,
@@ -40,6 +48,7 @@ import {
   isReactionsEnabled,
   setReactionsEnabled,
   getTimezone,
+  listKnownChats,
 } from '../../db/repos/chatSettings.repo.js';
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
@@ -53,22 +62,39 @@ import { renderEpisodeLine } from '../../episodes/render.js';
 import { listProfiles, clearProfiles } from '../../db/repos/profile.repo.js';
 import { formatInTimezone } from '../../util/schedule.js';
 import { replyLong } from '../../util/telegramText.js';
+import { escapeHtml } from '../../util/telegramHtml.js';
 import { modeSpec, parseMode, renderModeCard, MODE_NAMES } from '../../modes.js';
 import { modeKeyboard } from '../keyboards.js';
 import { countRules } from '../../db/repos/chatRule.repo.js';
 
-/** Gate: supreme admin only, and only in a private chat (other chats' data must
- * not leak into a group). Returns false (and replies) if not allowed. */
-async function ensureAdminDM(ctx: Context): Promise<boolean> {
-  if (!ctx.from || !isAdmin(ctx.from.id)) {
-    if (ctx.chat?.type === 'private') await ctx.reply('Команда только для администратора.');
+/**
+ * Gate for per-chat admin commands: DM-only (other chats' data must not leak
+ * into a group), and the caller must MANAGE the target chat — supreme admins
+ * manage every chat, chat admins only the chats granted to them (see /admins).
+ * Pass chatId = null before the id is parsed/known: then only "is any kind of
+ * admin" is checked, so usage hints stay visible to chat admins too.
+ * Returns false (and replies) if not allowed.
+ */
+async function ensureManagerDM(ctx: Context, chatId: number | null): Promise<boolean> {
+  const uid = ctx.from?.id;
+  if (!uid || !isBotManager(uid)) {
+    if (ctx.chat?.type === 'private') await ctx.reply('Команда только для админов бота.');
     return false;
   }
   if (ctx.chat?.type !== 'private') {
     await ctx.reply('Админ-команды по чатам работают только в личке со мной.');
     return false;
   }
+  if (chatId !== null && !canManageChat(uid, chatId)) {
+    await ctx.reply(`Чат ${chatId} не под твоим управлением. Твои чаты: /chats`);
+    return false;
+  }
   return true;
+}
+
+/** Tap-to-copy command markup (Telegram copies a <code> block on tap). */
+function code(cmd: string): string {
+  return `<code>${escapeHtml(cmd)}</code>`;
 }
 
 function args(ctx: Context): string {
@@ -102,10 +128,10 @@ async function membersOf(providerName: string, groupId: string): Promise<Member[
  * they can't do about a recording of their group chat).
  */
 export async function cmdChatLog(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const cfg = loadConfig();
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /chatlog <chatId> [clear]');
     return;
@@ -139,15 +165,15 @@ export async function cmdChatLog(ctx: Context): Promise<void> {
 // --- /episodes : inspect or wipe a chat's conversation journal --------------
 
 /**
- * The journal is what the bot "remembers happening" in a chat, so the admin needs
- * to see what got written (each entry is cheap-model output) and to be able to
- * wipe it, mirroring /chatlog for the raw record it is derived from.
+ * The journal is what the bot "remembers happening" in a chat, so whoever manages
+ * the chat needs to see what got written (each entry is cheap-model output) and
+ * to be able to wipe it, mirroring /chatlog for the raw record it is derived from.
  */
 export async function cmdEpisodes(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const cfg = loadConfig();
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /episodes <chatId> [clear]');
     return;
@@ -189,15 +215,15 @@ export async function cmdEpisodes(ctx: Context): Promise<void> {
 
 /**
  * The cards are cheap-model output that the bot serves back as its own knowledge
- * of the people, so the admin must be able to read exactly what got written —
- * and wipe it (cards are derived views: they regenerate at the next episode
- * close from memory + fresh notes, so clearing loses nothing durable).
+ * of the people, so whoever manages the chat must be able to read exactly what
+ * got written — and wipe it (cards are derived views: they regenerate at the next
+ * episode close from memory + fresh notes, so clearing loses nothing durable).
  */
 export async function cmdProfile(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const cfg = loadConfig();
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /profile <chatId> [clear]');
     return;
@@ -239,31 +265,76 @@ export async function cmdProfile(ctx: Context): Promise<void> {
   ].join('\n'));
 }
 
-// --- /chats : list every configured chat -----------------------------------
+// --- /chats : the chats YOU manage, with tap-to-copy commands ---------------
 
+/**
+ * The DM home screen for anyone with admin rights: which chats are under your
+ * management and what to do next with each. A supreme admin sees every chat the
+ * bot knows (configured, trusted, or just titled); a chat admin sees only the
+ * chats granted to them. Every command is a <code> block, so managing a chat is
+ * tap-to-copy — nobody types -100… ids by hand.
+ */
 export async function cmdChats(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
-  const chats = listChatConfigs();
-  if (chats.length === 0) {
-    await ctx.reply('Пока нет настроенных чатов. Бота добавляют в группу и зовут /group там, либо настрой отсюда: /setgroup <chatId> <код>.');
+  if (!(await ensureManagerDM(ctx, null))) return;
+  const uid = ctx.from!.id;
+  const managed = managedChatIds(uid);
+  const supreme = managed === 'all';
+
+  // Supreme: union of Splid-configured chats and every chat with settings
+  // (trusted / mode-set / titled). Chat admin: exactly the granted list.
+  let ids: number[];
+  if (supreme) {
+    const set = new Set<number>();
+    for (const c of listChatConfigs()) set.add(c.chat_id);
+    for (const c of listKnownChats()) set.add(c.chat_id);
+    ids = [...set];
+  } else {
+    ids = managed;
+  }
+
+  if (ids.length === 0) {
+    await ctx.reply(
+      supreme
+        ? 'Пока нет настроенных чатов. Добавь меня в группу — пришлю сюда уведомление с выбором режима.'
+        : 'За тобой пока не закреплён ни один чат — попроси верховного админа выдать права (/admins).',
+    );
     return;
   }
-  const lines = chats.map((c) => {
-    const group = c.provider_group_id ? '✓' : '✗';
-    return `• ${c.title ?? '(без названия)'} — id ${c.chat_id}\n  ${c.provider_name}:${group} · ${c.default_currency}`;
+
+  const lines = ids.map((id) => {
+    const cfg = getChatConfig(id);
+    const bits = [
+      `режим ${modeSpec(getChatMode(id)).label}`,
+      cfg?.provider_group_id ? `Splid ✓ (${cfg.default_currency})` : null,
+      isChatTrusted(id) ? 'доверенный' : null,
+    ].filter(Boolean);
+    return `• <b>${escapeHtml(chatLabel(id))}</b> — ${bits.join(' · ')}\n  настройки: ${code(`/chat ${id}`)}`;
   });
-  await ctx.reply(
-    [`Чаты (${chats.length}):`, ...lines, '', 'Детали: /chat <chatId>'].join('\n'),
+
+  await replyLong(
+    ctx,
+    [
+      supreme ? `Чаты (${ids.length}):` : `Твои чаты (${ids.length}):`,
+      ...lines,
+      '',
+      'Команды копируются тапом. С каждым чатом можно: сменить режим и правила поведения, ' +
+        'включать/выключать юмор, сленг, вбросы и реакции, править память и сленг, ' +
+        `смотреть лог и подключать Splid — всё внутри ${code('/chat <id>')}.`,
+      ...(supreme
+        ? [`Выдать кому-то права на чат: ${code('/admins <chatId> add <tgUserId>')} — детали в /help.`]
+        : []),
+    ].join('\n'),
+    { html: true },
   );
 }
 
 // --- /chat <id> : full detail ----------------------------------------------
 
 export async function cmdChat(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const id = parseChatId(args(ctx));
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
-    await ctx.reply('Использование: /chat <chatId>');
+    await ctx.reply('Использование: /chat <chatId> — список твоих чатов с готовыми командами: /chats');
     return;
   }
   // A chat_config row exists only for Splid-linked chats, but the bot learns
@@ -282,7 +353,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
     ? members
         .map((m) => {
           const tg = linkedBy.get(m.id);
-          return `   - ${m.name}${tg ? ` ↔ tg:${tg}` : ' (не привязан)'}`;
+          return `   - ${escapeHtml(m.name)}${tg ? ` ↔ tg:${tg}` : ' (не привязан)'}`;
         })
         .join('\n')
     : '   (нет / группа не подключена)';
@@ -298,8 +369,8 @@ export async function cmdChat(ctx: Context): Promise<void> {
         .slice(0, memLimit)
         .map((it, i) => {
           const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : '';
-          const who = it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : '';
-          return `   ${i + 1}. ${tag}${it.content}${who}`;
+          const who = it.scope === 'user' && it.subject ? ` (→ ${escapeHtml(it.subject)})` : '';
+          return `   ${i + 1}. ${tag}${escapeHtml(it.content)}${who}`;
         })
         .join('\n') + (memHidden > 0 ? `\n   …и ещё ${memHidden} (показываю ${memLimit})` : '')
     : '(пусто)';
@@ -307,31 +378,43 @@ export async function cmdChat(ctx: Context): Promise<void> {
   const ruleCount = countRules(id);
   const rulesLine =
     ruleCount > 0
-      ? `правила поведения: ${ruleCount} (посмотреть: /rules ${id})`
-      : `правила поведения: нет (задать: /rules ${id} add <текст>)`;
+      ? `правила поведения: ${ruleCount} (посмотреть: ${code(`/rules ${id}`)})`
+      : `правила поведения: нет (задать: ${code(`/rules ${id} add <текст>`)})`;
 
   const slangCount = getLexicon(id).length;
   const slangState = isChatSlangEnabled(id) ? 'вкл' : 'выкл';
   const slangLine =
-    `сленг в ответах: ${slangState} (/slang ${id} on|off) · ` +
-    (slangCount ? `выучено ${slangCount} словечек (/slang ${id})` : 'выучено: (пусто)');
+    `сленг в ответах: ${slangState} (${code(`/slang ${id} on|off`)}) · ` +
+    (slangCount ? `выучено ${slangCount} словечек (${code(`/slang ${id}`)})` : 'выучено: (пусто)');
+
+  // Who runs this chat: its chat admins (if any) — supreme admins run everything
+  // and are listed in /help, not per chat.
+  const chatAdmins = listChatAdmins(id);
+  const adminsLine = chatAdmins.length
+    ? `админы чата: ${chatAdmins.map((a) => escapeHtml(userLabel(a.tg_user_id))).join(', ')}` +
+      (isSupremeAdmin(ctx.from!.id) ? ` (управлять: ${code(`/admins ${id}`)})` : '')
+    : isSupremeAdmin(ctx.from!.id)
+      ? `админы чата: нет (назначить: ${code(`/admins ${id} add <tgUserId>`)})`
+      : 'админы чата: только ты и верховные админы';
 
   const provider = cfg
-    ? `${cfg.provider_name} (group ${cfg.provider_group_id ?? '—'})`
+    ? `${escapeHtml(cfg.provider_name)} (group ${escapeHtml(cfg.provider_group_id ?? '—')})`
     : 'не настроен (не подключён к Splid)';
 
   // Memory/roster are open-ended, so chunk to stay under Telegram's 4096 cap —
   // a large chat would otherwise 400 and look like the command did nothing.
+  // HTML mode: dynamic content is escaped above, commands are tap-to-copy.
   await replyLong(
     ctx,
     [
-      `Чат: ${cfg?.title ?? '(без названия)'}`,
-      `id: ${id}`,
-      `режим: ${modeSpec(getChatMode(id)).label} (сменить: /mode ${id} — кнопками, или /mode ${id} ${MODE_NAMES})`,
-      `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (/trust ${id} on|off)`,
-      `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (/chime ${id} on|off)`,
-      `юморайзер: ${isChatHumorEnabled(id) ? 'вкл' : 'выкл'} (/humor ${id} on|off)`,
-      `рандомные реакции: ${isReactionsEnabled(id) ? 'вкл' : 'выкл'} (/react ${id} on|off)`,
+      `Чат: <b>${escapeHtml(chatLabel(id))}</b>`,
+      `id: <code>${id}</code>`,
+      `режим: ${modeSpec(getChatMode(id)).label} (сменить кнопками: ${code(`/mode ${id}`)}, или ${code(`/mode ${id} <${MODE_NAMES}>`)})`,
+      `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (${code(`/trust ${id} on|off`)})`,
+      adminsLine,
+      `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (${code(`/chime ${id} on|off`)})`,
+      `юморайзер: ${isChatHumorEnabled(id) ? 'вкл' : 'выкл'} (${code(`/humor ${id} on|off`)})`,
+      `рандомные реакции: ${isReactionsEnabled(id) ? 'вкл' : 'выкл'} (${code(`/react ${id} on|off`)})`,
       rulesLine,
       `провайдер: ${provider}`,
       `валюта: ${cfg?.default_currency ?? loadConfig().DEFAULT_CURRENCY}`,
@@ -341,25 +424,39 @@ export async function cmdChat(ctx: Context): Promise<void> {
       memory,
       slangLine,
       ``,
-      `Изменить: /setgroup ${id} <код> · /setcurrency ${id} <CUR> · /setmemory ${id} <текст> · /addmemory ${id} <текст> · /persona ${id} <N|текст> · /editmemory ${id} <N> <текст> · /dedupememory ${id} · /reconcile ${id} · /clearmemory ${id} · /setlink ${id} <tgUserId> <имя> · /unlink ${id} <tgUserId>`,
+      `Изменить (тапни, чтобы скопировать): ${[
+        code(`/setgroup ${id} <код>`),
+        code(`/setcurrency ${id} <CUR>`),
+        code(`/setmemory ${id} <текст>`),
+        code(`/addmemory ${id} <текст>`),
+        code(`/persona ${id} <N|текст>`),
+        code(`/editmemory ${id} <N> <текст>`),
+        code(`/dedupememory ${id}`),
+        code(`/reconcile ${id}`),
+        code(`/clearmemory ${id}`),
+        code(`/chatlog ${id}`),
+        code(`/setlink ${id} <tgUserId> <имя>`),
+        code(`/unlink ${id} <tgUserId>`),
+      ].join(' · ')}`,
     ].join('\n'),
+    { html: true },
   );
 }
 
 // --- /setgroup <id> <code> --------------------------------------------------
 
 export async function cmdSetGroup(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
-  const [idTok, code] = headTail(args(ctx));
+  const [idTok, inviteCode] = headTail(args(ctx));
   const id = parseChatId(idTok);
-  if (id === null || !code) {
+  if (!(await ensureManagerDM(ctx, id))) return;
+  if (id === null || !inviteCode) {
     await ctx.reply('Использование: /setgroup <chatId> <код-приглашения Splid>');
     return;
   }
   const provider = getProvider('splid');
   let groupId: string;
   try {
-    groupId = (await provider.connect(code)).groupId;
+    groupId = (await provider.connect(inviteCode)).groupId;
   } catch (err) {
     const msg = err instanceof ProviderError ? err.message : String(err);
     await ctx.reply(`Не удалось подключиться к Splid: ${msg}`);
@@ -368,7 +465,7 @@ export async function cmdSetGroup(ctx: Context): Promise<void> {
   setProviderGroup({
     chatId: id,
     providerName: 'splid',
-    credential: code,
+    credential: inviteCode,
     providerGroupId: groupId,
     defaultCurrency: getChatConfig(id)?.default_currency ?? loadConfig().DEFAULT_CURRENCY,
     createdBy: ctx.from!.id,
@@ -380,9 +477,9 @@ export async function cmdSetGroup(ctx: Context): Promise<void> {
 // --- /setcurrency <id> <CUR> ------------------------------------------------
 
 export async function cmdSetCurrency(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, cur] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null || !/^[A-Za-z]{3}$/.test(cur)) {
     await ctx.reply('Использование: /setcurrency <chatId> <ISO4217, напр. EUR>');
     return;
@@ -402,7 +499,7 @@ export async function cmdSetCurrency(ctx: Context): Promise<void> {
  * «Что за режимы?» button shows, so an admin can read it before touching a chat.
  */
 export async function cmdModes(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
+  if (!(await ensureManagerDM(ctx, null))) return;
   await replyLong(
     ctx,
     `Режимы чата:\n\n${renderModeCard()}\n\n` +
@@ -421,9 +518,9 @@ export async function cmdModes(ctx: Context): Promise<void> {
  * group into the calm, personality-free helper.
  */
 export async function cmdMode(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply(
       `Использование: /mode <chatId> [${MODE_NAMES}]\n` +
@@ -465,9 +562,9 @@ export async function cmdMode(ctx: Context): Promise<void> {
  * already trusts a chat — this is the manual switch and the revoke lever.
  */
 export async function cmdTrust(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /trust <chatId> [on|off]');
     return;
@@ -502,9 +599,9 @@ export async function cmdTrust(ctx: Context): Promise<void> {
  * the feature everywhere).
  */
 export async function cmdChime(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /chime <chatId> [on|off]');
     return;
@@ -540,9 +637,9 @@ export async function cmdChime(ctx: Context): Promise<void> {
  * ENABLE_HUMOR / ENABLE_EXPENSE_QUIP flags still master-gate everything.
  */
 export async function cmdHumor(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /humor <chatId> [on|off]');
     return;
@@ -576,9 +673,9 @@ export async function cmdHumor(ctx: Context): Promise<void> {
  * seasoning never fires there.
  */
 export async function cmdReact(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /react <chatId> [on|off]');
     return;
@@ -607,9 +704,9 @@ export async function cmdReact(ctx: Context): Promise<void> {
 // --- memory ----------------------------------------------------------------
 
 export async function cmdSetMemory(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, text] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null || !text) {
     await ctx.reply('Использование: /setmemory <chatId> <текст> (заменяет память чата)');
     return;
@@ -621,9 +718,9 @@ export async function cmdSetMemory(ctx: Context): Promise<void> {
 }
 
 export async function cmdAddMemory(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, text] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null || !text) {
     await ctx.reply('Использование: /addmemory <chatId> <текст>');
     return;
@@ -633,8 +730,8 @@ export async function cmdAddMemory(ctx: Context): Promise<void> {
 }
 
 export async function cmdClearMemory(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const id = parseChatId(args(ctx));
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /clearmemory <chatId>');
     return;
@@ -651,9 +748,9 @@ export async function cmdClearMemory(ctx: Context): Promise<void> {
  * brand-new style line straight into that bucket.
  */
 export async function cmdPersona(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null || !rest) {
     await ctx.reply(
       'Использование: /persona <chatId> <N> (перенести пункт #N из /chat в стиль) ' +
@@ -687,9 +784,9 @@ export async function cmdPersona(ctx: Context): Promise<void> {
  * and /memory) in place — fix a typo or a wrong detail without removing/re-adding.
  */
 export async function cmdEditMemory(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, restA] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   const [nTok, text] = headTail(restA);
   const n = Number(nTok);
   if (id === null || !Number.isInteger(n) || n < 1 || !text) {
@@ -719,9 +816,9 @@ const pendingReconcile = new Map<number, ReconcilePlan>();
  * duplicates only) can't catch.
  */
 export async function cmdReconcile(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, rest] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /reconcile <chatId> (превью), затем /reconcile <chatId> apply');
     return;
@@ -776,8 +873,8 @@ export async function cmdReconcile(ctx: Context): Promise<void> {
 
 /** `/dedupememory <chatId>` folds duplicate memory items into one pass. */
 export async function cmdDedupeMemory(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const id = parseChatId(args(ctx));
+  if (!(await ensureManagerDM(ctx, id))) return;
   if (id === null) {
     await ctx.reply('Использование: /dedupememory <chatId>');
     return;
@@ -793,10 +890,10 @@ export async function cmdDedupeMemory(ctx: Context): Promise<void> {
 // --- member links -----------------------------------------------------------
 
 export async function cmdSetLink(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, restA] = headTail(args(ctx));
   const [tgTok, query] = headTail(restA);
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   const tgUserId = Number(tgTok);
   if (id === null || !Number.isInteger(tgUserId) || !query) {
     await ctx.reply('Использование: /setlink <chatId> <tgUserId> <имя|инициалы участника Splid>');
@@ -827,9 +924,9 @@ export async function cmdSetLink(ctx: Context): Promise<void> {
 }
 
 export async function cmdUnlink(ctx: Context): Promise<void> {
-  if (!(await ensureAdminDM(ctx))) return;
   const [idTok, tgTok] = headTail(args(ctx));
   const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
   const tgUserId = Number(tgTok);
   if (id === null || !Number.isInteger(tgUserId)) {
     await ctx.reply('Использование: /unlink <chatId> <tgUserId>');

@@ -1,7 +1,7 @@
 import { getDb } from '../client.js';
 
 /**
- * One profile card (see migration 027): the bot's own running portrait of the
+ * One profile card (see migration 028): the bot's own running portrait of the
  * chat (subject '') or of one person (subject = their name, NOCASE-unique so
  * «гоша» and «Гоша» are the same card). Cards are DERIVED — rewritten by the
  * refresh pass at episode close from the previous card + new episode notes +

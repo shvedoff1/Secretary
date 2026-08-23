@@ -253,7 +253,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (`EPISODE_QUIET_MINUTES`, default 45) the finished session's log slice is closed
   as an EPISODE: a cheap pass (`src/llm/episode.ts`, `ANTHROPIC_EPISODE_MODEL`
   Haiku at temperature 0, defensive JSON parse) compresses it into a few lines of
-  NOTES plus 2-6 lowercase topic tags → `chat_episode` (migration 026,
+  NOTES plus 2-6 lowercase topic tags → `chat_episode` (migration 027,
   `episode.repo.ts`). Boundaries are DERIVED FROM LOG TIMESTAMPS on the minute tick
   (`closer.ts` + pure `detect.ts` — NOT in-memory timers like the chime's, so they
   survive restarts and are idempotent): `MAX(ended_at)` per chat is the close
@@ -279,7 +279,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `EPISODE_MAX_MESSAGES` (per-close read cap; deeper backlog is worked off across
   ticks), `EPISODE_CHAR_BUDGET`, `EPISODE_MAX_PER_TICK`, `EPISODE_KEEP_PER_CHAT`,
   `EPISODE_RECALL_LIMIT`.
-  Episode close also drives PROFILE CARDS (`chat_profile`, migration 027,
+  Episode close also drives PROFILE CARDS (`chat_profile`, migration 028,
   `profile.repo.ts`) — "consolidation during rest": the bot's own running 2-5 line
   portrait of the chat ('' subject) and of each person (subject NOCASE-unique).
   `profileRefresh.ts` hands the cheap model (`src/llm/profile.ts`,
@@ -297,7 +297,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   the latest messages, never decides who is speaking/paid. Off with memory on the
   expense-only scan, off in tutor chats, global `ENABLE_PROFILES`. Admin
   `/profile <chatId>` shows the exact stored cards.
-- Memory fact KINDS (migration 027): every `chat_memory_item` is a `trait`
+- Memory fact KINDS (migration 028): every `chat_memory_item` is a `trait`
   (durable — the default and the old behaviour) or a `status` — a CURRENT,
   temporary state («сейчас во Вьетнаме», «болеет») the extractor now classifies
   (`kind` in its JSON; anything not explicitly status parses as trait, the safe
@@ -421,11 +421,32 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `my_chat_member` handler registered BEFORE the gate, so the join event from an
   unapproved adder still reaches the admin; buttons `m:*` set mode+trust and greet the
   chat in persona) or by `/mode` (setting a mode trusts the chat), and is managed with
-  `/trust <chatId> on|off`. Removal of the bot from a chat auto-revokes trust. The admin
-  manages the per-user whitelist from the DM:
+  `/trust <chatId> on|off`. Removal of the bot from a chat auto-revokes trust. A supreme
+  admin manages the per-user whitelist from the DM:
   `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.
+- Roles (`src/bot/permissions.ts`), deliberately FLAT — two tiers, no nesting:
+  a SUPREME admin («верховный», `users.role='admin'`; `ADMIN_TELEGRAM_ID` is re-ensured
+  as one on every boot, so the owner can never lock themselves out) manages every chat,
+  the whitelist and PEOPLE — `/admins <chatId> add|del <tgUserId>` grants per-chat admin
+  rights, `/superadmin add|del <tgUserId>` hands over/revokes the supreme role itself
+  (the configured root id is protected from demotion). A CHAT admin (row in
+  `chat_admin`, migration 026, `chatAdmin.repo.ts` — the user↔chat table) gets the FULL
+  per-chat toolkit for exactly their chats: every command in `commands/admin.ts` plus the
+  cross-chat forms of `/slang`/`/rules` and the `m:*` mode-picker callback route through
+  `canManageChat` (supreme OR chat-admin row), DM-only as before. Granting either role
+  also whitelists the user (rights without gate access would be useless); revoking a role
+  never touches access. `/chats` is the manager's home screen: a chat admin sees exactly
+  their chats, a supreme admin every known chat (chat_config ∪ chat_settings), each with
+  tap-to-copy `<code>` commands (chat titles are recorded best-effort into
+  `chat_settings.title` from `my_chat_member` and incoming group messages, so lists show
+  names, not bare ids — same in `/chat <id>`, whose whole footer is copyable commands).
+  `/help` renders three tiers (user / chat admin / supreme); `/whoami` shows the caller's
+  role and tap-to-copy ids. The assistant can answer «кто ты и чей ты?»: the context
+  block carries a "Bot admins" line (`botAdminLabels` — supremes first, then the chat's
+  admins) and the "Who you are" SYSTEM_PROMPT section (both pinned by a test) tells the
+  model to politely name who it reports to and never invent admins.
 - Chat modes (`chat_settings.mode`, admin `/mode <chatId> <режим>`) are described ONCE in
   `src/modes.ts` — the registry (label, description, greeting, and the four
   personality stances `humor`/`slang`/`chime`/`reactions`) that the picker keyboard,

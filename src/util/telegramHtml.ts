@@ -8,7 +8,7 @@
 // used to leak through as raw pipes. We render such tables into an aligned
 // monospace <pre> block instead — the columns line up and it reads like a table.
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 

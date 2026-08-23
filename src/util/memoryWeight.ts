@@ -8,7 +8,7 @@ export type Scope = 'chat' | 'user' | 'persona';
 /**
  * What sort of fact this is. A `trait` is durable, identity-level knowledge
  * («серфит», «живёт на Бали» as a home) — the default, and the only kind that
- * existed before migration 027. A `status` is a CURRENT, temporary state
+ * existed before migration 028. A `status` is a CURRENT, temporary state
  * («сейчас во Вьетнаме», «болеет», «завал на работе») — true now, wrong later,
  * so it decays on a much shorter half-life and is hard-expired from the store
  * (see expireStatuses) instead of lingering for months like a trait would.
@@ -25,7 +25,7 @@ export interface WeightedItem {
   importance: number;
   reinforce: number;
   source: 'passive' | 'explicit';
-  /** Absent = 'trait' (rows predating migration 027 and test fixtures). */
+  /** Absent = 'trait' (rows predating migration 028 and test fixtures). */
   kind?: MemoryKind;
   /** Unix ms of the last time this fact was seen/reinforced (decay is measured from here). */
   lastSeen: number;

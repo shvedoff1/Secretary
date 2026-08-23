@@ -20,6 +20,7 @@ import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { makeSummarizeChatHandler } from '../../summary/handler.js';
 import { recordChatLog } from '../chatLog.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
+import { botAdminLabels } from '../permissions.js';
 import { getMapping } from '../../db/repos/memberMap.repo.js';
 import {
   getMemoryForContext,
@@ -818,6 +819,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         // Standing behaviour rules for this chat — orders, not context (see
         // chat_rule / the set_rule tool). They apply in every mode.
         rules: listRules(chatId).map((r) => r.text),
+        // Who runs the bot here, so «кто ты и чей ты?» names real admins.
+        botAdmins: botAdminLabels(chatId),
         history,
         userContent,
       },

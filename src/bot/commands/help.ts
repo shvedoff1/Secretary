@@ -18,6 +18,7 @@ export async function cmdHelp(ctx: Context): Promise<void> {
           '/slang <chatId> on|off — говорить словечками чата (во всех ответах, факты не меняются)',
           '/react <chatId> on|off — рандомные реакции-эмодзи для чата',
           '/chatlog <chatId> — сколько сообщений чата в логе; /chatlog <chatId> clear — очистить',
+          '/episodes <chatId> — журнал бесед (эпизодическая память); /episodes <chatId> clear — очистить',
           '/chats — список чатов; /chat <id> — детали',
           '/setgroup <id> <код> · /setcurrency <id> <CUR>',
           '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id>',

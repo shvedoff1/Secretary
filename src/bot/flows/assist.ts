@@ -25,11 +25,16 @@ import {
   getMemoryForContext,
   searchMemory,
   memoryStats,
+  memorySubjects,
   insertPinned,
   findMemoryItemByText,
   editMemoryItemContent,
   removeMemoryItem,
 } from '../../db/repos/memoryItem.repo.js';
+import { listEpisodes, recentEpisodes, episodeCount } from '../../db/repos/episode.repo.js';
+import { renderEpisodeLine } from '../../episodes/render.js';
+import { searchEpisodes } from '../../episodes/search.js';
+import { buildTopicIndex } from '../../util/topicIndex.js';
 import { addExpenseTerms } from '../../db/repos/expenseTerm.repo.js';
 import { getVoiceLexicon, setGloss } from '../../db/repos/lexicon.repo.js';
 import {
@@ -185,25 +190,51 @@ export function makeRecallMemoryHandler(chatId: number): (input: RecallMemoryInp
       limit: cfg.MEMORY_RECALL_LIMIT,
       halfLifeDays: cfg.MEMORY_HALFLIFE_DAYS,
     });
+    // The journal is the episodic half of the same deep tier: one recall reaches
+    // both remembered FACTS and notes of past CONVERSATIONS, so «а о чём мы тогда
+    // говорили про X» resolves in one search. Searched by the free-text query
+    // (and by `about` when that's all there is — a person's name matches the
+    // notes that mention them).
+    const epQuery = q || who;
+    const episodeHits =
+      epQuery && cfg.ENABLE_EPISODES && cfg.ENABLE_CHAT_LOG
+        ? searchEpisodes(listEpisodes(chatId), epQuery, { limit: cfg.EPISODE_RECALL_LIMIT })
+        : [];
     const scope = who ? `про «${who}»${q ? ` по запросу «${q}»` : ''}` : `по запросу «${q}»`;
-    if (hits.length === 0) {
+    if (hits.length === 0 && episodeHits.length === 0) {
       const { total } = memoryStats(chatId);
       return total === 0
         ? 'В памяти этого чата пока пусто — честно скажи, что не знаешь.'
         : `Ничего не нашёл ${scope} (в памяти ${total} записей). Попробуй другие слова — или честно скажи, что не помнишь, не выдумывай.`;
     }
 
-    const lines = hits.map((h) => {
-      const tag = h.item.scope === 'persona' ? '🎭 ' : h.item.source === 'explicit' ? '📌 ' : '';
-      const subject = h.item.scope === 'user' && h.item.subject ? `[${h.item.subject}] ` : '';
-      return `- ${tag}${subject}${h.item.content}`;
-    });
-    logger.debug({ chatId, query: q, about: who, hits: hits.length }, 'recall_memory served');
-    return [
-      `Нашёл в памяти ${scope} (${hits.length} записей, самое подходящее сверху):`,
-      ...lines,
-      'Это факты из памяти чата — используй их, но не выдумывай того, чего тут нет.',
-    ].join('\n');
+    const out: string[] = [];
+    if (hits.length > 0) {
+      out.push(`Нашёл в памяти ${scope} (${hits.length} записей, самое подходящее сверху):`);
+      for (const h of hits) {
+        const tag = h.item.scope === 'persona' ? '🎭 ' : h.item.source === 'explicit' ? '📌 ' : '';
+        const subject = h.item.scope === 'user' && h.item.subject ? `[${h.item.subject}] ` : '';
+        out.push(`- ${tag}${subject}${h.item.content}`);
+      }
+    } else {
+      out.push(`По фактам ничего не нашёл ${scope}, но в журнале бесед есть подходящее:`);
+    }
+    if (episodeHits.length > 0) {
+      const tz = getTimezone(chatId) ?? cfg.DEFAULT_TIMEZONE;
+      if (hits.length > 0) {
+        out.push('Ещё из журнала бесед (конспекты прошлых разговоров, НЕ дословно):');
+      }
+      for (const h of episodeHits) out.push(`- ${renderEpisodeLine(h.episode, tz)}`);
+      out.push(
+        'Нужна точная переписка или подробный пересказ той беседы — вызови summarize_chat с датами из строки журнала.',
+      );
+    }
+    out.push('Это память чата — используй её, но не выдумывай того, чего тут нет.');
+    logger.debug(
+      { chatId, query: q, about: who, hits: hits.length, episodeHits: episodeHits.length },
+      'recall_memory served',
+    );
+    return out.join('\n');
   };
 }
 
@@ -689,6 +720,24 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
 
   const mode = getChatMode(chatId);
 
+  // Episodic context: the conversation journal (what the last few sessions were
+  // about) plus the topic index for the memory depth hint. Off on the
+  // expense-only scan (conversation-only context, same rule as memory) and in
+  // tutor chats (the journal's verbatim-expansion path — summarize_chat — is not
+  // exposed there, so a journal that advises calling it would dangle).
+  const journalOn =
+    !expenseOnly && mode !== 'tutor' && cfg.ENABLE_EPISODES && cfg.ENABLE_CHAT_LOG;
+  const journalTz = getTimezone(chatId) ?? cfg.DEFAULT_TIMEZONE;
+  const journal = journalOn ? recentEpisodes(chatId, cfg.EPISODE_CONTEXT_COUNT) : [];
+  const episodeTotal = journalOn ? episodeCount(chatId) : 0;
+  const memoryTopics = expenseOnly
+    ? []
+    : buildTopicIndex({
+        subjects: memorySubjects(chatId),
+        episodeTopics: journalOn ? listEpisodes(chatId).map((e) => e.topics) : [],
+        max: cfg.MEMORY_TOPIC_INDEX_MAX,
+      });
+
   // Channel markers. A voice note reaches the model as a machine transcript and a
   // forwarded message carries someone else's words — the model cannot tell either
   // from a plain typed message on its own, and a chat RULE can only key on what it
@@ -737,6 +786,10 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         // Total held, so the context block can tell the model how much is NOT shown
         // and that recall_memory reaches the rest.
         memoryTotal: expenseOnly ? 0 : memoryStats(chatId).total,
+        // The conversation journal (episodic memory) + what the deep tier covers.
+        episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
+        episodeTotal,
+        memoryTopics,
         expenseOnly,
         senderName: senderName(ctx),
         senderUsername: ctx.from?.username ?? null,

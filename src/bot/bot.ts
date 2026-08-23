@@ -43,6 +43,7 @@ import {
   cmdHumor,
   cmdReact,
   cmdChatLog,
+  cmdEpisodes,
 } from './commands/admin.js';
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
@@ -137,6 +138,7 @@ export function buildBot(token: string): Bot {
   bot.command('humor', cmdHumor);
   bot.command('react', cmdReact);
   bot.command('chatlog', cmdChatLog);
+  bot.command('episodes', cmdEpisodes);
   bot.command('dota', cmdDota);
 
   bot.callbackQuery(/^u:/, handleUserCallback);

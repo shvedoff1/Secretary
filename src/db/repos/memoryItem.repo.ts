@@ -402,6 +402,22 @@ export function searchMemory(
   });
 }
 
+/**
+ * Distinct people the store holds per-person facts about — the "who" half of the
+ * depth hint's topic index. Cheap (one DISTINCT over short strings) and paid only
+ * on turns that build a context block.
+ */
+export function memorySubjects(chatId: number): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT DISTINCT subject FROM chat_memory_item
+       WHERE chat_id = ? AND scope = 'user' AND subject <> ''
+       ORDER BY subject`,
+    )
+    .all(chatId) as { subject: string }[];
+  return rows.map((r) => r.subject);
+}
+
 /** How many facts the chat holds, split by tier (for the context hint and /chat). */
 export function memoryStats(chatId: number): { total: number; pinned: number; persona: number } {
   const row = getDb()

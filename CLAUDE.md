@@ -246,6 +246,39 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   compress are a reported GAP, all-failed falls back to the truncated verbatim window,
   and overflow says the recap starts partway in. Off via `ENABLE_SUMMARY_CONDENSE=false`
   (back to plain oldest-first truncation). The handler is async because of this pass.
+- `src/episodes/` — EPISODIC memory («журнал бесед»), the human-memory middle tier
+  between the tiny verbatim history window (`conversation_turn`, ~20 turns) and the
+  huge raw log (`chat_message_log`): the model knows WHAT past conversations were
+  about without paying for their transcripts. When a chat goes quiet
+  (`EPISODE_QUIET_MINUTES`, default 45) the finished session's log slice is closed
+  as an EPISODE: a cheap pass (`src/llm/episode.ts`, `ANTHROPIC_EPISODE_MODEL`
+  Haiku at temperature 0, defensive JSON parse) compresses it into a few lines of
+  NOTES plus 2-6 lowercase topic tags → `chat_episode` (migration 026,
+  `episode.repo.ts`). Boundaries are DERIVED FROM LOG TIMESTAMPS on the minute tick
+  (`closer.ts` + pure `detect.ts` — NOT in-memory timers like the chime's, so they
+  survive restarts and are idempotent): `MAX(ended_at)` per chat is the close
+  watermark, sessions split on silence gaps, the active tail stays open, and a
+  stretch under `EPISODE_MIN_MESSAGES` folds forward into the next session instead
+  of becoming a noise episode. A failed summarise call leaves the session UNCLOSED
+  (retry after `EPISODE_RETRY_MINUTES`) — the watermark never advances past
+  unsummarised messages. What the model sees: the newest `EPISODE_CONTEXT_COUNT`
+  entries render in the context block as a "Conversation journal" (labelled NOT
+  verbatim; each line carries chat-local + ISO dates via `render.ts` so the model
+  can hand them to `summarize_chat` for the real transcript — that's the two-hop
+  «подумать и вспомнить» path); older entries are searched by `recall_memory`,
+  whose handler now queries BOTH tiers (facts + `searchEpisodes` in `search.ts`,
+  same scorer as memory search, relevance first / recency breaks ties). The memory
+  depth hint also gained a TOPIC INDEX (`src/util/topicIndex.ts`: memory subjects
+  first, then episode topics by frequency, `MEMORY_TOPIC_INDEX_MAX`) so the model
+  knows what it COULD recall, not just how much is hidden. Journal + topics reach
+  scheduled runs too (a firing task has no history at all); OFF on the expense-only
+  scan (conversation-only context, same rule as memory) and in tutor chats
+  (summarize_chat isn't exposed there, so a journal advising it would dangle).
+  Admin `/episodes <chatId>` [clear]; off via `ENABLE_EPISODES=false` (and dormant
+  when `ENABLE_CHAT_LOG` is off — episodes are cut from the log). Knobs:
+  `EPISODE_MAX_MESSAGES` (per-close read cap; deeper backlog is worked off across
+  ticks), `EPISODE_CHAR_BUDGET`, `EPISODE_MAX_PER_TICK`, `EPISODE_KEEP_PER_CHAT`,
+  `EPISODE_RECALL_LIMIT`.
 - `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
   on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
   когда появятся сеансы Титана». Created in plain words via the `watch_page` tool

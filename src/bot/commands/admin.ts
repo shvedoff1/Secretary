@@ -44,6 +44,12 @@ import {
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { clearLog, countLog, oldestLoggedAt } from '../../db/repos/chatLog.repo.js';
+import {
+  recentEpisodes,
+  episodeCount,
+  clearEpisodes,
+} from '../../db/repos/episode.repo.js';
+import { renderEpisodeLine } from '../../episodes/render.js';
 import { formatInTimezone } from '../../util/schedule.js';
 import { replyLong } from '../../util/telegramText.js';
 import { modeSpec, parseMode, renderModeCard, MODE_NAMES } from '../../modes.js';
@@ -127,6 +133,55 @@ export async function cmdChatLog(ctx: Context): Promise<void> {
       `Держу максимум ${cfg.CHAT_LOG_KEEP_PER_CHAT} и не старше ${cfg.CHAT_LOG_RETENTION_DAYS} дней.\n` +
       `Очистить: /chatlog ${id} clear`,
   );
+}
+
+// --- /episodes : inspect or wipe a chat's conversation journal --------------
+
+/**
+ * The journal is what the bot "remembers happening" in a chat, so the admin needs
+ * to see what got written (each entry is cheap-model output) and to be able to
+ * wipe it, mirroring /chatlog for the raw record it is derived from.
+ */
+export async function cmdEpisodes(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const cfg = loadConfig();
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /episodes <chatId> [clear]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (want === 'clear') {
+    clearEpisodes(id);
+    await ctx.reply(`🧹 Чат ${id}: журнал бесед очищен.`);
+    return;
+  }
+  if (want) {
+    await ctx.reply('Использование: /episodes <chatId> [clear]');
+    return;
+  }
+  if (!cfg.ENABLE_EPISODES || !cfg.ENABLE_CHAT_LOG) {
+    await ctx.reply(
+      'Журнал бесед выключен глобально (ENABLE_EPISODES/ENABLE_CHAT_LOG=false).',
+    );
+    return;
+  }
+  const total = episodeCount(id);
+  if (total === 0) {
+    await ctx.reply(
+      `Чат ${id}: журнал бесед пуст — эпизоды появятся, когда чат поговорит и затихнет на ${cfg.EPISODE_QUIET_MINUTES} мин.`,
+    );
+    return;
+  }
+  const tz = getTimezone(id) ?? cfg.DEFAULT_TIMEZONE;
+  const latest = recentEpisodes(id, 5);
+  await replyLong(ctx, [
+    `Чат ${id}: в журнале ${total} эпизодов (держу максимум ${cfg.EPISODE_KEEP_PER_CHAT}). Последние:`,
+    ...latest.map((e) => `• ${renderEpisodeLine(e, tz)}`),
+    '',
+    `Очистить: /episodes ${id} clear`,
+  ].join('\n'));
 }
 
 // --- /chats : list every configured chat -----------------------------------

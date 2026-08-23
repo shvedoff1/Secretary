@@ -32,7 +32,14 @@ import {
   isChatHumorEnabled,
   isChatSlangEnabled,
 } from './db/repos/chatSettings.repo.js';
-import { getMemoryForContext, memoryStats } from './db/repos/memoryItem.repo.js';
+import {
+  getMemoryForContext,
+  memoryStats,
+  memorySubjects,
+} from './db/repos/memoryItem.repo.js';
+import { listEpisodes, recentEpisodes, episodeCount } from './db/repos/episode.repo.js';
+import { renderEpisodeLine } from './episodes/render.js';
+import { buildTopicIndex } from './util/topicIndex.js';
 import { makeRecallMemoryHandler } from './bot/flows/assist.js';
 import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
 import type { Member } from './core/types.js';
@@ -133,9 +140,28 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
     // Likewise a dota chat's tasks keep the dota-sensei persona.
     const mode = getChatMode(task.chatId);
 
+    // The conversation journal reaches scheduled runs too — a firing task has no
+    // chat history at all, so «what was recently talked about» is even more
+    // valuable there. Same gating as the live path (tutor excluded: it has no
+    // summarize_chat to expand an entry with).
+    const journalOn =
+      mode !== 'tutor' && cfg.ENABLE_EPISODES && cfg.ENABLE_CHAT_LOG;
+    const journalTz = task.timezone || cfg.DEFAULT_TIMEZONE;
+    const journal = journalOn
+      ? recentEpisodes(task.chatId, cfg.EPISODE_CONTEXT_COUNT)
+      : [];
+    const memoryTopics = buildTopicIndex({
+      subjects: memorySubjects(task.chatId),
+      episodeTopics: journalOn ? listEpisodes(task.chatId).map((e) => e.topics) : [],
+      max: cfg.MEMORY_TOPIC_INDEX_MAX,
+    });
+
     const result = await runAssistant(
       {
         mode,
+        episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
+        episodeTotal: journalOn ? episodeCount(task.chatId) : 0,
+        memoryTopics,
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,

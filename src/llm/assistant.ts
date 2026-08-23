@@ -99,6 +99,8 @@ export interface AssistantContext {
   allowRules?: boolean;
   /** The chat's standing behaviour rules, injected as orders into the context block. */
   rules?: string[];
+  /** Who runs the bot for this chat (display labels), for «кто ты?» answers. */
+  botAdmins?: string[];
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
   /** Expose the watch_page tool (default true; false for scheduled runs). */
@@ -320,6 +322,7 @@ export async function runAssistant(
         // nothing is hidden, and on an expense-only scan there is no memory at all).
         memoryTotal: expenseOnly ? 0 : (ctx.memoryTotal ?? 0),
         rules: ctx.rules ?? [],
+        botAdmins: ctx.botAdmins ?? [],
         expenseOnly,
       });
 

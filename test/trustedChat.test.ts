@@ -284,7 +284,7 @@ describe('handleModeCallback', () => {
 
     expect(repo.isChatTrusted(-100500)).toBe(false);
     expect(repo.getChatMode(-100500)).toBe('secretary');
-    expect(answers[0]).toMatchObject({ text: 'Только администратор.' });
+    expect(answers[0]).toMatchObject({ text: 'Только админ этого чата.' });
   });
 
   it('a greeting failure does not roll back the mode/trust', async () => {

@@ -357,11 +357,32 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `my_chat_member` handler registered BEFORE the gate, so the join event from an
   unapproved adder still reaches the admin; buttons `m:*` set mode+trust and greet the
   chat in persona) or by `/mode` (setting a mode trusts the chat), and is managed with
-  `/trust <chatId> on|off`. Removal of the bot from a chat auto-revokes trust. The admin
-  manages the per-user whitelist from the DM:
+  `/trust <chatId> on|off`. Removal of the bot from a chat auto-revokes trust. A supreme
+  admin manages the per-user whitelist from the DM:
   `/whitelist` lists everyone, `/allow <id> [имя]` opens access proactively (upsert — works
   for ids the bot has never seen, unlike the old UPDATE-only `/approve`), `/deny <id>`
   closes it; `/request` + inline approve buttons still work for inbound requests.
+- Roles (`src/bot/permissions.ts`), deliberately FLAT — two tiers, no nesting:
+  a SUPREME admin («верховный», `users.role='admin'`; `ADMIN_TELEGRAM_ID` is re-ensured
+  as one on every boot, so the owner can never lock themselves out) manages every chat,
+  the whitelist and PEOPLE — `/admins <chatId> add|del <tgUserId>` grants per-chat admin
+  rights, `/superadmin add|del <tgUserId>` hands over/revokes the supreme role itself
+  (the configured root id is protected from demotion). A CHAT admin (row in
+  `chat_admin`, migration 026, `chatAdmin.repo.ts` — the user↔chat table) gets the FULL
+  per-chat toolkit for exactly their chats: every command in `commands/admin.ts` plus the
+  cross-chat forms of `/slang`/`/rules` and the `m:*` mode-picker callback route through
+  `canManageChat` (supreme OR chat-admin row), DM-only as before. Granting either role
+  also whitelists the user (rights without gate access would be useless); revoking a role
+  never touches access. `/chats` is the manager's home screen: a chat admin sees exactly
+  their chats, a supreme admin every known chat (chat_config ∪ chat_settings), each with
+  tap-to-copy `<code>` commands (chat titles are recorded best-effort into
+  `chat_settings.title` from `my_chat_member` and incoming group messages, so lists show
+  names, not bare ids — same in `/chat <id>`, whose whole footer is copyable commands).
+  `/help` renders three tiers (user / chat admin / supreme); `/whoami` shows the caller's
+  role and tap-to-copy ids. The assistant can answer «кто ты и чей ты?»: the context
+  block carries a "Bot admins" line (`botAdminLabels` — supremes first, then the chat's
+  admins) and the "Who you are" SYSTEM_PROMPT section (both pinned by a test) tells the
+  model to politely name who it reports to and never invent admins.
 - Chat modes (`chat_settings.mode`, admin `/mode <chatId> <режим>`) are described ONCE in
   `src/modes.ts` — the registry (label, description, greeting, and the four
   personality stances `humor`/`slang`/`chime`/`reactions`) that the picker keyboard,

@@ -1,29 +1,46 @@
 import type { Context } from 'grammy';
-import { isAdmin } from '../../db/repos/users.repo.js';
+import { isBotManager, isSupremeAdmin } from '../permissions.js';
 import { MODE_NAMES } from '../../modes.js';
 
 export async function cmdHelp(ctx: Context): Promise<void> {
-  const adminSection =
-    ctx.from && isAdmin(ctx.from.id)
-      ? [
-          '',
-          'Админ (в личке):',
-          '/whitelist — кто имеет доступ; /allow <id> [имя] — открыть; /deny <id> — закрыть',
-          `/modes — какие бывают режимы и чем отличаются`,
-          `/mode <chatId> — сменить режим кнопками (или /mode <chatId> ${MODE_NAMES}); выбор режима открывает доступ всем участникам чата`,
-          '/rules <chatId> [add <текст>|del <N>|clear] — правила поведения для чата',
-          '/trust <chatId> on|off — открыть/закрыть доступ участникам чата',
-          '/chime <chatId> on|off — рандомные вбросы бота в тишину для чата',
-          '/humor <chatId> on|off — юморайзер (OpenAI-переписывание ответов) для чата',
-          '/slang <chatId> on|off — говорить словечками чата (во всех ответах, факты не меняются)',
-          '/react <chatId> on|off — рандомные реакции-эмодзи для чата',
-          '/chatlog <chatId> — сколько сообщений чата в логе; /chatlog <chatId> clear — очистить',
-          '/chats — список чатов; /chat <id> — детали',
-          '/setgroup <id> <код> · /setcurrency <id> <CUR>',
-          '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id>',
-          '/setlink <id> <tgUserId> <имя> · /unlink <id> <tgUserId>',
-        ]
-      : [];
+  const uid = ctx.from?.id ?? 0;
+  const supreme = isSupremeAdmin(uid);
+  const manager = isBotManager(uid);
+
+  // Chat admins and supreme admins both manage chats from the DM; the shared
+  // section shows the per-chat toolkit. /chats is the entry point — it lists
+  // exactly the chats the caller may touch, with tap-to-copy commands.
+  const managerSection = manager
+    ? [
+        '',
+        supreme ? 'Управление чатами (в личке):' : 'Твои чаты (ты — админ чата; всё в личке):',
+        '/chats — список твоих чатов с готовыми командами (копируются тапом)',
+        '/chat <chatId> — настройки чата: режим, доступ, память, сленг, правила',
+        `/modes — какие бывают режимы; /mode <chatId> — сменить кнопками (или /mode <chatId> ${MODE_NAMES})`,
+        '/rules <chatId> [add <текст>|del <N>|clear] — правила поведения для чата',
+        '/trust <chatId> on|off — открыть/закрыть доступ участникам чата',
+        '/chime <chatId> on|off — рандомные вбросы бота в тишину',
+        '/humor <chatId> on|off — юморайзер (OpenAI-переписывание ответов)',
+        '/slang <chatId> on|off — говорить словечками чата (факты не меняются)',
+        '/react <chatId> on|off — рандомные реакции-эмодзи',
+        '/chatlog <chatId> — лог сообщений чата; /chatlog <chatId> clear — очистить',
+        '/setgroup <id> <код> · /setcurrency <id> <CUR> — Splid и валюта',
+        '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id> — память',
+        '/setlink <id> <tgUserId> <имя> · /unlink <id> <tgUserId> — привязки к Splid',
+      ]
+    : [];
+
+  // Bot-wide powers: only supreme admins manage people (whitelist and roles).
+  const supremeSection = supreme
+    ? [
+        '',
+        'Верховный админ (люди и роли):',
+        '/whitelist — кто имеет доступ; /allow <id> [имя] — открыть; /deny <id> — закрыть',
+        '/admins <chatId> [add <tgUserId> [имя]|del <tgUserId>] — админы чата (у них все команды выше для этого чата)',
+        '/superadmin [add <tgUserId> [имя]|del <tgUserId>] — верховные админы (передать права)',
+      ]
+    : [];
+
   await ctx.reply(
     [
       'Что я умею:',
@@ -52,9 +69,10 @@ export async function cmdHelp(ctx: Context): Promise<void> {
       '/slang — словечки, которые я подхватил из чата (/slang on|off — говорить ими или нет, /slang clear — сбросить)',
       '/rules — правила поведения в этом чате: /rules add <текст> — задать, /rules del <N> — убрать, /rules clear — очистить',
       '/trata — слова, которые я считаю тратами (ответь «запомни, это трата» на пропущенное сообщение)',
-      '/whoami — кто я для бота',
+      '/whoami — кто я для бота (и мой id для админских команд)',
       '/request — запросить доступ',
-      ...adminSection,
+      ...managerSection,
+      ...supremeSection,
     ].join('\n'),
   );
 }

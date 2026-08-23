@@ -150,6 +150,44 @@ export function setChatSlangEnabled(chatId: number, enabled: boolean): void {
 }
 
 /**
+ * Best-effort chat title, recorded from incoming updates (see bot.ts) so admin
+ * lists can show a name instead of a bare id. chat_config.title covers only
+ * Splid-linked chats; this covers every chat the bot hears from.
+ */
+export function getChatTitle(chatId: number): string | null {
+  const row = getDb()
+    .prepare('SELECT title FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { title: string | null } | undefined;
+  return row?.title ?? null;
+}
+
+export function setChatTitle(chatId: number, title: string): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, title, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         title = excluded.title, updated_at = excluded.updated_at
+       WHERE chat_settings.title IS NOT excluded.title`,
+    )
+    .run(chatId, title);
+}
+
+export interface KnownChatRow {
+  chat_id: number;
+  title: string | null;
+  mode: string | null;
+  trusted: number | null;
+}
+
+/** Every chat with a settings row (any chat someone configured or that has a title). */
+export function listKnownChats(): KnownChatRow[] {
+  return getDb()
+    .prepare('SELECT chat_id, title, mode, trusted FROM chat_settings ORDER BY chat_id')
+    .all() as KnownChatRow[];
+}
+
+/**
  * Admin-granted trust for a whole chat: participants of a trusted chat pass the
  * default-deny auth gate without personal whitelist entries — the same standing
  * a Splid-connected group gets. Granted when the admin explicitly configures the

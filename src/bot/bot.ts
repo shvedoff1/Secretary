@@ -7,7 +7,8 @@ import { cmdHelp } from './commands/help.js';
 import { cmdRequest } from './commands/request.js';
 import { cmdApprove, cmdDeny, handleUserCallback } from './commands/approve.js';
 import { cmdWhitelist, cmdAllow } from './commands/whitelist.js';
-import { getChatMode } from '../db/repos/chatSettings.repo.js';
+import { cmdAdmins, cmdSuperAdmin } from './commands/admins.js';
+import { getChatMode, setChatTitle } from '../db/repos/chatSettings.repo.js';
 import { modeAllowsReactions } from '../modes.js';
 import { cmdGroup } from './commands/group.js';
 import { cmdMembers } from './commands/members.js';
@@ -83,6 +84,11 @@ export function buildBot(token: string): Bot {
     // Any new message (of any type) means the chat is active: cancel a pending
     // spontaneous chime so the bot only ever chimes into a genuine lull.
     if (ctx.chat?.id != null) cancelChime(ctx.chat.id);
+    // Keep the chat's display name fresh so /chats shows names, not bare ids
+    // (the SQL no-ops when the title hasn't changed).
+    if (ctx.chat && 'title' in ctx.chat && ctx.chat.title) {
+      setChatTitle(ctx.chat.id, ctx.chat.title);
+    }
     // No playful reactions where the mode doesn't want them — a study room and a
     // calm assistant chat are not the group hang.
     if (ctx.chat?.id == null || modeAllowsReactions(getChatMode(ctx.chat.id))) {
@@ -116,7 +122,10 @@ export function buildBot(token: string): Bot {
   bot.command('trata', cmdTrata);
   bot.command('ping', cmdPing);
 
-  // Admin-only chat administration (private chat with the bot).
+  // Chat administration (private chat with the bot): supreme admins manage every
+  // chat, chat admins the chats granted to them via /admins.
+  bot.command('admins', cmdAdmins);
+  bot.command('superadmin', cmdSuperAdmin);
   bot.command('chats', cmdChats);
   bot.command('chat', cmdChat);
   bot.command('setgroup', cmdSetGroup);

@@ -28,6 +28,48 @@ export function isAdmin(tgUserId: number): boolean {
   return getUser(tgUserId)?.role === 'admin';
 }
 
+/**
+ * Grant or revoke the supreme-admin role ("верховный админ"). Granting also
+ * approves the user — a role without access would be useless (the auth gate
+ * would still block their DM). Revoking touches only the role, never the
+ * whitelist status. Upsert, so a supreme admin can be appointed by id before
+ * the bot has ever seen them.
+ */
+export function setSupremeAdmin(
+  tgUserId: number,
+  supreme: boolean,
+  decidedBy: number,
+  displayName?: string | null,
+): void {
+  if (supreme) {
+    getDb()
+      .prepare(
+        `INSERT INTO users (tg_user_id, display_name, role, status, decided_at, decided_by)
+         VALUES (?, ?, 'admin', 'approved', unixepoch() * 1000, ?)
+         ON CONFLICT(tg_user_id) DO UPDATE SET
+           role = 'admin',
+           status = 'approved',
+           decided_at = excluded.decided_at,
+           decided_by = excluded.decided_by,
+           display_name = COALESCE(excluded.display_name, users.display_name)`,
+      )
+      .run(tgUserId, displayName ?? null, decidedBy);
+  } else {
+    getDb()
+      .prepare(`UPDATE users SET role = 'user' WHERE tg_user_id = ?`)
+      .run(tgUserId);
+  }
+}
+
+/** Every supreme admin, in grant order (the configured root admin first in practice). */
+export function listSupremeAdmins(): UserRow[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM users WHERE role = 'admin' ORDER BY COALESCE(decided_at, 0), tg_user_id`,
+    )
+    .all() as UserRow[];
+}
+
 /** Insert the configured admin (idempotent) as an approved admin. */
 export function ensureAdmin(tgUserId: number): void {
   getDb()

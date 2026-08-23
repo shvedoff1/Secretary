@@ -140,7 +140,7 @@ describe('/rules', () => {
 
     const stranger = ctxFor('-100500 add Пиши стихами', { fromId: 7 });
     await cmdRules(stranger.ctx);
-    expect(stranger.replies[0]).toContain('только администратор');
+    expect(stranger.replies[0]).toContain('только его админ');
     expect(repo.countRules(-100500)).toBe(1);
   });
 });

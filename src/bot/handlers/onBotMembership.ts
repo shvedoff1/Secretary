@@ -1,8 +1,8 @@
 import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
-import { isAdmin } from '../../db/repos/users.repo.js';
-import { setChatMode, setChatTrusted } from '../../db/repos/chatSettings.repo.js';
+import { canManageChat } from '../permissions.js';
+import { setChatMode, setChatTitle, setChatTrusted } from '../../db/repos/chatSettings.repo.js';
 import { modeByCode, renderModeCard } from '../../modes.js';
 import { modeKeyboard } from '../keyboards.js';
 
@@ -32,6 +32,8 @@ export async function onBotMembership(ctx: Context): Promise<void> {
 
   const cfg = loadConfig();
   const title = 'title' in upd.chat && upd.chat.title ? upd.chat.title : '(без названия)';
+  // Remember the chat's name so /chats can show it instead of a bare id.
+  if ('title' in upd.chat && upd.chat.title) setChatTitle(upd.chat.id, upd.chat.title);
   const by = [upd.from.first_name, upd.from.last_name].filter(Boolean).join(' ') || upd.from.id;
 
   try {
@@ -57,17 +59,19 @@ export async function onBotMembership(ctx: Context): Promise<void> {
   }
 }
 
-/** Callback handler for the mode-picker buttons (prefix `m:`, admin only). */
+/** Callback handler for the mode-picker buttons (prefix `m:`). The chat id is in
+ * the callback data, so the gate is per chat: supreme admins always pass, chat
+ * admins only for their own chats (they get this keyboard from /mode <id>). */
 export async function handleModeCallback(ctx: Context): Promise<void> {
-  if (!ctx.from || !isAdmin(ctx.from.id)) {
-    await ctx.answerCallbackQuery({ text: 'Только администратор.' });
-    return;
-  }
   const parts = (ctx.callbackQuery?.data ?? '').split(':');
   const code = parts[1];
   const chatId = Number(parts[2]);
   if (!code || !Number.isInteger(chatId) || chatId === 0) {
     await ctx.answerCallbackQuery();
+    return;
+  }
+  if (!ctx.from || !canManageChat(ctx.from.id, chatId)) {
+    await ctx.answerCallbackQuery({ text: 'Только админ этого чата.' });
     return;
   }
 

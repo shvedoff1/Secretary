@@ -4,7 +4,7 @@ import {
   isChatSlangEnabled,
   setChatSlangEnabled,
 } from '../../db/repos/chatSettings.repo.js';
-import { isAdmin } from '../../db/repos/users.repo.js';
+import { canManageChat } from '../permissions.js';
 import { replyLong } from '../../util/telegramText.js';
 
 const CLEAR_ARGS = new Set(['clear', 'reset', 'очистить', 'сброс', 'забудь']);
@@ -49,8 +49,8 @@ export async function cmdSlang(ctx: Context): Promise<void> {
   // Targeting another chat by id is an admin-only inspection from the DM. Reading
   // one chat's slang while sitting in another would leak between chats, so gate it.
   const targetId = chatId ?? ctx.chat.id;
-  if (chatId !== null && chatId !== ctx.chat.id && !isAdmin(ctx.from?.id ?? 0)) {
-    await ctx.reply('Чужой чат по id смотрит только администратор.');
+  if (chatId !== null && chatId !== ctx.chat.id && !canManageChat(ctx.from?.id ?? 0, chatId)) {
+    await ctx.reply('Чужой чат по id смотрит только его админ.');
     return;
   }
 
@@ -60,8 +60,8 @@ export async function cmdSlang(ctx: Context): Promise<void> {
   // The on/off switch changes how the bot TALKS to everyone in the chat, so it's
   // admin-only (reading and clearing your own chat's words stays open).
   if (ON_ARGS.has(arg) || OFF_ARGS.has(arg)) {
-    if (!isAdmin(ctx.from?.id ?? 0)) {
-      await ctx.reply('Включать и выключать сленг может только администратор.');
+    if (!canManageChat(ctx.from?.id ?? 0, targetId)) {
+      await ctx.reply('Включать и выключать сленг может только админ этого чата.');
       return;
     }
     const on = ON_ARGS.has(arg);

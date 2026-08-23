@@ -144,7 +144,7 @@ describe('/slang on|off', () => {
     const { ctx, replies } = ctxFor('off', { fromId: 777 });
     await cmdSlang(ctx);
     expect(repo.isChatSlangEnabled(777)).toBe(true);
-    expect(replies[0]).toContain('администратор');
+    expect(replies[0]).toContain('админ');
   });
 
   it('still lists the words (with the switch state) and still clears them', async () => {

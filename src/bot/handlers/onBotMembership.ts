@@ -3,7 +3,7 @@ import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { canManageChat } from '../permissions.js';
 import { setChatMode, setChatTitle, setChatTrusted } from '../../db/repos/chatSettings.repo.js';
-import { modeByCode, renderModeCard } from '../../modes.js';
+import { applyModeDefaults, modeByCode, renderModeCard, renderSetupCard } from '../../modes.js';
 import { modeKeyboard } from '../keyboards.js';
 
 /**
@@ -102,12 +102,25 @@ export async function handleModeCallback(ctx: Context): Promise<void> {
   }
   setChatMode(chatId, spec.mode);
   setChatTrusted(chatId, true);
+  // The preset's tone stances become the chat's actual switches — the setup card
+  // below shows what was just set and how to re-toggle each piece.
+  applyModeDefaults(chatId, spec);
   await ctx.answerCallbackQuery({ text: 'Готово' });
   await editSafe(
     ctx,
     `✅ Чат ${chatId} → ${spec.label}, доступ открыт всем участникам.\n` +
       `Сменить: /mode ${chatId} — покажу список кнопками · закрыть доступ: /trust ${chatId} off`,
   );
+  // Walk the admin through the behaviour knobs the preset just set (humorizer,
+  // slang, chime, reactions + the custom-persona and rules levers). Best-effort:
+  // the pick already succeeded.
+  try {
+    if (ctx.chat?.id != null) {
+      await ctx.api.sendMessage(ctx.chat.id, renderSetupCard(chatId), { parse_mode: 'HTML' });
+    }
+  } catch (err) {
+    logger.warn({ err, chatId }, 'could not send the behaviour setup card');
+  }
   // Say hi in the chat so the squad sees the bot is live. Best-effort: the admin
   // action already succeeded; a failed greeting must not roll anything back.
   try {

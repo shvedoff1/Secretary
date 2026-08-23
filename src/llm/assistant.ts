@@ -3,10 +3,7 @@ import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
 import {
-  SYSTEM_PROMPT,
-  ASSISTANT_SYSTEM_PROMPT,
-  TUTOR_SYSTEM_PROMPT,
-  DOTA_SYSTEM_PROMPT,
+  systemPromptFor,
   buildContextBlock,
   buildTutorContextBlock,
 } from './prompts.js';
@@ -66,16 +63,19 @@ import type { Turn } from '../db/repos/conversation.repo.js';
 
 export interface AssistantContext {
   /**
-   * Chat persona. 'secretary' (default) is the usual chill assistant with the full
-   * toolset. 'tutor' is the accuracy-first exam-prep tutor: strict prompt, no
-   * expense/surf/poi/slang tools (memory, reminders and web search stay), adaptive
-   * thinking with a bigger token budget, and replies are never humorized. 'dota'
-   * behaves exactly like secretary (full toolset, humorizable replies) but speaks
-   * as the schoolkid-turned-Dota-teacher persona. 'assistant' is secretary with the
-   * persona removed: same toolset, calm neutral voice, no jokes — how it behaves is
-   * steered by the chat's own rules instead.
+   * Chat personality preset. 'secretary' (default) is the usual chill surfer with
+   * the full toolset. 'tutor' is the accuracy-first exam-prep tutor: strict
+   * prompt, no expense/surf/poi/slang tools (memory, reminders and web search
+   * stay), adaptive thinking with a bigger token budget, and replies are never
+   * humorized. 'dota' behaves exactly like secretary (full toolset, humorizable
+   * replies) but speaks as the schoolkid-turned-Dota-teacher persona. 'assistant'
+   * is the calm one — persona removed, steered by the chat's own rules. 'funny'
+   * is the jokester without the surfer theme. 'custom' speaks whatever persona
+   * `personaPrompt` describes (without one it runs as the calm assistant).
    */
   mode?: ChatMode;
+  /** The admin's own persona description for the «custom» preset (chat_settings.persona_prompt). */
+  personaPrompt?: string | null;
   defaultCurrency: string;
   members: { name: string; initials?: string }[];
   senderName: string;
@@ -373,16 +373,11 @@ export async function runAssistant(
       system: [
         {
           type: 'text',
-          // Dota mode is secretary-with-a-different-persona: same context block,
-          // same tools, same thinking/token budget — only the system prompt (and
-          // hence its own cache prefix) differs.
-          text: tutor
-            ? TUTOR_SYSTEM_PROMPT
-            : ctx.mode === 'dota'
-              ? DOTA_SYSTEM_PROMPT
-              : ctx.mode === 'assistant'
-                ? ASSISTANT_SYSTEM_PROMPT
-                : SYSTEM_PROMPT,
+          // The preset picks the prompt: same context block, same tools, same
+          // thinking/token budget — only the system prompt (and hence its own
+          // cache prefix) differs. A custom persona is static per chat, so a
+          // custom chat still forms a stable cache prefix of its own.
+          text: systemPromptFor(ctx.mode ?? 'secretary', ctx.personaPrompt),
           cache_control: { type: 'ephemeral' },
         },
       ],

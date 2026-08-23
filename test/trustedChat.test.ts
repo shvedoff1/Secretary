@@ -218,11 +218,17 @@ describe('handleModeCallback', () => {
 
     expect(repo.getChatMode(-100500)).toBe('dota');
     expect(repo.isChatTrusted(-100500)).toBe(true);
-    // The admin DM is updated and the chat gets the sensei greeting with /ping.
+    // The preset's tone defaults became the chat's switches.
+    expect(repo.isChatHumorEnabled(-100500)).toBe(true);
+    expect(repo.isChimeEnabled(-100500)).toBe(true);
+    // The admin DM is updated, gets the behaviour setup card, and the chat gets
+    // the sensei greeting with /ping.
     expect(edits[0]).toContain('доступ открыт');
-    expect(sent).toHaveLength(1);
-    expect(sent[0]!.chatId).toBe(-100500);
-    expect(sent[0]!.text).toContain('/ping');
+    expect(sent).toHaveLength(2);
+    expect(sent[0]!.chatId).toBe(1);
+    expect(sent[0]!.text).toContain('/humor -100500');
+    expect(sent[1]!.chatId).toBe(-100500);
+    expect(sent[1]!.text).toContain('/ping');
   });
 
   it('one tap on «ассистент»: calm mode, chat trusted, neutral greeting', async () => {
@@ -237,9 +243,15 @@ describe('handleModeCallback', () => {
 
     expect(repo.getChatMode(-100500)).toBe('assistant');
     expect(repo.isChatTrusted(-100500)).toBe(true);
+    // The calm preset switches the jokes/chime/reactions off for the chat (slang stays).
+    expect(repo.isChatHumorEnabled(-100500)).toBe(false);
+    expect(repo.isChimeEnabled(-100500)).toBe(false);
+    expect(repo.isReactionsEnabled(-100500)).toBe(false);
+    expect(repo.isChatSlangEnabled(-100500)).toBe(true);
     expect(edits[0]).toContain('доступ открыт');
     // The greeting points at the rules — that's how behaviour is configured here.
-    expect(sent[0]!.text).toContain('/rules');
+    const greeting = sent.find((s) => s.chatId === -100500);
+    expect(greeting!.text).toContain('/rules');
   });
 
   it('«что за режимы?» describes them and keeps the picker on screen', async () => {

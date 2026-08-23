@@ -383,26 +383,48 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   block carries a "Bot admins" line (`botAdminLabels` — supremes first, then the chat's
   admins) and the "Who you are" SYSTEM_PROMPT section (both pinned by a test) tells the
   model to politely name who it reports to and never invent admins.
-- Chat modes (`chat_settings.mode`, admin `/mode <chatId> <режим>`) are described ONCE in
-  `src/modes.ts` — the registry (label, description, greeting, and the four
-  personality stances `humor`/`slang`/`chime`/`reactions`) that the picker keyboard,
-  `/modes`, `/mode`, `/chat`, the join-DM greeting and every feature gate read from,
-  so adding a mode is one entry plus a system prompt rather than a dozen
-  `Record<ChatMode, …>` maps drifting apart. The gates are `modeAllowsHumor/Slang/
-  Chime/Reactions`, applied ON TOP of the per-chat switches (`/humor`, `/slang`,
-  `/chime`, `/react`) — both must allow a feature — at every call site that can
-  produce tone: the live reply, the scheduler, the expense quip and the spending
-  digest. SELECTOR FLOW: the "bot was added" DM (`onBotMembership.ts`) shows the
-  picker built from the registry with an «ℹ️ Что за режимы?» button (`m:?:<chatId>`)
-  that renders the descriptions and keeps the picker on screen — look, then choose;
+- Personality PRESETS (`chat_settings.mode`, admin `/mode <chatId> <пресет>`) are
+  described ONCE in `src/modes.ts` — the registry (stored key + user-facing `name`
+  surfer/calm/funny/dota/tutor/custom, label, description, greeting, and the four
+  tone DEFAULTS `humor`/`slang`/`chime`/`reactions`) that the picker keyboard,
+  `/modes`, `/mode`, `/chat`, the join-DM greeting and the setup card read from,
+  so adding a preset is one entry plus a system prompt rather than a dozen
+  `Record<ChatMode, …>` maps drifting apart. SETTINGS ARE PART OF THE PRESET:
+  picking one (buttons, `/mode`, or `/prompt`) calls `applyModeDefaults`, which
+  WRITES the preset's stances into the per-chat switches (`/humor`, `/slang`,
+  `/chime`, `/react`) — from then on the switches alone decide, so an admin can
+  keep the calm voice but flip the chime back on. `modeAllowsHumor/Slang/Chime/
+  Reactions` are now STRUCTURAL (false only for the `toneLocked` tutor — a study
+  room stays clean whatever the switches say, and never learns slang); every tone
+  call site still checks `modeAllows* && isChat*Enabled`. Migration 027 backfilled
+  the switches for chats configured under the old both-must-allow semantics.
+  SETUP FLOW: after every pick the admin gets the behaviour card
+  (`renderSetupCard` — what the humorizer/slang/chime/reactions actually DO, each
+  knob's current state and its tap-to-copy toggle, plus the `/prompt` and `/rules`
+  levers); `/setup <chatId>` reprints it any time. The "bot was added" DM
+  (`onBotMembership.ts`) shows the picker with an «ℹ️ Что за режимы?» button
+  (`m:?:<chatId>`) that renders the descriptions and keeps the picker on screen;
   `/modes` prints the same card, and `/mode <chatId>` with no mode replies with the
-  buttons. Picking a mode still trusts the chat.
-  `assistant` («ассистент») is the calm one: the FULL secretary skill set with the
-  persona removed — `ASSISTANT_SYSTEM_PROMPT` is a static persona-override suffix on
-  `SYSTEM_PROMPT` (like dota, so behaviour rules are shared and the prefix stays
-  cacheable) that bans jokes/surfer slang and points behaviour at the chat's RULES.
-  It keeps memory + the learned slang (that's how it "adapts to the chat") but never
-  humorizes, never chimes in and never auto-reacts. `dota`
+  buttons. Picking a preset still trusts the chat.
+  `assistant` («спокойный», parse alias `calm`) is the calm one: the FULL secretary
+  skill set with the persona removed — `ASSISTANT_SYSTEM_PROMPT` is a static
+  persona-override suffix on `SYSTEM_PROMPT` (like dota, so behaviour rules are
+  shared and the prefix stays cacheable) that bans jokes/surfer slang and points
+  behaviour at the chat's RULES. It keeps memory + the learned slang (that's how it
+  "adapts to the chat"); its defaults switch humor/chime/reactions off.
+  `funny` («весельчак») is the jokester: full skill set, `FUNNY_SYSTEM_PROMPT`
+  persona suffix (gags and puns, surfer theme banned) plus a matching
+  `persona: 'funny'` humorizer variant; ships with everything on.
+  `custom` («кастом») speaks whatever the admin described in their own words:
+  `/prompt <chatId> <текст>` stores the description (`chat_settings.persona_prompt`,
+  migration 027, capped at 2000 chars, `/prompt <id>` shows it, `clear` drops it)
+  and switches the chat to the preset; `buildCustomSystemPrompt` frames the text as
+  a TONE-ONLY override (it can't cancel accuracy/tool/safety rules — a test pins
+  the framing), `systemPromptFor(mode, personaPrompt)` is the single prompt
+  selector (live flow + scheduler), and `humorPersonaForMode` hands the same
+  description to the tone pass (`HumorPersona` now includes `{custom: string}`).
+  Without a description a custom chat runs as the calm assistant; its defaults are
+  the neutral canvas (slang on, the rest off). `dota`
   keeps the FULL secretary feature set (memory, humor, slang, chime, reminders, tools) but
   swaps the persona for a schoolkid who fancies himself a Dota 2 teacher —
   `DOTA_SYSTEM_PROMPT` is a static persona-override suffix on top of `SYSTEM_PROMPT`

@@ -10,7 +10,7 @@ import {
 } from './db/repos/scheduledTask.repo.js';
 import { nextRunMs } from './util/schedule.js';
 import { sendRichMarkdown } from './util/richMessage.js';
-import { humorizeWithPreview } from './llm/humorize.js';
+import { humorizeWithPreview, humorPersonaForMode } from './llm/humorize.js';
 import {
   applySlangOrOriginal,
   classifySlangDecision,
@@ -29,6 +29,7 @@ import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
 import {
   getChatMode,
+  getPersonaPrompt,
   isChatHumorEnabled,
   isChatSlangEnabled,
 } from './db/repos/chatSettings.repo.js';
@@ -132,10 +133,14 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
     // reduced-tools behaviour) — e.g. a daily "порешай со мной задачи" ping.
     // Likewise a dota chat's tasks keep the dota-sensei persona.
     const mode = getChatMode(task.chatId);
+    // The «custom» preset's persona description rides along so a scheduled post
+    // speaks the same character as a live reply.
+    const personaPrompt = mode === 'custom' ? getPersonaPrompt(task.chatId) : null;
 
     const result = await runAssistant(
       {
         mode,
+        personaPrompt,
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,
@@ -223,8 +228,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
             // gets the chat's voice here — its plain-chat output speaks the
             // group's lingo, exactly like the live flow.
             lexicon,
-            // Speak the chat's persona in the rewrite too (dota → sensei).
-            mode === 'dota' ? 'dota' : 'surfer',
+            // Speak the chat's persona in the rewrite too (dota → sensei,
+            // custom → the admin's described character).
+            humorPersonaForMode(mode, personaPrompt),
           )
         : result.text;
       // Every other task output — a plain reminder, a surf forecast, a task the

@@ -191,10 +191,14 @@ describe('per-chat chime toggle', () => {
 });
 
 describe('per-mode chime stance', () => {
-  it('a calm assistant chat never chimes, however long the silence', async () => {
+  it('a chat set up as the calm assistant never chimes, however long the silence', async () => {
     const chime = await load();
     const { setChatMode } = await import('../src/db/repos/chatSettings.repo.js');
+    const { applyModeDefaults, modeSpec } = await import('../src/modes.js');
+    // Picking the calm preset writes chime_disabled into the chat's switches —
+    // that switch (not the mode itself) is what keeps the chat quiet.
     setChatMode(1, 'assistant');
+    applyModeDefaults(1, modeSpec('assistant'));
 
     chime.recordChatMessage(1, 'Аня', 'тишина');
     chime.recordChatMessage(2, 'Петя', 'а тут можно');

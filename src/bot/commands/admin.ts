@@ -38,6 +38,8 @@ import { reconcileMemory, type ReconcilePlan } from '../../llm/reconcile.js';
 import {
   getChatMode,
   setChatMode,
+  getPersonaPrompt,
+  setPersonaPrompt,
   isChatTrusted,
   setChatTrusted,
   isChimeEnabled,
@@ -56,7 +58,14 @@ import { clearLog, countLog, oldestLoggedAt } from '../../db/repos/chatLog.repo.
 import { formatInTimezone } from '../../util/schedule.js';
 import { replyLong } from '../../util/telegramText.js';
 import { escapeHtml } from '../../util/telegramHtml.js';
-import { modeSpec, parseMode, renderModeCard, MODE_NAMES } from '../../modes.js';
+import {
+  applyModeDefaults,
+  modeSpec,
+  parseMode,
+  renderModeCard,
+  renderSetupCard,
+  MODE_NAMES,
+} from '../../modes.js';
 import { modeKeyboard } from '../keyboards.js';
 import { countRules } from '../../db/repos/chatRule.repo.js';
 
@@ -299,7 +308,13 @@ export async function cmdChat(ctx: Context): Promise<void> {
     [
       `Чат: <b>${escapeHtml(chatLabel(id))}</b>`,
       `id: <code>${id}</code>`,
-      `режим: ${modeSpec(getChatMode(id)).label} (сменить кнопками: ${code(`/mode ${id}`)}, или ${code(`/mode ${id} <${MODE_NAMES}>`)})`,
+      `пресет: ${modeSpec(getChatMode(id)).label} (сменить кнопками: ${code(`/mode ${id}`)}, или ${code(`/mode ${id} <${MODE_NAMES}>`)})`,
+      ...(getChatMode(id) === 'custom'
+        ? [
+            `свой характер: ${getPersonaPrompt(id) ? 'задан' : 'не задан'} (${code(`/prompt ${id}`)})`,
+          ]
+        : []),
+      `поведение (что такое юморайзер, сленг, вбросы, реакции): ${code(`/setup ${id}`)}`,
       `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (${code(`/trust ${id} on|off`)})`,
       adminsLine,
       `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (${code(`/chime ${id} on|off`)})`,
@@ -315,6 +330,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       slangLine,
       ``,
       `Изменить (тапни, чтобы скопировать): ${[
+        code(`/prompt ${id} <текст>`),
         code(`/setgroup ${id} <код>`),
         code(`/setcurrency ${id} <CUR>`),
         code(`/setmemory ${id} <текст>`),
@@ -392,10 +408,13 @@ export async function cmdModes(ctx: Context): Promise<void> {
   if (!(await ensureManagerDM(ctx, null))) return;
   await replyLong(
     ctx,
-    `Режимы чата:\n\n${renderModeCard()}\n\n` +
+    `Пресеты характера:\n\n${renderModeCard()}\n\n` +
       `Поставить: /mode <chatId> ${MODE_NAMES} — или /mode <chatId> без режима, ` +
-      `тогда покажу кнопками. Выбор режима открывает доступ всем участникам чата.\n` +
-      `Поведение внутри режима донастраивается правилами: /rules <chatId> add <текст>.`,
+      `тогда покажу кнопками. Выбор пресета открывает доступ всем участникам чата и ` +
+      `включает его стартовые настройки (юмор, сленг, вбросы, реакции) — потом каждую ` +
+      `можно крутить отдельно, карта: /setup <chatId>.\n` +
+      `Свой характер словами: /prompt <chatId> <текст>. ` +
+      `Поведение донастраивается правилами: /rules <chatId> add <текст>.`,
   );
 }
 
@@ -438,10 +457,106 @@ export async function cmdMode(ctx: Context): Promise<void> {
   // Setting a mode is an explicit admin act of configuring the chat — trust it,
   // so a group switched to e.g. dota immediately works for every participant.
   setChatTrusted(id, true);
+  // The preset's tone stances become the chat's own switches; the setup card
+  // below explains what each one does and how to re-toggle it.
+  applyModeDefaults(id, modeSpec(mode));
   await ctx.reply(
     `✅ Чат ${id} → ${modeSpec(mode).label}. Чат доверенный — доступ у всех участников ` +
       `(закрыть: /trust ${id} off).`,
   );
+  await replyLong(ctx, renderSetupCard(id), { html: true });
+}
+
+// --- /setup <id> : the behaviour walkthrough --------------------------------
+
+/**
+ * `/setup <chatId>` — the behaviour card: what the humorizer, slang, chime and
+ * reactions actually DO, their current state in the chat, and the tap-to-copy
+ * command for each. The same card is shown right after a preset is picked.
+ */
+export async function cmdSetup(ctx: Context): Promise<void> {
+  const id = parseChatId(args(ctx));
+  if (!(await ensureManagerDM(ctx, id))) return;
+  if (id === null) {
+    await ctx.reply('Использование: /setup <chatId> — покажу, что можно крутить в поведении чата.');
+    return;
+  }
+  await replyLong(ctx, renderSetupCard(id), { html: true });
+}
+
+// --- /prompt <id> [<текст>|clear] : the custom personality --------------------
+
+/** Longest persona description accepted — it is paid for in tokens on every turn. */
+const PERSONA_PROMPT_MAX_CHARS = 2000;
+
+/**
+ * `/prompt <chatId> <текст>` — describe the bot's character in your own words
+ * («ты дворецкий-аристократ, вежлив до занудства»). The text becomes a persona
+ * override on the system prompt AND the voice of the tone pass, and the chat is
+ * switched to the «кастом» preset (with its default toggles) if it wasn't there
+ * yet. `/prompt <chatId>` shows the current description; `clear` drops it (the
+ * chat then behaves like the calm assistant until a new one is set).
+ */
+export async function cmdPrompt(ctx: Context): Promise<void> {
+  const [idTok, text] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
+  if (id === null) {
+    await ctx.reply(
+      'Использование: /prompt <chatId> <текст> — свой характер бота своими словами.\n' +
+        'Посмотреть: /prompt <chatId> · убрать: /prompt <chatId> clear',
+    );
+    return;
+  }
+
+  if (!text) {
+    const current = getPersonaPrompt(id);
+    const mode = getChatMode(id);
+    await ctx.reply(
+      current
+        ? `Характер чата ${id} (пресет ${modeSpec(mode).label}):\n\n«${current}»\n\n` +
+            `Заменить: /prompt ${id} <текст> · убрать: /prompt ${id} clear`
+        : `Свой характер для чата ${id} не задан. Задать: /prompt ${id} <текст> — ` +
+            `опиши персону словами («ты дворецкий-аристократ, вежлив до занудства»), ` +
+            `я переключу чат в пресет «кастом» и буду её отыгрывать.`,
+    );
+    return;
+  }
+
+  if (text.toLowerCase() === 'clear') {
+    setPersonaPrompt(id, null);
+    await ctx.reply(
+      `🧽 Характер чата ${id} стёрт. ` +
+        (getChatMode(id) === 'custom'
+          ? `Пресет остался «кастом» — без описания веду себя как спокойный ассистент. ` +
+            `Новый характер: /prompt ${id} <текст>, или смени пресет: /mode ${id}.`
+          : `Задать новый: /prompt ${id} <текст>.`),
+    );
+    return;
+  }
+
+  if (text.length > PERSONA_PROMPT_MAX_CHARS) {
+    await ctx.reply(
+      `Слишком длинно (${text.length} символов, максимум ${PERSONA_PROMPT_MAX_CHARS}) — ` +
+        `это читается на каждом сообщении. Сократи до сути: кто персонаж, как говорит, пара фишек.`,
+    );
+    return;
+  }
+
+  setPersonaPrompt(id, text);
+  const wasCustom = getChatMode(id) === 'custom';
+  if (!wasCustom) {
+    // Setting a persona IS choosing the custom preset — switch, trust (an explicit
+    // admin act of configuring the chat) and apply the preset's default toggles.
+    setChatMode(id, 'custom');
+    setChatTrusted(id, true);
+    applyModeDefaults(id, modeSpec('custom'));
+  }
+  await ctx.reply(
+    `🎭 Чат ${id}: характер записан${wasCustom ? '' : `, пресет → ${modeSpec('custom').label}`}. ` +
+      `Говорю в этом образе со следующего ответа.`,
+  );
+  if (!wasCustom) await replyLong(ctx, renderSetupCard(id), { html: true });
 }
 
 // --- /trust <id> [on|off] : whole-chat access ------------------------------

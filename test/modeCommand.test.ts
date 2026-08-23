@@ -65,7 +65,7 @@ describe('/modes', () => {
 });
 
 describe('/mode', () => {
-  it('switches a chat to the new assistant mode and trusts it', async () => {
+  it('switches a chat to the calm preset, trusts it and applies the preset defaults', async () => {
     await freshDb();
     const { cmdMode } = await import('../src/bot/commands/admin.js');
     const repo = await import('../src/db/repos/chatSettings.repo.js');
@@ -75,7 +75,16 @@ describe('/mode', () => {
 
     expect(repo.getChatMode(-100500)).toBe('assistant');
     expect(repo.isChatTrusted(-100500)).toBe(true);
-    expect(replies[0]!.text).toContain('ассистент');
+    // The preset's tone stances became the chat's own switches.
+    expect(repo.isChatHumorEnabled(-100500)).toBe(false);
+    expect(repo.isChimeEnabled(-100500)).toBe(false);
+    expect(repo.isReactionsEnabled(-100500)).toBe(false);
+    expect(repo.isChatSlangEnabled(-100500)).toBe(true);
+    expect(replies[0]!.text).toContain('спокойный');
+    // The behaviour setup card follows, explaining the knobs with commands.
+    const card = replies.map((r) => r.text).join('\n');
+    expect(card).toContain('/humor -100500');
+    expect(card).toContain('/chime -100500');
   });
 
   it('accepts the russian name too', async () => {
@@ -84,6 +93,18 @@ describe('/mode', () => {
     const repo = await import('../src/db/repos/chatSettings.repo.js');
     await cmdMode(adminCtx('-100500 репетитор').ctx);
     expect(repo.getChatMode(-100500)).toBe('tutor');
+  });
+
+  it('accepts the new preset names (calm, funny)', async () => {
+    await freshDb();
+    const { cmdMode } = await import('../src/bot/commands/admin.js');
+    const repo = await import('../src/db/repos/chatSettings.repo.js');
+    await cmdMode(adminCtx('-100500 calm').ctx);
+    expect(repo.getChatMode(-100500)).toBe('assistant');
+    await cmdMode(adminCtx('-100500 весельчак').ctx);
+    expect(repo.getChatMode(-100500)).toBe('funny');
+    // The funny preset turned the jokes back on.
+    expect(repo.isChatHumorEnabled(-100500)).toBe(true);
   });
 
   it('shows the current mode WITH the picker buttons when no mode is given', async () => {
@@ -95,7 +116,7 @@ describe('/mode', () => {
     const { ctx, replies } = adminCtx('-100500');
     await cmdMode(ctx);
 
-    expect(replies[0]!.text).toContain('ассистент');
+    expect(replies[0]!.text).toContain('спокойный');
     const kb = replies[0]!.keyboard as { inline_keyboard: { callback_data?: string }[][] };
     const data = kb.inline_keyboard.flat().map((b) => b.callback_data);
     expect(data).toContain('m:t:-100500');

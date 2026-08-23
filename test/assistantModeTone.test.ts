@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Context } from 'grammy';
 
-// The calm mode's whole point: no jokes, ever. The humour pass is gated by the
-// chat's MODE on top of the global flag and the per-chat /humor switch, so a chat
-// switched to «ассистент» stays deadpan even with humour fully enabled.
+// The calm preset ships with the jokes OFF: picking it writes humor_disabled into
+// the chat's switches (applyModeDefaults), and the humour pass then honours the
+// switch — so a chat switched to «спокойный» stays deadpan with humour globally
+// enabled, while the admin can still flip /humor back on for that one chat.
 
 const humorizeMock = vi.fn(async (text: string) => `😂 ${text}`);
 
@@ -78,16 +79,43 @@ afterEach(async () => {
   closeDb();
 });
 
-describe('humour gating by chat mode', () => {
-  it('never humorizes a reply in assistant mode', async () => {
+describe('humour gating by chat preset', () => {
+  it('never humorizes a reply in a chat set up as the calm assistant', async () => {
     const assist = await load();
     const settings = await import('../src/db/repos/chatSettings.repo.js');
+    const { applyModeDefaults, modeSpec } = await import('../src/modes.js');
     settings.setChatMode(-1, 'assistant');
+    applyModeDefaults(-1, modeSpec('assistant'));
 
     await reply(assist, -1);
 
     expect(humorizeMock).not.toHaveBeenCalled();
     expect(sent[0]).toBe('Готово.');
+  });
+
+  it('lets the admin turn the jokes back on inside the calm preset (/humor on)', async () => {
+    const assist = await load();
+    const settings = await import('../src/db/repos/chatSettings.repo.js');
+    const { applyModeDefaults, modeSpec } = await import('../src/modes.js');
+    settings.setChatMode(-4, 'assistant');
+    applyModeDefaults(-4, modeSpec('assistant'));
+    settings.setChatHumorEnabled(-4, true);
+
+    await reply(assist, -4);
+
+    expect(humorizeMock).toHaveBeenCalledOnce();
+    expect(sent[0]).toBe('😂 Готово.');
+  });
+
+  it('never humorizes a tutor chat, whatever the switch says (structural lock)', async () => {
+    const assist = await load();
+    const settings = await import('../src/db/repos/chatSettings.repo.js');
+    settings.setChatMode(-5, 'tutor');
+    settings.setChatHumorEnabled(-5, true);
+
+    await reply(assist, -5);
+
+    expect(humorizeMock).not.toHaveBeenCalled();
   });
 
   it('still humorizes a secretary chat (the gate is the mode, not the feature)', async () => {
@@ -102,14 +130,16 @@ describe('humour gating by chat mode', () => {
   });
 });
 
-describe('expense quip gating by chat mode', () => {
-  it('skips the joke next to an expense preview in assistant mode', async () => {
+describe('expense quip gating by chat preset', () => {
+  it('skips the joke next to an expense preview in a calm-preset chat', async () => {
     const assist = await load();
     void assist;
     const settings = await import('../src/db/repos/chatSettings.repo.js');
     const { prepareQuip } = await import('../src/bot/flows/preview.js');
     const { takeQuip } = await import('../src/bot/quipCache.js');
+    const { applyModeDefaults, modeSpec } = await import('../src/modes.js');
     settings.setChatMode(-3, 'assistant');
+    applyModeDefaults(-3, modeSpec('assistant'));
 
     prepareQuip('pending-1', 'Такси 500', -3);
     await new Promise((r) => setTimeout(r, 10));

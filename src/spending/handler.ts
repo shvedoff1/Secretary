@@ -5,11 +5,12 @@ import { getChatConfig } from '../db/repos/chatConfig.repo.js';
 import {
   getTimezone,
   getChatMode,
+  getPersonaPrompt,
   isChatHumorEnabled,
 } from '../db/repos/chatSettings.repo.js';
 import { getVoiceLexicon } from '../db/repos/lexicon.repo.js';
 import { modeAllowsHumor, modeAllowsSlang } from '../modes.js';
-import { humorizeOrOriginal } from '../llm/humorize.js';
+import { humorizeOrOriginal, humorPersonaForMode } from '../llm/humorize.js';
 import { applySlangOrOriginal } from '../llm/slang.js';
 import type { SpendingReportInput } from '../llm/schema.js';
 import {
@@ -93,8 +94,9 @@ export function makeSpendingReportHandler(
       return humorizeOrOriginal(
         plain,
         lexicon,
-        // The digest speaks the chat's persona (dota → schoolkid-sensei rewrite).
-        mode === 'dota' ? 'dota' : 'surfer',
+        // The digest speaks the chat's persona (dota → schoolkid-sensei rewrite,
+        // custom → the admin's described character).
+        humorPersonaForMode(mode, mode === 'custom' ? getPersonaPrompt(chatId) : null),
       );
     } catch (err) {
       logger.error({ err, chatId }, 'spending_report failed');

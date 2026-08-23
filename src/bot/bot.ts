@@ -39,6 +39,8 @@ import {
   cmdUnlink,
   cmdMode,
   cmdModes,
+  cmdPrompt,
+  cmdSetup,
   cmdTrust,
   cmdChime,
   cmdHumor,
@@ -91,8 +93,9 @@ export function buildBot(token: string): Bot {
     if (ctx.chat && 'title' in ctx.chat && ctx.chat.title) {
       setChatTitle(ctx.chat.id, ctx.chat.title);
     }
-    // No playful reactions where the mode doesn't want them — a study room and a
-    // calm assistant chat are not the group hang.
+    // No playful reactions where the mode structurally forbids them (the tutor's
+    // study room); everywhere else the per-chat /react switch decides inside
+    // maybeAutoReact.
     if (ctx.chat?.id == null || modeAllowsReactions(getChatMode(ctx.chat.id))) {
       await maybeAutoReact(ctx);
     }
@@ -143,6 +146,8 @@ export function buildBot(token: string): Bot {
   bot.command('unlink', cmdUnlink);
   bot.command('mode', cmdMode);
   bot.command('modes', cmdModes);
+  bot.command('prompt', cmdPrompt);
+  bot.command('setup', cmdSetup);
   bot.command('trust', cmdTrust);
   bot.command('chime', cmdChime);
   bot.command('humor', cmdHumor);

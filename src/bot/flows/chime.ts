@@ -117,8 +117,9 @@ export function armChime(ctx: Context): void {
   if (!cfg.ENABLE_CHIME) return;
   const chatId = ctx.chat?.id;
   if (chatId == null) return;
-  // Modes that have no business butting in never chime (a study room, a calm
-  // assistant chat) — checked here so every caller is covered, not just onMessage.
+  // The tutor's study room never chimes, whatever the switches say — checked here
+  // so every caller is covered, not just onMessage. Other presets defer to the
+  // per-chat switch below (set to the preset's default when it was picked).
   if (!modeAllowsChime(getChatMode(chatId))) return;
   // Per-chat opt-out: the admin can silence the spontaneous chime completely
   // for a specific chat (/chime <chatId> off) without touching the global flag.

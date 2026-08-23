@@ -20,21 +20,30 @@ export function setTimezone(chatId: number, timezone: string): void {
 }
 
 /**
- * How the assistant behaves in this chat. 'secretary' is the default chill
- * surfer assistant; 'assistant' is the same full skill set with the persona taken
- * OUT — calm, neutral, no jokes/chime/reactions, steered by the chat's own rules
- * (see chat_rule); 'tutor' is the strict accuracy-first study tutor (no
- * humor/slang, no expense/surf skills — just precise dialogue and problem
- * solving); 'dota' is the full secretary feature set (memory, humor, slang,
- * chime) with a different persona — a schoolkid who fancies himself a Dota 2
- * teacher — plus the /dota ping-list roll call.
+ * The chat's PERSONALITY PRESET (kept as "mode" in storage/commands for
+ * continuity). 'secretary' is the default chill surfer; 'assistant' is the calm
+ * one — same full skill set with the persona taken OUT, steered by the chat's own
+ * rules (see chat_rule); 'funny' is the jokester — full skill set, loud humour,
+ * no surfer theme; 'custom' speaks whatever persona the admin described in plain
+ * words (persona_prompt below; without one it behaves like the calm assistant);
+ * 'tutor' is the strict accuracy-first study tutor (no humor/slang, reduced
+ * tools); 'dota' is the full feature set voiced by a schoolkid Dota 2 "sensei"
+ * plus the /ping roll call.
  *
- * Everything user-facing about a mode (labels, descriptions, which personality
- * features it allows) lives in `src/modes.ts`; this type is just the stored value.
+ * Everything user-facing about a preset (names, labels, descriptions, the tone
+ * defaults it applies to this chat's switches) lives in `src/modes.ts`; this type
+ * is just the stored value.
  */
-export type ChatMode = 'secretary' | 'assistant' | 'tutor' | 'dota';
+export type ChatMode = 'secretary' | 'assistant' | 'funny' | 'custom' | 'tutor' | 'dota';
 
-const MODE_VALUES: readonly string[] = ['secretary', 'assistant', 'tutor', 'dota'];
+const MODE_VALUES: readonly string[] = [
+  'secretary',
+  'assistant',
+  'funny',
+  'custom',
+  'tutor',
+  'dota',
+];
 
 export function getChatMode(chatId: number): ChatMode {
   const row = getDb()
@@ -53,6 +62,31 @@ export function setChatMode(chatId: number, mode: ChatMode): void {
          mode = excluded.mode, updated_at = excluded.updated_at`,
     )
     .run(chatId, mode);
+}
+
+/**
+ * The chat's CUSTOM personality description (the «custom» preset): the admin's
+ * plain-words text that becomes a persona override on the system prompt. NULL =
+ * not set — a custom-preset chat then behaves like the calm assistant. Managed
+ * with /prompt <chatId> [<текст>|clear].
+ */
+export function getPersonaPrompt(chatId: number): string | null {
+  const row = getDb()
+    .prepare('SELECT persona_prompt FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { persona_prompt: string | null } | undefined;
+  const text = row?.persona_prompt?.trim();
+  return text ? text : null;
+}
+
+export function setPersonaPrompt(chatId: number, prompt: string | null): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, persona_prompt, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         persona_prompt = excluded.persona_prompt, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, prompt);
 }
 
 /**

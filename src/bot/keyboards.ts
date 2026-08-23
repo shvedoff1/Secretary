@@ -8,8 +8,9 @@ import { MODES } from '../modes.js';
 //   e:rt:<pendingId>   retry submit
 //   u:ap:<tgUserId>    approve user
 //   u:dn:<tgUserId>    deny user
-//   m:<code>:<chatId>  set the chat's mode (+trust); <code> comes from src/modes.ts
-//                      (s = secretary, a = assistant, d = dota, t = tutor)
+//   m:<code>:<chatId>  set the chat's personality preset (+trust); <code> comes from
+//                      src/modes.ts (s = surfer/secretary, a = calm/assistant,
+//                      f = funny, d = dota, t = tutor, c = custom)
 //   m:?:<chatId>       show what the modes are (the picker stays on screen)
 //   m:x:<chatId>       ignore chat (leave untrusted)
 

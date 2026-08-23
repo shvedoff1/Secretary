@@ -6,7 +6,12 @@ import { getProvider } from '../../core/registry.js';
 import { buildDraft } from '../../core/expenseService.js';
 import type { Member, ExpenseDraft } from '../../core/types.js';
 import { runAssistant, type AssistantResult } from '../../llm/assistant.js';
-import { humorizeWithPreview, isHumorEnabled, classifyHumorDecision } from '../../llm/humorize.js';
+import {
+  humorizeWithPreview,
+  isHumorEnabled,
+  classifyHumorDecision,
+  humorPersonaForMode,
+} from '../../llm/humorize.js';
 import {
   applySlangOrOriginal,
   classifySlangDecision,
@@ -51,6 +56,7 @@ import {
   getTimezone,
   setTimezone,
   getChatMode,
+  getPersonaPrompt,
   isChatHumorEnabled,
   isChatSlangEnabled,
 } from '../../db/repos/chatSettings.repo.js';
@@ -721,6 +727,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
       });
 
   const mode = getChatMode(chatId);
+  // The «custom» preset's persona description (null elsewhere): it feeds both the
+  // system prompt and the tone pass, so the chat speaks one character throughout.
+  const personaPrompt = mode === 'custom' ? getPersonaPrompt(chatId) : null;
 
   // Episodic context: the conversation journal (what the last few sessions were
   // about) plus the topic index for the memory depth hint. Off on the
@@ -777,6 +786,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
     result = await runAssistant(
       {
         mode,
+        personaPrompt,
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat: memorySel.chat.map((i) => ({ content: i.content })),
@@ -942,8 +952,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         },
         lexicon,
         // The tone pass must speak the chat's persona: a dota chat gets the
-        // schoolkid-sensei rewrite, not the surfer one.
-        mode === 'dota' ? 'dota' : 'surfer',
+        // schoolkid-sensei rewrite, a custom chat its own described character.
+        humorPersonaForMode(mode, personaPrompt),
       )
     : result.text;
 

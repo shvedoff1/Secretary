@@ -30,9 +30,10 @@ export async function onMessage(ctx: Context): Promise<void> {
   if (!text || !ctx.chat || !ctx.from) return;
   if (text.startsWith('/')) return; // commands handled elsewhere
 
-  // What the chat's MODE allows: a tutor room learns no slang (the tutor never
-  // speaks it) and neither a tutor nor a calm assistant chat ever chimes in on its
-  // own — just question → answer. (armChime re-checks the mode itself.)
+  // What the chat's MODE structurally allows: a tutor room learns no slang (the
+  // tutor never speaks it) and never chimes in on its own — just question →
+  // answer. Every other preset defers to the per-chat switches, which the preset
+  // set when it was picked. (armChime re-checks the mode itself.)
   const mode = getChatMode(ctx.chat.id);
   const learnsSlang = modeAllowsSlang(mode);
   const chimes = modeAllowsChime(mode);

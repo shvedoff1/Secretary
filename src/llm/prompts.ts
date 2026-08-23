@@ -377,6 +377,22 @@ Style — talk like a chill mate in the group chat, not a corporate assistant:
   first. Saying you don't remember while the fact sits in the store is the failure to
   avoid; a search that finds nothing costs almost nothing. Never invent a "recalled"
   fact the tool did not return.
+- A "Profile memory" section may carry your own running card for this chat and for
+  each person — a synthesized portrait distilled from memory between conversations.
+  Treat it exactly like the other memory sections: useful background that may LAG
+  behind the latest messages (it refreshes when a conversation ends), so newer
+  messages and explicit facts always win over a card line. It NEVER decides who is
+  speaking or who paid — "Message sender" rules stay absolute. If someone corrects
+  something the card gets wrong, fix the underlying fact (remember / edit_memory)
+  and answer from the correction — the card catches up on its own.
+- The context block may also include a "Conversation journal": condensed NOTES of
+  this chat's PAST sessions (what was talked about, decided, left open), newest
+  ones shown. They are notes, not transcripts — never quote them as anyone's exact
+  words. For «а о чём мы тогда говорили», «что решили в тот раз»: check the
+  journal; \`recall_memory\` also searches the older journal entries you cannot see
+  here. When the user needs the actual wording or a detailed recap of a period,
+  call \`summarize_chat\` with the dates shown in the journal line — that replays
+  the real transcript.
 - The context block may include memory sections. An optional "Voice & style" section
   gives how to talk in THIS chat (persona, running gags, tone rules) — follow it.
   "Chat memory" holds durable shared facts about the group, and one or more
@@ -657,8 +673,29 @@ export function buildContextBlock(args: {
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   /** Voice/style directives for THIS chat (how to talk here), kept apart from facts. */
   memoryPersona?: { content: string }[];
+  /**
+   * Profile cards: the bot's own synthesized portrait of the chat ('' subject)
+   * and its people, maintained at episode close (src/episodes/profileRefresh.ts).
+   * Rendered before the fact sections — the portrait frames the details.
+   */
+  profiles?: { subject: string; content: string }[];
   /** Total facts held for this chat: how much memory exists BEYOND what is shown. */
   memoryTotal?: number;
+  /**
+   * Conversation journal: pre-rendered lines for the newest CLOSED sessions of
+   * this chat (episodic memory), oldest first. Each line carries when the session
+   * happened (with ISO dates for summarize_chat), its topic tags and the
+   * cheap-model notes — see src/episodes/render.ts.
+   */
+  episodes?: string[];
+  /** Total episodes stored, so the block can point at the searchable older ones. */
+  episodeTotal?: number;
+  /**
+   * Topic index for the depth hint: what the DEEP tier (hidden facts + older
+   * episodes) has material about — people's names, recurring themes. Lets the
+   * model know what it COULD recall instead of just how much.
+   */
+  memoryTopics?: string[];
   /** Standing behaviour rules set for this chat (see chat_rule / the set_rule tool). */
   rules?: string[];
   /**
@@ -749,11 +786,17 @@ export function buildContextBlock(args: {
     lines.push('--- End voice & style ---');
   }
 
+  // The synthesized portrait first — it frames the atomic facts below it.
+  pushProfileSection(lines, args.profiles ?? []);
+
   // Human-like memory, split into shared chat facts and per-person facts. Each
   // section is rendered only when non-empty so a fresh chat stays clean. Newer /
   // more important / more reinforced facts are listed first (already ranked).
   pushMemorySections(lines, args.memoryChat ?? [], args.memoryUsers ?? []);
-  pushMemoryDepthHint(lines, args.memoryTotal ?? 0, shownMemoryCount(args));
+  // Episodic memory: what the last few conversation sessions were ABOUT, so the
+  // model has continuity beyond its tiny verbatim history window.
+  pushEpisodeSection(lines, args.episodes ?? [], args.episodeTotal ?? 0);
+  pushMemoryDepthHint(lines, args.memoryTotal ?? 0, shownMemoryCount(args), args.memoryTopics ?? []);
 
   return lines.join('\n');
 }
@@ -784,16 +827,67 @@ function shownMemoryCount(args: {
 }
 
 /**
+ * Profile memory: the maintained card per chat/person. One flattened line per
+ * card (a portrait is a gist — per-line structure would eat the per-turn budget),
+ * with the header carrying the trust framing: derived, may lag, never identity.
+ */
+function pushProfileSection(
+  lines: string[],
+  profiles: { subject: string; content: string }[],
+): void {
+  if (profiles.length === 0) return;
+  lines.push(
+    '--- Profile memory (your own running portraits, distilled from memory between conversations; may LAG behind the latest messages — newer facts win; never decides who is speaking) ---',
+  );
+  for (const p of profiles) {
+    const flat = p.content.replace(/\s*\n+\s*/g, ' • ').trim();
+    lines.push(`- ${p.subject || 'Чат'}: ${flat}`);
+  }
+  lines.push('--- End profile memory ---');
+}
+
+/**
+ * The conversation journal: condensed notes of the chat's newest CLOSED sessions
+ * (episodic memory). Rendered between the fact sections and the depth hint —
+ * it is context about the past, not orders and not salient facts. When older
+ * episodes exist beyond the shown ones, one line says recall_memory reaches them,
+ * mirroring the memory depth hint.
+ */
+function pushEpisodeSection(lines: string[], episodes: string[], total: number): void {
+  if (episodes.length === 0) return;
+  lines.push(
+    '--- Conversation journal (condensed NOTES of this chat\'s past sessions, oldest first; NOT verbatim — for the exact wording or a detailed recap call summarize_chat with the dates shown) ---',
+  );
+  for (const line of episodes) lines.push(`- ${line}`);
+  const hidden = total - episodes.length;
+  if (hidden > 0) {
+    lines.push(
+      `(${hidden} older session(s) are not shown — recall_memory searches their notes too.)`,
+    );
+  }
+  lines.push('--- End conversation journal ---');
+}
+
+/**
  * Tell the model the store is DEEPER than what it can see. Without this line the
  * sections above read as the whole of memory, and the model answers "не помню" for a
  * fact that is sitting in the store one recall_memory call away. Rendered only when
  * something is actually hidden, and kept to one line — it is paid for on every turn.
+ * The topic index rides along so the model knows WHAT the deep tier has material
+ * about (people, recurring themes), not just how much of it there is.
  */
-function pushMemoryDepthHint(lines: string[], total: number, shown: number): void {
+function pushMemoryDepthHint(
+  lines: string[],
+  total: number,
+  shown: number,
+  topics: string[] = [],
+): void {
   const hidden = total - shown;
   if (hidden <= 0) return;
+  const topicTail =
+    topics.length > 0 ? ` Topics with stored material: ${topics.join(', ')}.` : '';
   lines.push(
-    `Memory store: ${total} facts total, ${shown} shown above — the other ${hidden} are reachable ONLY via the recall_memory tool. If the answer may depend on something remembered earlier that you cannot see here, call recall_memory BEFORE answering (and before saying you don't remember).`,
+    `Memory store: ${total} facts total, ${shown} shown above — the other ${hidden} are reachable ONLY via the recall_memory tool. If the answer may depend on something remembered earlier that you cannot see here, call recall_memory BEFORE answering (and before saying you don't remember).${topicTail}`,
   );
 }
 
@@ -828,6 +922,11 @@ export function buildTutorContextBlock(args: {
   memoryChat?: { content: string }[];
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   memoryTotal?: number;
+  /** Conversation journal lines — study sessions benefit from continuity too
+   *  («вчера разбирали квадратные уравнения»). Same rendering as the main block. */
+  episodes?: string[];
+  episodeTotal?: number;
+  memoryTopics?: string[];
   /** Standing behaviour rules — a study chat sets them too («сначала подсказка»). */
   rules?: string[];
 }): string {
@@ -846,7 +945,8 @@ export function buildTutorContextBlock(args: {
 
   pushRules(lines, args.rules ?? []);
   pushMemorySections(lines, args.memoryChat ?? [], args.memoryUsers ?? []);
-  pushMemoryDepthHint(lines, args.memoryTotal ?? 0, shownMemoryCount(args));
+  pushEpisodeSection(lines, args.episodes ?? [], args.episodeTotal ?? 0);
+  pushMemoryDepthHint(lines, args.memoryTotal ?? 0, shownMemoryCount(args), args.memoryTopics ?? []);
 
   return lines.join('\n');
 }

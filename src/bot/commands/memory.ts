@@ -6,6 +6,7 @@ import {
   listMemoryItemsForDisplay,
 } from '../../db/repos/memoryItem.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
+import { clearProfiles } from '../../db/repos/profile.repo.js';
 import { rememberNote } from '../flows/assist.js';
 
 export async function cmdMemory(ctx: Context): Promise<void> {
@@ -23,7 +24,7 @@ export async function cmdMemory(ctx: Context): Promise<void> {
   const body = items
     .slice(0, limit)
     .map((it, i) => {
-      const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : '';
+      const tag = it.scope === 'persona' ? '🎭 ' : it.pinned ? '📌 ' : it.status ? '⏳ ' : '';
       const who = it.scope === 'user' && it.subject ? ` (→ ${it.subject})` : '';
       return `${i + 1}. ${tag}${it.content}${who}`;
     })
@@ -35,8 +36,8 @@ export async function cmdMemory(ctx: Context): Promise<void> {
     : '';
   await ctx.reply(
     `🧠 Память чата (${items.length} записей):\n${body}${tail}\n\n` +
-      '📌 — закреплено (не забывается), 🎭 — стиль/повадки. Забыть один пункт: ' +
-      '/forget <номер>. Стереть всё (и историю диалога): /forget',
+      '📌 — закреплено (не забывается), 🎭 — стиль/повадки, ⏳ — текущее состояние ' +
+      '(само забудется). Забыть один пункт: /forget <номер>. Стереть всё (и историю диалога): /forget',
   );
 }
 
@@ -79,5 +80,8 @@ export async function cmdForget(ctx: Context): Promise<void> {
 
   clearMemoryItems(ctx.chat.id);
   clearTurns(ctx.chat.id);
+  // Profile cards are derived from the memory just wiped — a surviving portrait
+  // would keep serving the forgotten facts back.
+  clearProfiles(ctx.chat.id);
   await ctx.reply('🧹 Память и история диалога очищены.');
 }

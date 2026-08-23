@@ -75,7 +75,7 @@ describe('applyModeDefaults', () => {
   });
 });
 
-describe('migration 027 backfill', () => {
+describe('migration 029 backfill', () => {
   it('carries the old mode gates over into the switches for existing chats', async () => {
     process.env.BOT_TOKEN = 'x';
     process.env.ANTHROPIC_API_KEY = 'x';
@@ -85,9 +85,10 @@ describe('migration 027 backfill', () => {
 
     const { getDb } = await import('../src/db/client.js');
     const db = getDb();
-    // Synthetic pre-027 state: chat_settings as of v26, recorded at version 26.
+    // Synthetic pre-029 state: chat_settings as it stands before the personality
+    // migration (its shape is untouched by 027/028), recorded at version 28.
     db.exec('CREATE TABLE schema_version (version INTEGER NOT NULL)');
-    db.prepare('INSERT INTO schema_version (version) VALUES (26)').run();
+    db.prepare('INSERT INTO schema_version (version) VALUES (28)').run();
     db.exec(
       `CREATE TABLE chat_settings (
          chat_id            INTEGER PRIMARY KEY,
@@ -111,7 +112,7 @@ describe('migration 027 backfill', () => {
     ins.run(4, null);
 
     const { migrate } = await import('../src/db/migrate.js');
-    migrate(); // applies only 027
+    migrate(); // applies only 029
 
     const repo = await import('../src/db/repos/chatSettings.repo.js');
     // The calm chat keeps its old behaviour: no jokes/chime/reactions, slang on.

@@ -468,7 +468,7 @@ export const scheduleTaskJsonSchema = {
     prompt: {
       type: 'string',
       description:
-        'Self-contained instruction to run when the task fires (you will receive ONLY this text, no chat history). Include any web-search intent. E.g. "Найди прогноз по волнам для Эрисейры на сегодня и кратко напиши".',
+        'Self-contained instruction to run when the task fires (you will receive ONLY this text, no chat history). Include any web-search intent. E.g. "Найди прогноз по волнам для Эрисейры на сегодня и кратко напиши". For a plain reminder phrase it as what to DO when it fires — "Напомни, что пора оплатить подписку" — never the bare task name alone.',
     },
     cron: {
       type: 'string',

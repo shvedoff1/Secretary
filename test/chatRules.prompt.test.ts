@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FILE_ATTACHMENT_MARKER,
   FORWARDED_MESSAGE_MARKER,
+  SCHEDULED_TASK_MARKER,
   SYSTEM_PROMPT,
   ASSISTANT_SYSTEM_PROMPT,
   TUTOR_SYSTEM_PROMPT,
@@ -88,6 +89,22 @@ describe('SYSTEM_PROMPT forwarded-message guidance', () => {
   it('says a forward is not the sender’s own words or spend, and that rules win', () => {
     expect(SYSTEM_PROMPT).toMatch(/never attribute the\s+content to the sender/);
     expect(SYSTEM_PROMPT).toContain('пересланных');
+  });
+});
+
+describe('SYSTEM_PROMPT fired-task guidance', () => {
+  it('explains the scheduled-task marker verbatim, so the two stay in sync', () => {
+    // The marker is applied by the scheduler and explained here — they must match.
+    expect(SYSTEM_PROMPT).toContain(SCHEDULED_TASK_MARKER);
+  });
+
+  it('says a fired task is delivered, never re-scheduled or clarified', () => {
+    // The bug: «напомни оплатить подписку через 7 минут» fired as
+    // `scheduler: Оплатить подписку`, and the model read it as a NEW ask to set
+    // a reminder — posting «уточните, на какое время поставить напоминание?» to
+    // the chat as the reminder text.
+    expect(SYSTEM_PROMPT).toMatch(/NEVER read the fired text as a NEW request/);
+    expect(SYSTEM_PROMPT).toMatch(/do not ask clarifying questions/);
   });
 });
 

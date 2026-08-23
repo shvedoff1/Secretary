@@ -8,6 +8,7 @@ import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
 import { runDueWatches } from './watch/poller.js';
+import { runDueEpisodes } from './episodes/closer.js';
 import { runDueDotaSync } from './dota/sync.js';
 import { flushStaleLexicons } from './bot/flows/lexicon.js';
 import { flushStaleMemories } from './bot/flows/memory.js';
@@ -63,6 +64,11 @@ async function main(): Promise<void> {
     });
     void runDueWatches(bot).catch((err) => {
       logger.warn({ err }, 'watch tick failed');
+    });
+    // Episodic memory rides the same heartbeat: close finished conversation
+    // sessions (chats that have gone quiet) into journal entries.
+    void runDueEpisodes().catch((err) => {
+      logger.warn({ err }, 'episode tick failed');
     });
   }, 60_000);
   scheduler.unref();

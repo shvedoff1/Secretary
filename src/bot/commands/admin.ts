@@ -53,6 +53,13 @@ import {
 import { getLexicon } from '../../db/repos/lexicon.repo.js';
 import { clearTurns } from '../../db/repos/conversation.repo.js';
 import { clearLog, countLog, oldestLoggedAt } from '../../db/repos/chatLog.repo.js';
+import {
+  recentEpisodes,
+  episodeCount,
+  clearEpisodes,
+} from '../../db/repos/episode.repo.js';
+import { renderEpisodeLine } from '../../episodes/render.js';
+import { listProfiles, clearProfiles } from '../../db/repos/profile.repo.js';
 import { formatInTimezone } from '../../util/schedule.js';
 import { replyLong } from '../../util/telegramText.js';
 import { escapeHtml } from '../../util/telegramHtml.js';
@@ -153,6 +160,109 @@ export async function cmdChatLog(ctx: Context): Promise<void> {
       `Держу максимум ${cfg.CHAT_LOG_KEEP_PER_CHAT} и не старше ${cfg.CHAT_LOG_RETENTION_DAYS} дней.\n` +
       `Очистить: /chatlog ${id} clear`,
   );
+}
+
+// --- /episodes : inspect or wipe a chat's conversation journal --------------
+
+/**
+ * The journal is what the bot "remembers happening" in a chat, so whoever manages
+ * the chat needs to see what got written (each entry is cheap-model output) and
+ * to be able to wipe it, mirroring /chatlog for the raw record it is derived from.
+ */
+export async function cmdEpisodes(ctx: Context): Promise<void> {
+  const cfg = loadConfig();
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
+  if (id === null) {
+    await ctx.reply('Использование: /episodes <chatId> [clear]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (want === 'clear') {
+    clearEpisodes(id);
+    await ctx.reply(`🧹 Чат ${id}: журнал бесед очищен.`);
+    return;
+  }
+  if (want) {
+    await ctx.reply('Использование: /episodes <chatId> [clear]');
+    return;
+  }
+  if (!cfg.ENABLE_EPISODES || !cfg.ENABLE_CHAT_LOG) {
+    await ctx.reply(
+      'Журнал бесед выключен глобально (ENABLE_EPISODES/ENABLE_CHAT_LOG=false).',
+    );
+    return;
+  }
+  const total = episodeCount(id);
+  if (total === 0) {
+    await ctx.reply(
+      `Чат ${id}: журнал бесед пуст — эпизоды появятся, когда чат поговорит и затихнет на ${cfg.EPISODE_QUIET_MINUTES} мин.`,
+    );
+    return;
+  }
+  const tz = getTimezone(id) ?? cfg.DEFAULT_TIMEZONE;
+  const latest = recentEpisodes(id, 5);
+  await replyLong(ctx, [
+    `Чат ${id}: в журнале ${total} эпизодов (держу максимум ${cfg.EPISODE_KEEP_PER_CHAT}). Последние:`,
+    ...latest.map((e) => `• ${renderEpisodeLine(e, tz)}`),
+    '',
+    `Очистить: /episodes ${id} clear`,
+  ].join('\n'));
+}
+
+// --- /profile : inspect or wipe a chat's maintained profile cards -----------
+
+/**
+ * The cards are cheap-model output that the bot serves back as its own knowledge
+ * of the people, so whoever manages the chat must be able to read exactly what
+ * got written — and wipe it (cards are derived views: they regenerate at the next
+ * episode close from memory + fresh notes, so clearing loses nothing durable).
+ */
+export async function cmdProfile(ctx: Context): Promise<void> {
+  const cfg = loadConfig();
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (!(await ensureManagerDM(ctx, id))) return;
+  if (id === null) {
+    await ctx.reply('Использование: /profile <chatId> [clear]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (want === 'clear') {
+    clearProfiles(id);
+    await ctx.reply(
+      `🧹 Чат ${id}: карточки профилей стёрты — соберутся заново после следующей беседы.`,
+    );
+    return;
+  }
+  if (want) {
+    await ctx.reply('Использование: /profile <chatId> [clear]');
+    return;
+  }
+  if (!cfg.ENABLE_PROFILES) {
+    await ctx.reply('Карточки профилей выключены глобально (ENABLE_PROFILES=false).');
+    return;
+  }
+  const cards = listProfiles(id);
+  if (cards.length === 0) {
+    await ctx.reply(
+      `Чат ${id}: карточек пока нет — они пишутся, когда беседа заканчивается (см. /episodes ${id}).`,
+    );
+    return;
+  }
+  const tz = getTimezone(id) ?? cfg.DEFAULT_TIMEZONE;
+  const body = cards.map((c) => {
+    const when = formatInTimezone(c.updatedAt, tz);
+    return `【${c.subject || 'Чат'}】 (обновлено ${when})\n${c.content}`;
+  });
+  await replyLong(ctx, [
+    `Чат ${id}: ${cards.length} карточек:`,
+    '',
+    body.join('\n\n'),
+    '',
+    `Стереть (пересоберутся сами): /profile ${id} clear`,
+  ].join('\n'));
 }
 
 // --- /chats : the chats YOU manage, with tap-to-copy commands ---------------

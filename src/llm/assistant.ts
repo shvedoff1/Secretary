@@ -125,8 +125,16 @@ export interface AssistantContext {
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   /** Voice/style directives for this chat (how to talk here), kept apart from facts. */
   memoryPersona?: { content: string }[];
+  /** Profile cards: the maintained portrait of the chat ('' subject) and its people. */
+  profiles?: { subject: string; content: string }[];
   /** Total facts stored for this chat, so the context can point at the deeper tier. */
   memoryTotal?: number;
+  /** Conversation-journal lines (episodic memory), oldest first, pre-rendered. */
+  episodes?: string[];
+  /** Total stored episodes, so the block can point at the searchable older ones. */
+  episodeTotal?: number;
+  /** Topic index for the depth hint: what the deep tier has material about. */
+  memoryTopics?: string[];
   /**
    * EXPENSE-ONLY run: the silent auto-expense scan (a group message that was NOT
    * addressed to the bot but looks like a spend). Such a turn can only end in a
@@ -302,6 +310,9 @@ export async function runAssistant(
         memoryChat: ctx.memoryChat ?? [],
         memoryUsers: ctx.memoryUsers ?? [],
         memoryTotal: ctx.memoryTotal ?? 0,
+        episodes: ctx.episodes ?? [],
+        episodeTotal: ctx.episodeTotal ?? 0,
+        memoryTopics: ctx.memoryTopics ?? [],
         rules: ctx.rules ?? [],
       })
     : buildContextBlock({
@@ -317,10 +328,20 @@ export async function runAssistant(
         memoryChat: expenseOnly ? [] : (ctx.memoryChat ?? []),
         memoryUsers: expenseOnly ? [] : (ctx.memoryUsers ?? []),
         memoryPersona: expenseOnly ? [] : (ctx.memoryPersona ?? []),
+        // Profile cards are memory too — same expense-only rule (and the same
+        // misfire risk: a card names people, and the payer must come from the
+        // message, never from a portrait).
+        profiles: expenseOnly ? [] : (ctx.profiles ?? []),
         // Total held, so the block can tell the model how much memory it does NOT
         // see and that recall_memory reaches the rest (the hint is skipped when
         // nothing is hidden, and on an expense-only scan there is no memory at all).
         memoryTotal: expenseOnly ? 0 : (ctx.memoryTotal ?? 0),
+        // The journal is conversation-only context, so the expense-only scan
+        // drops it for the same reason it drops memory (and the section renders
+        // after the expense-only early return anyway).
+        episodes: expenseOnly ? [] : (ctx.episodes ?? []),
+        episodeTotal: expenseOnly ? 0 : (ctx.episodeTotal ?? 0),
+        memoryTopics: expenseOnly ? [] : (ctx.memoryTopics ?? []),
         rules: ctx.rules ?? [],
         botAdmins: ctx.botAdmins ?? [],
         expenseOnly,

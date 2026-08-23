@@ -205,6 +205,61 @@ const ConfigSchema = z.object({
   // Max voice/style ("persona") directives to inject. These live in their own context
   // section so they don't compete with factual chat memory for the chat budget.
   MEMORY_CONTEXT_PERSONA: z.coerce.number().int().positive().default(20),
+  // Episodic memory ("журнал бесед"): when a chat goes quiet, the just-finished
+  // conversation session is closed as an EPISODE — a cheap model compresses its
+  // chat-log slice into a few lines of notes plus topic tags. The latest episodes
+  // are injected into the context as a "conversation journal" (so the model knows
+  // what was talked about before its tiny verbatim history window), older ones are
+  // searched by recall_memory, and summarize_chat can replay any of them verbatim.
+  // Needs the chat log (ENABLE_CHAT_LOG) — episodes are cut from it.
+  ENABLE_EPISODES: boolish.default(true),
+  // Cheap model that writes the episode notes (never the main chat model).
+  ANTHROPIC_EPISODE_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Silence that ends a conversation session. Boundaries are detected from the
+  // log's own timestamps on the minute tick (durable across restarts), not from
+  // in-memory timers.
+  EPISODE_QUIET_MINUTES: z.coerce.number().int().positive().default(45),
+  // A closed stretch with fewer messages than this is not worth an episode of its
+  // own — it is folded into the NEXT session's episode instead of summarised.
+  EPISODE_MIN_MESSAGES: z.coerce.number().int().positive().default(4),
+  // How many unclosed log messages one close pass reads (newest first). A first
+  // run over a deep existing log works backlog off across ticks under this cap.
+  EPISODE_MAX_MESSAGES: z.coerce.number().int().positive().default(500),
+  // Char budget for the transcript handed to the episode summariser; a longer
+  // session is cut from the OLDEST end and the cut is stated to the model.
+  EPISODE_CHAR_BUDGET: z.coerce.number().int().positive().default(16_000),
+  // Cap on episodes closed per chat per tick (each close is one cheap LLM call).
+  EPISODE_MAX_PER_TICK: z.coerce.number().int().positive().default(4),
+  // How long a chat waits before retrying after a failed episode-summary call.
+  EPISODE_RETRY_MINUTES: z.coerce.number().int().positive().default(30),
+  // How many of the newest episodes are injected into the assistant context.
+  EPISODE_CONTEXT_COUNT: z.coerce.number().int().positive().default(5),
+  // Stored episodes per chat; oldest overflow is pruned.
+  EPISODE_KEEP_PER_CHAT: z.coerce.number().int().positive().default(80),
+  // How many episode notes one recall_memory search may return (token cost).
+  EPISODE_RECALL_LIMIT: z.coerce.number().int().positive().default(3),
+  // Cap on the topic-index line in the memory depth hint (paid on every turn).
+  MEMORY_TOPIC_INDEX_MAX: z.coerce.number().int().positive().default(12),
+  // Hard expiry for passive STATUS facts («сейчас во Вьетнаме», «болеет») — they
+  // already decay out of the working set on a much shorter half-life (see
+  // memoryWeight.ts), and after this many days since last mention they leave the
+  // STORE entirely, deterministically. A stale "current state" served as current
+  // is worse than a forgotten one. Traits and pinned facts are never expired.
+  MEMORY_STATUS_TTL_DAYS: z.coerce.number().int().positive().default(60),
+  // Profile cards: at episode close, a cheap model rewrites a 2-5 line portrait
+  // of the chat and of each person heard from (chat_profile), from the previous
+  // card + the new episode notes + the current top facts. Facts are ground truth
+  // — the card is a derived view and a correction to memory overrides it on the
+  // next refresh. Rendered as the "Profile memory" section of the context block.
+  ENABLE_PROFILES: boolish.default(true),
+  // Cheap model that rewrites the cards (never the main chat model).
+  ANTHROPIC_PROFILE_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // How many cards the context block shows (chat card first, then most recently
+  // refreshed people). Cards are a per-turn token cost, so this stays small.
+  PROFILE_CONTEXT_MAX: z.coerce.number().int().positive().default(6),
+  // Hard cap on one card's length, enforced at parse time — a card is a portrait,
+  // not an essay, and an unbounded card would quietly eat the context budget.
+  PROFILE_CARD_MAX_CHARS: z.coerce.number().int().positive().default(500),
   // Page watches ("вотчеры"): poll a URL until an awaited event appears on it
   // («следи за страницей и напиши, когда появятся сеансы»), then notify the chat.
   ENABLE_WATCH: boolish.default(true),

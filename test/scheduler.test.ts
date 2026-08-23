@@ -96,6 +96,44 @@ describe('scheduledMemory', () => {
   });
 });
 
+describe('scheduledTurn', () => {
+  it('prefixes the fired prompt with the scheduler marker and the task title', async () => {
+    // Regression: «напомни оплатить подписку через 7 минут» fired as a bare
+    // `scheduler: Оплатить подписку` turn, which the model read as a NEW request
+    // to schedule a reminder and answered with clarifying questions — posted to
+    // the chat as the reminder text.
+    const { scheduler } = await freshModules();
+    const { SCHEDULED_TASK_MARKER } = await import('../src/llm/prompts.js');
+
+    const turn = scheduler.scheduledTurn(
+      { title: 'Оплатить подписку', prompt: 'Напомни, что пора оплатить подписку', humor: false },
+      [],
+    );
+
+    expect(turn).toBe(
+      `${SCHEDULED_TASK_MARKER} «Оплатить подписку»\nНапомни, что пора оплатить подписку`,
+    );
+  });
+
+  it('renders the bare marker when the task has no title', async () => {
+    const { scheduler } = await freshModules();
+    const { SCHEDULED_TASK_MARKER } = await import('../src/llm/prompts.js');
+    const turn = scheduler.scheduledTurn({ title: '', prompt: 'Напомни про зал', humor: false }, []);
+    expect(turn).toBe(`${SCHEDULED_TASK_MARKER}\nНапомни про зал`);
+  });
+
+  it('appends recent chatter only for a humour task', async () => {
+    const { scheduler } = await freshModules();
+    const recent = [{ name: 'Миша', text: 'антоха взял два чокопая' }];
+    expect(scheduler.scheduledTurn({ title: 'Вайб', prompt: 'Пошути', humor: true }, recent)).toContain(
+      'Миша: антоха взял два чокопая',
+    );
+    expect(
+      scheduler.scheduledTurn({ title: 'Вайб', prompt: 'Пошути', humor: false }, recent),
+    ).not.toContain('чокопая');
+  });
+});
+
 describe('runDueTasks humor toggle', () => {
   afterEach(() => {
     responses = [];
@@ -335,6 +373,34 @@ describe('runDueTasks humor toggle', () => {
     };
     const lastUser = firstCall.messages[firstCall.messages.length - 1]!;
     expect(JSON.stringify(lastUser.content)).not.toContain('секретная болтовня');
+  });
+
+  it('sends the marker-prefixed turn to the model when a task fires', async () => {
+    process.env.ENABLE_HUMOR = 'false';
+    const { scheduler } = await freshModules();
+    const repo = await import('../src/db/repos/scheduledTask.repo.js');
+    const { SCHEDULED_TASK_MARKER } = await import('../src/llm/prompts.js');
+    repo.createTask({
+      chatId: 100,
+      tgUserId: 1,
+      title: 'Оплатить подписку',
+      prompt: 'Напомни, что пора оплатить подписку',
+      cron: '0 9 * * *',
+      timezone: 'Europe/Lisbon',
+      once: true,
+      humor: false,
+      nextRunAt: 1,
+    });
+    responses = [textResponse('пора оплатить подписку!')];
+
+    await scheduler.runDueTasks(fakeBot([]));
+
+    const firstCall = createMock.mock.calls[0]![0] as {
+      messages: { role: string; content: unknown }[];
+    };
+    const lastUser = JSON.stringify(firstCall.messages[firstCall.messages.length - 1]!.content);
+    expect(lastUser).toContain(SCHEDULED_TASK_MARKER);
+    expect(lastUser).toContain('Напомни, что пора оплатить подписку');
   });
 
   it('records the fired task post into conversation history for follow-ups', async () => {

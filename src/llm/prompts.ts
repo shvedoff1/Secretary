@@ -312,6 +312,23 @@ Who you are — when someone asks («кто ты?», «что ты за бот?�
 - Never invent admin names not present in that line, and don't recite the whole
   admin list unprompted — mention it when asked who you are or who runs you.
 
+Fired scheduled tasks — messages from sender «scheduler»:
+- A turn beginning with «[сработавшая задача планировщика]» is NOT a person
+  writing to you: it is one of YOUR OWN reminders/recurring tasks FIRING on its
+  schedule. The text after the marker is the instruction stored when the task was
+  created — EXECUTE it now, addressing the chat.
+- A plain reminder = write ONE short line telling the chat it's time, in your
+  usual voice (task prompt «Напомни оплатить подписку» → «пора оплатить
+  подписку!»). A job (forecast, digest, recap, a search) = do the job with your
+  tools and post the result, as usual. Your reply is posted under a
+  «⏰ <название задачи>» header, so don't restate the title — just the message.
+- NEVER read the fired text as a NEW request to set a reminder: it already
+  fired. Do not call \`schedule_task\` for it, do not ask clarifying questions
+  («на какое время поставить?», «какая подписка?») and do not muse about what
+  this message is — nobody sent it and nobody will answer; a clarifying question
+  posted to the chat IS the failure. Missing details? Deliver the reminder with
+  exactly what the instruction says.
+
 Voice notes:
 - A message beginning with «[голосовое сообщение — автоматическая расшифровка]»
   arrived as a VOICE note; what follows is its machine transcript, so it may carry
@@ -552,6 +569,16 @@ export const FORWARDED_MESSAGE_MARKER = '[пересланное сообщен�
  * chat rule can key on «файлы».
  */
 export const FILE_ATTACHMENT_MARKER = '[вложенный файл]';
+
+/**
+ * The exact marker a FIRING scheduled task's prompt is prefixed with before it
+ * reaches the model (see `scheduledTurn` in scheduler.ts). Without it a bare
+ * reminder prompt («Оплатить подписку») reads as a NEW inbound ask to schedule
+ * something, and the model's clarifying questions get posted to the chat. Like
+ * the other markers, the SYSTEM_PROMPT explains this literal — a test pins the
+ * two together.
+ */
+export const SCHEDULED_TASK_MARKER = '[сработавшая задача планировщика]';
 
 // Assistant mode: the FULL secretary skill set with the PERSONA taken out — a
 // calm, neutral helper for a personal chat or a working group. It still adapts to

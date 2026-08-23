@@ -44,6 +44,7 @@ import { renderEpisodeLine } from './episodes/render.js';
 import { buildTopicIndex } from './util/topicIndex.js';
 import { makeRecallMemoryHandler } from './bot/flows/assist.js';
 import { addTurn, pruneOld } from './db/repos/conversation.repo.js';
+import { SCHEDULED_TASK_MARKER } from './llm/prompts.js';
 import type { Member } from './core/types.js';
 import type { Config } from './config.js';
 
@@ -91,6 +92,34 @@ export function scheduledMemory(
   };
 }
 
+/**
+ * Render the user turn for a FIRING task. The marker tells the model this is its
+ * own task firing — deliver/execute it — not an inbound request: without it a
+ * bare reminder prompt («Оплатить подписку») arrives as `scheduler: Оплатить
+ * подписку` and reads as a NEW ask to schedule something, so the model's
+ * clarifying questions («на какое время поставить напоминание?») get posted to
+ * the chat as the reminder text. A humour task additionally gets the chat's
+ * recent chatter to riff on (the same in-memory buffer the chime uses); factual
+ * tasks stay context-clean so recent banter can't distract them from their job.
+ * Exported for testing.
+ */
+export function scheduledTurn(
+  task: Pick<ScheduledTask, 'title' | 'prompt' | 'humor'>,
+  recent: { name: string; text: string }[],
+): string {
+  const header = task.title
+    ? `${SCHEDULED_TASK_MARKER} «${task.title}»`
+    : SCHEDULED_TASK_MARKER;
+  let turn = `${header}\n${task.prompt}`;
+  if (task.humor && recent.length > 0) {
+    const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
+    turn +=
+      `\n\n[Свежий контекст чата (последние сообщения) — можешь ` +
+      `опираться на него и обыграть, но это не обязательно:\n${lines}]`;
+  }
+  return turn;
+}
+
 async function sendMarkdown(bot: Bot, chatId: number, text: string): Promise<void> {
   await sendRichMarkdown(bot.api, chatId, text);
 }
@@ -122,20 +151,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
       cfg,
     );
 
-    // A humour task is a "vibe" post, not a plain reminder: give it the chat's
-    // recent chatter so it can riff on what was just said (the same in-memory
-    // buffer the chime uses). Factual tasks (surf/spending reminders) stay
-    // context-clean so recent banter can't distract them from their job.
-    let userContent = task.prompt;
-    if (task.humor) {
-      const recent = getRecentChat(task.chatId);
-      if (recent.length > 0) {
-        const lines = recent.map((r) => `${r.name}: ${r.text}`).join('\n');
-        userContent =
-          `${task.prompt}\n\n[Свежий контекст чата (последние сообщения) — можешь ` +
-          `опираться на него и обыграть, но это не обязательно:\n${lines}]`;
-      }
-    }
+    const userContent = scheduledTurn(task, task.humor ? getRecentChat(task.chatId) : []);
 
     // A task fired in a tutor chat keeps the tutor persona (and its no-humor,
     // reduced-tools behaviour) — e.g. a daily "порешай со мной задачи" ping.

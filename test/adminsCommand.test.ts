@@ -169,6 +169,40 @@ describe('per-chat commands re-gated to chat admins', () => {
     expect(allText).toContain('Чужой чат');
   });
 
+  it('every HTML reply parses like Telegram would — no raw < outside allowed tags', async () => {
+    // Regression: /chats once shipped raw `<chatId>`/`<tgUserId>` placeholders in a
+    // parse_mode:HTML message — Telegram 400s on the unsupported "tag" and the
+    // command dies as «Не смог выполнить команду». Emulate Telegram's strictness:
+    // after stripping the tags we legitimately emit, no '<' may remain anywhere.
+    const assertTelegramHtmlSafe = (text: string) => {
+      const stripped = text.replace(/<\/?(b|code)>/g, '');
+      expect(stripped, `raw < left in: ${text}`).not.toContain('<');
+    };
+
+    await freshDb();
+    const chatAdmins = await import('../src/db/repos/chatAdmin.repo.js');
+    const settings = await import('../src/db/repos/chatSettings.repo.js');
+    const { cmdChats, cmdChat } = await import('../src/bot/commands/admin.js');
+    const { cmdAdmins, cmdSuperAdmin } = await import('../src/bot/commands/admins.js');
+    chatAdmins.addChatAdmin(-100, 42, 1);
+    settings.setChatTitle(-100, 'Чат <с> &скобками');
+
+    // Supreme /chats (has the extra /admins footer), chat-admin /chats, /chat
+    // detail, /admins list, /superadmin list — every HTML-mode reply we ship.
+    for (const [cmd, args, from] of [
+      [cmdChats, '', 1],
+      [cmdChats, '', 42],
+      [cmdChat, '-100', 1],
+      [cmdAdmins, '-100', 1],
+      [cmdSuperAdmin, '', 1],
+    ] as const) {
+      const c = dmCtx(args, from);
+      await cmd(c.ctx);
+      expect(c.replies.length).toBeGreaterThan(0);
+      for (const r of c.replies) assertTelegramHtmlSafe(r);
+    }
+  });
+
   it('the /mode picker callback obeys the per-chat gate', async () => {
     await freshDb();
     const chatAdmins = await import('../src/db/repos/chatAdmin.repo.js');

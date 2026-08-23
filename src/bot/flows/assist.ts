@@ -32,6 +32,7 @@ import {
   removeMemoryItem,
 } from '../../db/repos/memoryItem.repo.js';
 import { listEpisodes, recentEpisodes, episodeCount } from '../../db/repos/episode.repo.js';
+import { listProfiles } from '../../db/repos/profile.repo.js';
 import { renderEpisodeLine } from '../../episodes/render.js';
 import { searchEpisodes } from '../../episodes/search.js';
 import { buildTopicIndex } from '../../util/topicIndex.js';
@@ -790,6 +791,14 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
         episodeTotal,
         memoryTopics,
+        // Profile cards: the maintained portrait (chat card first, freshest people
+        // next — listProfiles orders that way). Memory-gated like the fact sections.
+        profiles:
+          expenseOnly || mode === 'tutor' || !cfg.ENABLE_PROFILES || !cfg.ENABLE_MEMORY
+            ? []
+            : listProfiles(chatId)
+                .slice(0, cfg.PROFILE_CONTEXT_MAX)
+                .map((p) => ({ subject: p.subject, content: p.content })),
         expenseOnly,
         senderName: senderName(ctx),
         senderUsername: ctx.from?.username ?? null,

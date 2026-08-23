@@ -50,6 +50,7 @@ import {
   clearEpisodes,
 } from '../../db/repos/episode.repo.js';
 import { renderEpisodeLine } from '../../episodes/render.js';
+import { listProfiles, clearProfiles } from '../../db/repos/profile.repo.js';
 import { formatInTimezone } from '../../util/schedule.js';
 import { replyLong } from '../../util/telegramText.js';
 import { modeSpec, parseMode, renderModeCard, MODE_NAMES } from '../../modes.js';
@@ -181,6 +182,60 @@ export async function cmdEpisodes(ctx: Context): Promise<void> {
     ...latest.map((e) => `• ${renderEpisodeLine(e, tz)}`),
     '',
     `Очистить: /episodes ${id} clear`,
+  ].join('\n'));
+}
+
+// --- /profile : inspect or wipe a chat's maintained profile cards -----------
+
+/**
+ * The cards are cheap-model output that the bot serves back as its own knowledge
+ * of the people, so the admin must be able to read exactly what got written —
+ * and wipe it (cards are derived views: they regenerate at the next episode
+ * close from memory + fresh notes, so clearing loses nothing durable).
+ */
+export async function cmdProfile(ctx: Context): Promise<void> {
+  if (!(await ensureAdminDM(ctx))) return;
+  const cfg = loadConfig();
+  const [idTok, rest] = headTail(args(ctx));
+  const id = parseChatId(idTok);
+  if (id === null) {
+    await ctx.reply('Использование: /profile <chatId> [clear]');
+    return;
+  }
+  const want = rest.trim().toLowerCase();
+  if (want === 'clear') {
+    clearProfiles(id);
+    await ctx.reply(
+      `🧹 Чат ${id}: карточки профилей стёрты — соберутся заново после следующей беседы.`,
+    );
+    return;
+  }
+  if (want) {
+    await ctx.reply('Использование: /profile <chatId> [clear]');
+    return;
+  }
+  if (!cfg.ENABLE_PROFILES) {
+    await ctx.reply('Карточки профилей выключены глобально (ENABLE_PROFILES=false).');
+    return;
+  }
+  const cards = listProfiles(id);
+  if (cards.length === 0) {
+    await ctx.reply(
+      `Чат ${id}: карточек пока нет — они пишутся, когда беседа заканчивается (см. /episodes ${id}).`,
+    );
+    return;
+  }
+  const tz = getTimezone(id) ?? cfg.DEFAULT_TIMEZONE;
+  const body = cards.map((c) => {
+    const when = formatInTimezone(c.updatedAt, tz);
+    return `【${c.subject || 'Чат'}】 (обновлено ${when})\n${c.content}`;
+  });
+  await replyLong(ctx, [
+    `Чат ${id}: ${cards.length} карточек:`,
+    '',
+    body.join('\n\n'),
+    '',
+    `Стереть (пересоберутся сами): /profile ${id} clear`,
   ].join('\n'));
 }
 

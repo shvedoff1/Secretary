@@ -5,6 +5,16 @@
 /** Memory scope: shared group fact, per-person fact, or a voice/style directive. */
 export type Scope = 'chat' | 'user' | 'persona';
 
+/**
+ * What sort of fact this is. A `trait` is durable, identity-level knowledge
+ * («серфит», «живёт на Бали» as a home) — the default, and the only kind that
+ * existed before migration 027. A `status` is a CURRENT, temporary state
+ * («сейчас во Вьетнаме», «болеет», «завал на работе») — true now, wrong later,
+ * so it decays on a much shorter half-life and is hard-expired from the store
+ * (see expireStatuses) instead of lingering for months like a trait would.
+ */
+export type MemoryKind = 'trait' | 'status';
+
 /** The minimal shape the weight math needs (a subset of a stored memory item). */
 export interface WeightedItem {
   id: number;
@@ -15,6 +25,8 @@ export interface WeightedItem {
   importance: number;
   reinforce: number;
   source: 'passive' | 'explicit';
+  /** Absent = 'trait' (rows predating migration 027 and test fixtures). */
+  kind?: MemoryKind;
   /** Unix ms of the last time this fact was seen/reinforced (decay is measured from here). */
   lastSeen: number;
 }
@@ -29,6 +41,13 @@ export const PINNED_FLOOR = 1000;
 export const MAX_IMPORTANCE = 5;
 export const MIN_IMPORTANCE = 1;
 export const REINFORCE_IMPORTANCE_STEP = 0.5;
+// A status fact's half-life is the chat's half-life divided by this. With the
+// default MEMORY_HALFLIFE_DAYS=14 a status halves in <3 days: «сейчас во
+// Вьетнаме» fades from the working set within a week or two unless re-mentioned
+// (each mention resets last_seen, so an ONGOING state stays current). A fixed
+// divisor rather than its own knob: the ratio is what matters, and it should
+// scale with however fast the chat's memory is tuned to fade.
+export const STATUS_HALFLIFE_DIVISOR = 5;
 
 const DAY_MS = 86_400_000;
 
@@ -56,7 +75,9 @@ export function effectiveWeight(item: WeightedItem, now: number, halfLifeDays: n
   const base = item.importance + REINFORCE_BONUS * Math.log1p(Math.max(0, item.reinforce));
   if (item.source === 'explicit') return base + PINNED_FLOOR;
   const ageDays = Math.max(0, (now - item.lastSeen) / DAY_MS);
-  const decay = Math.pow(2, -ageDays / halfLifeDays);
+  // A status is only true NOW — it fades several times faster than a trait.
+  const halfLife = item.kind === 'status' ? halfLifeDays / STATUS_HALFLIFE_DIVISOR : halfLifeDays;
+  const decay = Math.pow(2, -ageDays / halfLife);
   return base * decay;
 }
 

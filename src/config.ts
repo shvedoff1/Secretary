@@ -240,6 +240,26 @@ const ConfigSchema = z.object({
   EPISODE_RECALL_LIMIT: z.coerce.number().int().positive().default(3),
   // Cap on the topic-index line in the memory depth hint (paid on every turn).
   MEMORY_TOPIC_INDEX_MAX: z.coerce.number().int().positive().default(12),
+  // Hard expiry for passive STATUS facts («сейчас во Вьетнаме», «болеет») — they
+  // already decay out of the working set on a much shorter half-life (see
+  // memoryWeight.ts), and after this many days since last mention they leave the
+  // STORE entirely, deterministically. A stale "current state" served as current
+  // is worse than a forgotten one. Traits and pinned facts are never expired.
+  MEMORY_STATUS_TTL_DAYS: z.coerce.number().int().positive().default(60),
+  // Profile cards: at episode close, a cheap model rewrites a 2-5 line portrait
+  // of the chat and of each person heard from (chat_profile), from the previous
+  // card + the new episode notes + the current top facts. Facts are ground truth
+  // — the card is a derived view and a correction to memory overrides it on the
+  // next refresh. Rendered as the "Profile memory" section of the context block.
+  ENABLE_PROFILES: boolish.default(true),
+  // Cheap model that rewrites the cards (never the main chat model).
+  ANTHROPIC_PROFILE_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // How many cards the context block shows (chat card first, then most recently
+  // refreshed people). Cards are a per-turn token cost, so this stays small.
+  PROFILE_CONTEXT_MAX: z.coerce.number().int().positive().default(6),
+  // Hard cap on one card's length, enforced at parse time — a card is a portrait,
+  // not an essay, and an unbounded card would quietly eat the context budget.
+  PROFILE_CARD_MAX_CHARS: z.coerce.number().int().positive().default(500),
   // Page watches ("вотчеры"): poll a URL until an awaited event appears on it
   // («следи за страницей и напиши, когда появятся сеансы»), then notify the chat.
   ENABLE_WATCH: boolish.default(true),

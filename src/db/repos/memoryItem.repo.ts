@@ -8,6 +8,7 @@ import {
   MIN_IMPORTANCE,
   REINFORCE_IMPORTANCE_STEP,
   type WeightedItem,
+  type MemoryKind,
   type ContextSelection,
 } from '../../util/memoryWeight.js';
 import { looksLikeExpense } from '../../util/money.js';
@@ -49,6 +50,8 @@ export interface MemoryDraft {
   subject: string;
   content: string;
   importance: number;
+  /** trait (durable, the default) or status (current state — decays fast, expires). */
+  kind?: MemoryKind;
 }
 
 /** A buffered message awaiting the next extraction batch, with its sender. */
@@ -130,6 +133,7 @@ interface ItemRow {
   importance: number;
   reinforce: number;
   source: MemorySource;
+  kind: MemoryKind;
   created_at: number;
   last_seen: number;
 }
@@ -145,6 +149,7 @@ function mapRow(r: ItemRow): MemoryItem {
     importance: r.importance,
     reinforce: r.reinforce,
     source: r.source,
+    kind: r.kind,
     createdAt: r.created_at,
     lastSeen: r.last_seen,
   };
@@ -172,8 +177,8 @@ export function recordMemoryItems(chatId: number, drafts: MemoryDraft[]): void {
   }
   const stmt = db.prepare(
     `INSERT INTO chat_memory_item
-       (chat_id, scope, tg_user_id, subject, content, importance, reinforce, source, created_at, last_seen)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 'passive', unixepoch() * 1000, unixepoch() * 1000)`,
+       (chat_id, scope, tg_user_id, subject, content, importance, reinforce, source, kind, created_at, last_seen)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 'passive', ?, unixepoch() * 1000, unixepoch() * 1000)`,
   );
   const reinforceIds: number[] = [];
   const run = db.transaction((items: MemoryDraft[]) => {
@@ -193,7 +198,8 @@ export function recordMemoryItems(chatId: number, drafts: MemoryDraft[]): void {
         continue;
       }
       const importance = Math.min(MAX_IMPORTANCE, Math.max(MIN_IMPORTANCE, d.importance));
-      const res = stmt.run(chatId, d.scope, tgUserId, subject, content, importance);
+      const kind: MemoryKind = d.kind === 'status' ? 'status' : 'trait';
+      const res = stmt.run(chatId, d.scope, tgUserId, subject, content, importance, kind);
       byKey.set(key, Number(res.lastInsertRowid));
     }
   });
@@ -342,6 +348,23 @@ export function dedupeMemory(chatId: number, halfLifeDays: number): number {
   return toDelete.length;
 }
 
+/**
+ * Hard-expire passive STATUS facts not mentioned for `ttlDays`. A status is a
+ * claim about NOW («сейчас во Вьетнаме»), so past its shelf life it isn't a faded
+ * memory — it's misinformation, and recall_memory would still surface it. Done
+ * deterministically (age check, not model judgement), like the expense sweep.
+ * Traits and pinned facts are untouched. Returns how many rows were removed.
+ */
+export function expireStatuses(chatId: number, ttlDays: number): number {
+  const res = getDb()
+    .prepare(
+      `DELETE FROM chat_memory_item
+       WHERE chat_id = ? AND kind = 'status' AND source = 'passive' AND last_seen < ?`,
+    )
+    .run(chatId, Date.now() - ttlDays * 86_400_000);
+  return res.changes;
+}
+
 /** Keep storage within `max` passive items; delete the lowest-weight overflow. */
 export function pruneMemory(chatId: number, max: number, halfLifeDays: number): void {
   const items = getAllItems(chatId);
@@ -438,6 +461,8 @@ export interface DisplayItem {
   scope: MemoryScope;
   subject: string;
   pinned: boolean;
+  /** Current-state fact (fast decay + expiry), shown with its own tag. */
+  status: boolean;
 }
 
 /**
@@ -458,6 +483,7 @@ export function listMemoryItemsForDisplay(chatId: number, halfLifeDays: number):
       scope: i.scope,
       subject: i.subject,
       pinned: i.source === 'explicit',
+      status: i.kind === 'status',
     }));
 }
 

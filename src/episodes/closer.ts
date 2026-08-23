@@ -14,11 +14,13 @@ import {
   episodeCandidates,
   insertEpisode,
   pruneEpisodes,
+  type ChatEpisode,
 } from '../db/repos/episode.repo.js';
 import { getTimezone } from '../db/repos/chatSettings.repo.js';
 import { renderTranscript } from '../summary/transcript.js';
 import { summarizeEpisode } from '../llm/episode.js';
 import { segmentEpisodes } from './detect.js';
+import { refreshProfilesForChat } from './profileRefresh.js';
 
 // Chats whose last close attempt failed wait this long before retrying, so a
 // broken API key doesn't turn the minute tick into a call-per-minute loop.
@@ -82,31 +84,43 @@ async function closeChatEpisodes(chatId: number, watermark: number, now: number)
   if (segments.length === 0) return;
 
   const tz = getTimezone(chatId) ?? cfg.DEFAULT_TIMEZONE;
-  for (const seg of segments.slice(0, cfg.EPISODE_MAX_PER_TICK)) {
-    const slice = messages.slice(seg.start, seg.end + 1);
-    const rendered = renderTranscript(slice, { tz, charBudget: cfg.EPISODE_CHAR_BUDGET });
-    const head =
-      rendered.dropped > 0
-        ? `(начало сессии — ${rendered.dropped} сообщ. — не поместилось и не показано)\n`
-        : '';
-    const notes = await summarizeEpisode(`${head}${rendered.text}`);
-    if (!notes) {
-      // Do NOT advance past an unsummarised stretch: closing later segments first
-      // would move the watermark over this one and silently lose it.
-      throw new Error('episode summarisation returned nothing');
+  const closed: ChatEpisode[] = [];
+  try {
+    for (const seg of segments.slice(0, cfg.EPISODE_MAX_PER_TICK)) {
+      const slice = messages.slice(seg.start, seg.end + 1);
+      const rendered = renderTranscript(slice, { tz, charBudget: cfg.EPISODE_CHAR_BUDGET });
+      const head =
+        rendered.dropped > 0
+          ? `(начало сессии — ${rendered.dropped} сообщ. — не поместилось и не показано)\n`
+          : '';
+      const notes = await summarizeEpisode(`${head}${rendered.text}`);
+      if (!notes) {
+        // Do NOT advance past an unsummarised stretch: closing later segments first
+        // would move the watermark over this one and silently lose it.
+        throw new Error('episode summarisation returned nothing');
+      }
+      const episode: ChatEpisode = {
+        id: 0, // filled below
+        chatId,
+        startedAt: slice[0]!.createdAt,
+        endedAt: slice[slice.length - 1]!.createdAt,
+        messageCount: slice.length,
+        summary: notes.summary,
+        topics: notes.topics,
+        createdAt: Date.now(),
+      };
+      episode.id = insertEpisode(episode);
+      closed.push(episode);
+      logger.info(
+        { chatId, messages: slice.length, topics: notes.topics },
+        'episode closed',
+      );
     }
-    insertEpisode({
-      chatId,
-      startedAt: slice[0]!.createdAt,
-      endedAt: slice[slice.length - 1]!.createdAt,
-      messageCount: slice.length,
-      summary: notes.summary,
-      topics: notes.topics,
-    });
-    logger.info(
-      { chatId, messages: slice.length, topics: notes.topics },
-      'episode closed',
-    );
+  } finally {
+    // Consolidation on the sessions that DID close, even when a later segment's
+    // summarisation failed. Best-effort inside (never throws), and deliberately
+    // outside the closer's backoff: a profile hiccup must not delay episode work.
+    await refreshProfilesForChat(chatId, closed);
+    if (closed.length > 0) pruneEpisodes(chatId, cfg.EPISODE_KEEP_PER_CHAT);
   }
-  pruneEpisodes(chatId, cfg.EPISODE_KEEP_PER_CHAT);
 }

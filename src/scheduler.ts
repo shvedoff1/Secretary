@@ -38,6 +38,7 @@ import {
   memorySubjects,
 } from './db/repos/memoryItem.repo.js';
 import { listEpisodes, recentEpisodes, episodeCount } from './db/repos/episode.repo.js';
+import { listProfiles } from './db/repos/profile.repo.js';
 import { renderEpisodeLine } from './episodes/render.js';
 import { buildTopicIndex } from './util/topicIndex.js';
 import { makeRecallMemoryHandler } from './bot/flows/assist.js';
@@ -162,6 +163,12 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
         episodeTotal: journalOn ? episodeCount(task.chatId) : 0,
         memoryTopics,
+        profiles:
+          mode === 'tutor' || !cfg.ENABLE_PROFILES || !cfg.ENABLE_MEMORY
+            ? []
+            : listProfiles(task.chatId)
+                .slice(0, cfg.PROFILE_CONTEXT_MAX)
+                .map((p) => ({ subject: p.subject, content: p.content })),
         defaultCurrency: chatCfg?.default_currency ?? cfg.DEFAULT_CURRENCY,
         members: members.map((m) => ({ name: m.name, initials: m.initials })),
         memoryChat,

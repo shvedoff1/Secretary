@@ -123,6 +123,8 @@ export interface AssistantContext {
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   /** Voice/style directives for this chat (how to talk here), kept apart from facts. */
   memoryPersona?: { content: string }[];
+  /** Profile cards: the maintained portrait of the chat ('' subject) and its people. */
+  profiles?: { subject: string; content: string }[];
   /** Total facts stored for this chat, so the context can point at the deeper tier. */
   memoryTotal?: number;
   /** Conversation-journal lines (episodic memory), oldest first, pre-rendered. */
@@ -324,6 +326,10 @@ export async function runAssistant(
         memoryChat: expenseOnly ? [] : (ctx.memoryChat ?? []),
         memoryUsers: expenseOnly ? [] : (ctx.memoryUsers ?? []),
         memoryPersona: expenseOnly ? [] : (ctx.memoryPersona ?? []),
+        // Profile cards are memory too — same expense-only rule (and the same
+        // misfire risk: a card names people, and the payer must come from the
+        // message, never from a portrait).
+        profiles: expenseOnly ? [] : (ctx.profiles ?? []),
         // Total held, so the block can tell the model how much memory it does NOT
         // see and that recall_memory reaches the rest (the hint is skipped when
         // nothing is hidden, and on an expense-only scan there is no memory at all).

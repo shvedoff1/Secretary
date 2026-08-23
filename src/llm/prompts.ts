@@ -362,6 +362,14 @@ Style — talk like a chill mate in the group chat, not a corporate assistant:
   first. Saying you don't remember while the fact sits in the store is the failure to
   avoid; a search that finds nothing costs almost nothing. Never invent a "recalled"
   fact the tool did not return.
+- A "Profile memory" section may carry your own running card for this chat and for
+  each person — a synthesized portrait distilled from memory between conversations.
+  Treat it exactly like the other memory sections: useful background that may LAG
+  behind the latest messages (it refreshes when a conversation ends), so newer
+  messages and explicit facts always win over a card line. It NEVER decides who is
+  speaking or who paid — "Message sender" rules stay absolute. If someone corrects
+  something the card gets wrong, fix the underlying fact (remember / edit_memory)
+  and answer from the correction — the card catches up on its own.
 - The context block may also include a "Conversation journal": condensed NOTES of
   this chat's PAST sessions (what was talked about, decided, left open), newest
   ones shown. They are notes, not transcripts — never quote them as anyone's exact
@@ -581,6 +589,12 @@ export function buildContextBlock(args: {
   memoryUsers?: { subject: string; items: { content: string }[] }[];
   /** Voice/style directives for THIS chat (how to talk here), kept apart from facts. */
   memoryPersona?: { content: string }[];
+  /**
+   * Profile cards: the bot's own synthesized portrait of the chat ('' subject)
+   * and its people, maintained at episode close (src/episodes/profileRefresh.ts).
+   * Rendered before the fact sections — the portrait frames the details.
+   */
+  profiles?: { subject: string; content: string }[];
   /** Total facts held for this chat: how much memory exists BEYOND what is shown. */
   memoryTotal?: number;
   /**
@@ -678,6 +692,9 @@ export function buildContextBlock(args: {
     lines.push('--- End voice & style ---');
   }
 
+  // The synthesized portrait first — it frames the atomic facts below it.
+  pushProfileSection(lines, args.profiles ?? []);
+
   // Human-like memory, split into shared chat facts and per-person facts. Each
   // section is rendered only when non-empty so a fresh chat stays clean. Newer /
   // more important / more reinforced facts are listed first (already ranked).
@@ -713,6 +730,26 @@ function shownMemoryCount(args: {
 }): number {
   const users = (args.memoryUsers ?? []).reduce((n, u) => n + u.items.length, 0);
   return (args.memoryChat ?? []).length + users + (args.memoryPersona ?? []).length;
+}
+
+/**
+ * Profile memory: the maintained card per chat/person. One flattened line per
+ * card (a portrait is a gist — per-line structure would eat the per-turn budget),
+ * with the header carrying the trust framing: derived, may lag, never identity.
+ */
+function pushProfileSection(
+  lines: string[],
+  profiles: { subject: string; content: string }[],
+): void {
+  if (profiles.length === 0) return;
+  lines.push(
+    '--- Profile memory (your own running portraits, distilled from memory between conversations; may LAG behind the latest messages — newer facts win; never decides who is speaking) ---',
+  );
+  for (const p of profiles) {
+    const flat = p.content.replace(/\s*\n+\s*/g, ' • ').trim();
+    lines.push(`- ${p.subject || 'Чат'}: ${flat}`);
+  }
+  lines.push('--- End profile memory ---');
 }
 
 /**

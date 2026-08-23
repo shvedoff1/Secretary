@@ -12,6 +12,8 @@ export interface ExtractedFact {
   subject: string;
   content: string;
   importance: number;
+  /** trait = durable knowledge (default); status = current, temporary state. */
+  kind: 'trait' | 'status';
 }
 
 /** The extractor's output: new facts to add, plus ids of known facts re-mentioned. */
@@ -31,17 +33,25 @@ const MEMORY_EXTRACT_SYSTEM = `You maintain a compact, human-like long-term memo
 You are given (1) the facts ALREADY known about this chat, each with an #id, and
 (2) a new batch of messages, each prefixed with the sender's name.
 
-Extract only DURABLE, identity-level facts worth remembering for weeks: stable
-preferences and habits, relationships, roles, locations, plans, and significant
-life events or decisions. Split them into:
+Extract only facts worth remembering: stable preferences and habits, relationships,
+roles, locations, plans, significant life events or decisions — and the group's or a
+person's notable CURRENT state. Split them into:
 - "chat" scope — facts about the GROUP as a whole (shared plans, the trip they're on,
   group-wide facts). Leave "subject" empty.
 - "user" scope — facts about ONE person. Set "subject" to that person's name (use the
   sender name, or the named person the message is about).
 
-DO NOT capture: ephemeral chatter, greetings, jokes, transient moods, logistics
-already handled elsewhere, money/expenses, or anything trivial. When in doubt, omit —
-keep memory clean and small.
+Each fact also has a "kind":
+- "trait" — durable, identity-level knowledge that stays true for months («серфит»,
+  «живёт на Бали», «женат на Кате», «работает в крипте»). The default.
+- "status" — a CURRENT, temporary state: true now, expected to change («сейчас во
+  Вьетнаме до марта», «болеет», «на этой неделе завал на работе», «ищет квартиру»).
+  Phrase a status so the time frame is visible («сейчас…», «в августе…»). Statuses
+  fade from memory quickly by design — that is what makes them safe to keep.
+
+DO NOT capture: ephemeral chatter, greetings, jokes, one-off moods («устал сегодня»),
+logistics already handled elsewhere, money/expenses, or anything trivial. When in
+doubt, omit — keep memory clean and small.
 
 Score each new fact's "importance" 1..5: 1 = minor taste; 3 = stable preference/habit;
 5 = major life event / decision / relationship change.
@@ -51,7 +61,7 @@ is already in the known list, DO NOT create a new item — put that fact's #id (
 only) into "reinforcedIds".
 
 Output ONLY a JSON object (no prose, no markdown fences):
-{"newItems":[{"scope":"chat|user","subject":"","content":"...","importance":3}],"reinforcedIds":[12,7]}
+{"newItems":[{"scope":"chat|user","subject":"","content":"...","importance":3,"kind":"trait|status"}],"reinforcedIds":[12,7]}
 At most 12 new items. If nothing qualifies, output {"newItems":[],"reinforcedIds":[]}.`;
 
 /**
@@ -86,7 +96,10 @@ export function parseMemoryJson(text: string, max = 12): MemoryExtraction {
       const importance = Number.isFinite(impRaw)
         ? Math.min(MAX_IMPORTANCE, Math.max(MIN_IMPORTANCE, impRaw))
         : 3;
-      newItems.push({ scope, subject, content: content.trim(), importance });
+      // Anything that isn't explicitly a status stays a trait — the safe default
+      // (a mis-kinded trait merely fades fast; the reverse would linger wrongly).
+      const kind = (it as { kind?: unknown }).kind === 'status' ? 'status' : 'trait';
+      newItems.push({ scope, subject, content: content.trim(), importance, kind });
       if (newItems.length >= max) break;
     }
   }
@@ -108,7 +121,11 @@ function renderKnown(known: MemoryItem[]): string {
   return known
     .map((k) => {
       const who = k.scope === 'user' ? k.subject || 'участник' : 'чат';
-      return `#${k.id} [${who}] ${k.content}`;
+      // Statuses are labelled so a re-mention reinforces the existing row (which
+      // resets its decay clock — how an ONGOING state stays current) instead of
+      // spawning a duplicate.
+      const status = k.kind === 'status' ? ', статус' : '';
+      return `#${k.id} [${who}${status}] ${k.content}`;
     })
     .join('\n');
 }

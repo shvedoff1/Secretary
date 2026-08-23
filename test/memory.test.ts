@@ -8,7 +8,8 @@ describe('parseMemoryJson', () => {
       '{"newItems":[{"scope":"user","subject":"Маша","content":"переехала в Лиссабон","importance":4}],"reinforcedIds":[12,7]}',
     );
     expect(out.newItems).toEqual([
-      { scope: 'user', subject: 'Маша', content: 'переехала в Лиссабон', importance: 4 },
+      // No kind in the model's output → trait, the safe (pre-027) default.
+      { scope: 'user', subject: 'Маша', content: 'переехала в Лиссабон', importance: 4, kind: 'trait' },
     ]);
     expect(out.reinforcedIds).toEqual([12, 7]);
   });

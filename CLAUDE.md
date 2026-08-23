@@ -279,6 +279,37 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `EPISODE_MAX_MESSAGES` (per-close read cap; deeper backlog is worked off across
   ticks), `EPISODE_CHAR_BUDGET`, `EPISODE_MAX_PER_TICK`, `EPISODE_KEEP_PER_CHAT`,
   `EPISODE_RECALL_LIMIT`.
+  Episode close also drives PROFILE CARDS (`chat_profile`, migration 027,
+  `profile.repo.ts`) — "consolidation during rest": the bot's own running 2-5 line
+  portrait of the chat ('' subject) and of each person (subject NOCASE-unique).
+  `profileRefresh.ts` hands the cheap model (`src/llm/profile.ts`,
+  `ANTHROPIC_PROFILE_MODEL` Haiku at temperature 0) the current cards + the
+  just-closed episodes' notes + the top ~40 FACTS as ground truth; it returns ONLY
+  the cards the session changed (omitted = kept word-for-word — re-wording is
+  where drift creeps in), parse is defensive (bad JSON → old cards stand, content
+  capped at `PROFILE_CARD_MAX_CHARS`), and a failed call never blocks episode
+  work. The anti-drift stance: cards are DERIVED views — facts always override a
+  card line, correcting memory (remember/edit_memory) fixes the card at the next
+  close, `/profile <chatId> clear` regenerates from scratch, and the bare
+  `/forget` reset wipes them with the memory they were distilled from. Rendered as
+  the "Profile memory" section ABOVE the fact sections (flattened one line per
+  card, capped `PROFILE_CONTEXT_MAX`), with static prompt rules: may LAG behind
+  the latest messages, never decides who is speaking/paid. Off with memory on the
+  expense-only scan, off in tutor chats, global `ENABLE_PROFILES`. Admin
+  `/profile <chatId>` shows the exact stored cards.
+- Memory fact KINDS (migration 027): every `chat_memory_item` is a `trait`
+  (durable — the default and the old behaviour) or a `status` — a CURRENT,
+  temporary state («сейчас во Вьетнаме», «болеет») the extractor now classifies
+  (`kind` in its JSON; anything not explicitly status parses as trait, the safe
+  default). A status decays on `MEMORY_HALFLIFE_DAYS / STATUS_HALFLIFE_DIVISOR`
+  (fixed divisor 5 in `memoryWeight.ts` — the ratio matters, not another knob), so
+  «во Вьетнаме» fades from the working set in days unless re-mentioned (the
+  extractor's known-facts list tags statuses so a re-mention reinforces the row,
+  resetting its clock — an ONGOING state stays current), and is hard-EXPIRED from
+  the store after `MEMORY_STATUS_TTL_DAYS` (default 60) by the deterministic
+  `expireStatuses` sweep in `flushMemory` — a stale "current state" is
+  misinformation recall would still surface, not a memory. Traits and pinned
+  facts never expire; `/memory` tags statuses ⏳.
 - `src/watch/` — page watches («вотчеры»): poll a URL until an awaited EVENT appears
   on it, then notify the chat and disarm — «следи за https://kinomax.ru/… и напиши,
   когда появятся сеансы Титана». Created in plain words via the `watch_page` tool

@@ -11,6 +11,7 @@ import {
   recordMemoryItems,
   reinforceItems,
   pruneMemory,
+  expireStatuses,
   type MemoryDraft,
   type MemorySample,
 } from '../../db/repos/memoryItem.repo.js';
@@ -59,7 +60,14 @@ export function resolveSubject(subject: string, senders: Sender[]): number | nul
 
 function toDraft(fact: ExtractedFact, senders: Sender[]): MemoryDraft {
   if (fact.scope !== 'user') {
-    return { scope: 'chat', tgUserId: null, subject: '', content: fact.content, importance: fact.importance };
+    return {
+      scope: 'chat',
+      tgUserId: null,
+      subject: '',
+      content: fact.content,
+      importance: fact.importance,
+      kind: fact.kind,
+    };
   }
   return {
     scope: 'user',
@@ -67,6 +75,7 @@ function toDraft(fact: ExtractedFact, senders: Sender[]): MemoryDraft {
     subject: fact.subject,
     content: fact.content,
     importance: fact.importance,
+    kind: fact.kind,
   };
 }
 
@@ -88,6 +97,10 @@ export async function flushMemory(chatId: number): Promise<void> {
 
   if (drafts.length > 0) recordMemoryItems(chatId, drafts);
   if (extraction.reinforcedIds.length > 0) reinforceItems(chatId, extraction.reinforcedIds);
+  // Statuses past their shelf life leave the store outright (a stale "current
+  // state" is misinformation, not a memory), then the usual volume prune.
+  const expired = expireStatuses(chatId, cfg.MEMORY_STATUS_TTL_DAYS);
+  if (expired > 0) logger.debug({ chatId, expired }, 'expired stale status facts');
   pruneMemory(chatId, cfg.MEMORY_MAX_ITEMS, cfg.MEMORY_HALFLIFE_DAYS);
 }
 

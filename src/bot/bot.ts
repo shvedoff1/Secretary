@@ -46,6 +46,7 @@ import {
 } from './commands/admin.js';
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
+import { onDocument } from './handlers/onDocument.js';
 import { onVoice } from './handlers/onVoice.js';
 import { onBotMembership, handleModeCallback } from './handlers/onBotMembership.js';
 import { onForwardReaction } from './handlers/onForwardReaction.js';
@@ -148,6 +149,7 @@ export function buildBot(token: string): Bot {
   bot.on('message_reaction', onForwardReaction);
 
   bot.on('message:photo', onPhoto);
+  bot.on('message:document', onDocument);
   bot.on('message:voice', onVoice);
   bot.on('message:text', onMessage);
 

@@ -7,8 +7,6 @@ import {
   captionLooksLikeSharedExpense,
   mentionsBotByName,
 } from '../triggers.js';
-import { getChatConfig } from '../../db/repos/chatConfig.repo.js';
-import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { runAndRespond, senderName } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { forwardOrigin, isForwarded } from '../forwarded.js';
@@ -37,11 +35,11 @@ export async function onPhoto(ctx: Context): Promise<void> {
     forwarded: isForwarded(ctx.message),
   });
 
-  // A FORWARDED photo goes to the forward batch, not the receipt flow: it's
-  // someone else's picture (an album arrives as one such message per photo), and
-  // parsing each as a чек — or nagging about Splid in a DM — is exactly the spam
-  // the batch exists to avoid. Buffered as caption-only: the batch is a text
-  // digest; the model can ask for the photo if the caption isn't enough.
+  // A FORWARDED photo goes to the forward batch, not the assistant: it's someone
+  // else's picture (an album arrives as one such message per photo), and answering
+  // each one is exactly the spam the batch exists to avoid. Buffered as
+  // caption-only: the batch is a text digest; the model can ask for the photo if
+  // the caption isn't enough.
   if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
     bufferForward(ctx.chat.id, {
       messageId: ctx.message!.message_id,
@@ -73,16 +71,21 @@ export async function onPhoto(ctx: Context): Promise<void> {
   // Not addressed but caption implies a split → look at it, but stay silent unless
   // it really is an expense (addressed=false ⇒ runAndRespond returns 'silent' on a
   // non-expense), so a false positive costs only a wasted model call, never noise.
-  await handleReceiptPhoto(ctx, photos, caption, addressed);
+  await handlePhotoTurn(ctx, photos, caption, addressed);
 }
 
 /**
- * Download a photo and run it through the assistant — as a receipt in secretary
- * mode, or as a problem/exercise photo in tutor mode (a student photographs the
- * task from a textbook, so no Splid gate there). Shared by the photo handler and
- * the "reply to a photo with a ping" path in onMessage.
+ * Download a photo and run it through the assistant. A photo is just a photo:
+ * the MODEL decides what it is — a receipt to split (only where Splid is
+ * connected, which it reads from the context block), a problem from a textbook in
+ * tutor mode, a screenshot to read, a place to identify. There is deliberately NO
+ * Splid gate here: gating the whole picture on a connected group made the bot
+ * answer «подключите группу Splid» to a photo of a cat in an assistant-mode DM —
+ * an add-on nobody asked about growing over the one thing that was asked. Shared
+ * by the photo handler and the "reply to a photo with a ping" paths in
+ * onMessage/onVoice.
  */
-export async function handleReceiptPhoto(
+export async function handlePhotoTurn(
   ctx: Context,
   photos: readonly { file_id: string }[],
   caption: string,
@@ -90,23 +93,12 @@ export async function handleReceiptPhoto(
 ): Promise<void> {
   if (!ctx.chat || photos.length === 0) return;
 
-  const tutor = getChatMode(ctx.chat.id) === 'tutor';
-  if (!tutor) {
-    const chatCfg = getChatConfig(ctx.chat.id);
-    if (!chatCfg?.provider_group_id) {
-      if (addressed) {
-        await ctx.reply('Подключите группу Splid командой /group <код>, чтобы я разбирал чеки.');
-      }
-      return;
-    }
-  }
-
   const largest = photos[photos.length - 1]!;
   let base64: string;
   try {
     base64 = (await downloadTelegramFile(ctx, largest.file_id)).toString('base64');
   } catch (err) {
-    logger.error({ err }, 'failed to download receipt photo');
+    logger.error({ err }, 'failed to download photo');
     if (addressed) await ctx.reply('Не смог скачать фото, попробуйте ещё раз.');
     return;
   }
@@ -119,12 +111,13 @@ export async function handleReceiptPhoto(
   ];
   if (caption) blocks.push({ type: 'text', text: caption });
 
-  const tag = tutor ? '[фото]' : '[чек]';
+  // History tag: «[фото]», not «[чек]». The turn is a picture — calling it a
+  // receipt in the history primes the next turn to read every photo as a bill.
   await runAndRespond(ctx, {
     userContent: blocks,
     addressed,
     source: 'photo',
-    historyText: caption ? `${tag} ${caption}` : tag,
+    historyText: caption ? `[фото] ${caption}` : '[фото]',
     // A photo with an addressed caption is a real ask too — consume the pack.
     includeForwardBatch: true,
   });

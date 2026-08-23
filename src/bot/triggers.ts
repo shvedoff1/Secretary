@@ -55,7 +55,9 @@ export function isMoneyContext(args: {
   /** When given, the USER message is also matched against the chat's learned dict. */
   chatId?: number;
 }): boolean {
-  if (args.source === 'photo') return true;
+  // A photo or an attached file is read for its CONTENT — a receipt, a bill, a
+  // statement. Treat both as money context: the exact figures must survive.
+  if (args.source === 'photo' || args.source === 'file') return true;
   // The USER message is matched with the chat's learned expense dictionary — that
   // dictionary was taught on exactly this phrasing, so it belongs here.
   return args.chatId != null

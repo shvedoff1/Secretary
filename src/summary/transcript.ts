@@ -103,6 +103,7 @@ function speaker(msg: LoggedMessage): string {
 function channelTag(kind: LoggedMessage['kind']): string {
   if (kind === 'voice') return ' (голосовое)';
   if (kind === 'photo') return ' (фото)';
+  if (kind === 'file') return ' (файл)';
   return '';
 }
 

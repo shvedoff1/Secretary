@@ -177,6 +177,38 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   keeps forwards out of the auto-expense scan and the DM reply-to-everything
   path, and a forward whose TEXT happens to mention the bot's name is still
   buffered (the words are the original author's, not the sender's).
+  MEDIA (`onPhoto.ts`, `onDocument.ts`, `media.ts`, `pendingFile.ts`): a PHOTO is
+  just a photo — an addressed photo always goes to the model and IT decides what
+  it is (a receipt to split where Splid is connected, a problem in tutor mode, a
+  screenshot to read). There is deliberately NO Splid gate on the picture: the old
+  `handleReceiptPhoto` answered «Подключите группу Splid» to any photo in a chat
+  with no group — in every mode, so the optional add-on grew over assistant mode.
+  Two static prompt rules keep it out: «Do NOT assume every picture is a receipt»
+  and «A PHOTO or a FILE is NEVER on its own a reason to bring Splid up» (both
+  pinned by a test), and the Splid OFFER now fires only on expense intent in
+  WORDS. History tags a photo turn `[фото]`, never `[чек]`.
+  FILES («док» — `message:document`) split by whether anything was ASKED: a file
+  with a caption (or dropped as a reply to the bot, or replied to with a ping) is
+  read at once; a file dropped with nothing said is NOT downloaded — the bot asks
+  «что с ним сделать?» with a CANNED zero-token line and PARKS the file_id in a
+  per-chat slot (`pendingFile.ts`, TTL `PENDING_FILE_TTL_MINUTES`, default 5). The
+  next ADDRESSED message claims the slot and becomes the instruction, so «вытащи
+  суммы» is answered without a re-upload; unaddressed group chatter can never
+  claim it (that's the whole point — no tokens on a file nobody asked about). An
+  IMAGE sent as a file follows the PHOTO rule instead (it's a photo that skipped
+  compression). `media.ts` is pure and decides what a file IS from mime+extension
+  (`image`/`pdf`/`text`/`unsupported`, Telegram loves `application/octet-stream`)
+  and builds the blocks: image block, base64 PDF `document` block, or inlined text
+  capped at `FILE_TEXT_MAX_CHARS` with the CUT stated in the turn. Unsupported
+  types and anything over `FILE_MAX_MB` are refused in one line before any
+  download; forwarded files join the pack (name + caption); GIFs are skipped
+  (Telegram sets `document` on animations too); off via `ENABLE_FILE_INPUT=false`.
+  A file turn is its own channel — `source: 'file'` / `LogKind 'file'` (migration
+  025 widens both CHECK constraints) — and counts as money context, so the
+  humorizer stays off exact figures read out of a document. The turn is prefixed
+  with `FILE_ATTACHMENT_MARKER` (`[вложенный файл]` + name/kind), explained
+  verbatim in `SYSTEM_PROMPT` like the voice and forward markers, so a chat rule
+  can key on «файлы».
 - `src/summary/` — `summarize_chat` skill: recap what was actually SAID in a chat
   («перескажи, что было в последних 200 сообщениях», «что я пропустил», «о чём
   болтали вчера»). It needed a new store: `conversation_turn` is the assistant's

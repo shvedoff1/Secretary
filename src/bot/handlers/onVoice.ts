@@ -8,7 +8,7 @@ import { learnMemoryFromMessage } from '../flows/memory.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../../llm/transcribe.js';
 import { setTranscript } from '../transcriptCache.js';
-import { handleReceiptPhoto } from './onPhoto.js';
+import { handlePhotoTurn } from './onPhoto.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
 import {
@@ -184,7 +184,7 @@ export async function onVoice(ctx: Context): Promise<void> {
     // The ✍️ was just a "heard you" ack; the receipt handler owns the UI from here
     // (its own 👀 while working, then a preview), so drop our mark before delegating.
     await clearWriting(ctx);
-    await handleReceiptPhoto(ctx, replyTo.photo, caption, true);
+    await handlePhotoTurn(ctx, replyTo.photo, caption, true);
     return;
   }
 

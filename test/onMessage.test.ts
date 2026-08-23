@@ -33,7 +33,10 @@ vi.mock('../src/bot/editTargets.js', () => ({
   getEditTarget: vi.fn(() => undefined),
 }));
 vi.mock('../src/bot/handlers/onPhoto.js', () => ({
-  handleReceiptPhoto: vi.fn(),
+  handlePhotoTurn: vi.fn(),
+}));
+vi.mock('../src/bot/handlers/onDocument.js', () => ({
+  runFileTurn: vi.fn(),
 }));
 vi.mock('../src/bot/forwardBuffer.js', () => ({
   bufferForward: vi.fn(() => true),
@@ -57,7 +60,9 @@ import {
 import { runAndRespond, rewordPending } from '../src/bot/flows/assist.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 import { learnMemoryFromMessage } from '../src/bot/flows/memory.js';
-import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
+import { handlePhotoTurn } from '../src/bot/handlers/onPhoto.js';
+import { runFileTurn } from '../src/bot/handlers/onDocument.js';
+import { armPendingFile, hasPendingFile, resetPendingFiles } from '../src/bot/pendingFile.js';
 import { recordChatMessage, armChime } from '../src/bot/flows/chime.js';
 import { getEditTarget } from '../src/bot/editTargets.js';
 import { getChatMode } from '../src/db/repos/chatSettings.repo.js';
@@ -72,7 +77,8 @@ const mockRun = vi.mocked(runAndRespond);
 const mockReword = vi.mocked(rewordPending);
 const mockLearn = vi.mocked(learnFromMessage);
 const mockLearnMemory = vi.mocked(learnMemoryFromMessage);
-const mockPhoto = vi.mocked(handleReceiptPhoto);
+const mockPhoto = vi.mocked(handlePhotoTurn);
+const mockFileTurn = vi.mocked(runFileTurn);
 const mockRecord = vi.mocked(recordChatMessage);
 const mockChime = vi.mocked(armChime);
 const mockEditTarget = vi.mocked(getEditTarget);
@@ -94,6 +100,7 @@ beforeEach(() => {
   mockFresh.mockReturnValue(false);
   mockEditTarget.mockReturnValue(undefined);
   mockMode.mockReturnValue('secretary');
+  resetPendingFiles();
 });
 
 function replyToPreview(text: string): Context {
@@ -457,5 +464,89 @@ describe('onMessage chat log', () => {
   it('does not log commands (they are not chat)', async () => {
     await onMessage(ctx('/help'));
     expect(mockLog).not.toHaveBeenCalled();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Attached files
+// ---------------------------------------------------------------------------
+
+const PARKED = {
+  fileId: 'F1',
+  fileName: 'счёт.pdf',
+  mimeType: 'application/pdf',
+  kind: 'pdf' as const,
+  messageId: 5,
+};
+
+function replyToDoc(text: string, doc: Record<string, unknown>): Context {
+  return {
+    message: { text, reply_to_message: { message_id: 42, from: { id: 999 }, document: doc } },
+    chat: { id: 1, type: 'group' },
+    from: { id: 2 },
+  } as unknown as Context;
+}
+
+describe('onMessage and attached files', () => {
+  it('claims a parked file: the next addressed message IS the instruction', async () => {
+    // The bot asked «что с ним сделать?» and parked the file; this answer must
+    // reach the model WITH the file, without the user re-uploading it.
+    armPendingFile(1, PARKED);
+    mockAddressed.mockReturnValue(true);
+    mockRoute.mockReturnValue('process');
+
+    await onMessage(ctx('вытащи оттуда суммы'));
+
+    expect(mockFileTurn).toHaveBeenCalledOnce();
+    expect(mockFileTurn.mock.calls[0]!.slice(1)).toEqual([PARKED, 'вытащи оттуда суммы']);
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(hasPendingFile(1)).toBe(false);
+  });
+
+  it('does NOT let unaddressed group chatter claim a parked file', async () => {
+    // Otherwise the next «ага» from anyone burns a PDF read nobody asked for.
+    armPendingFile(1, PARKED);
+    mockAddressed.mockReturnValue(false);
+    mockRoute.mockReturnValue('ignore');
+
+    await onMessage(ctx('ага'));
+
+    expect(mockFileTurn).not.toHaveBeenCalled();
+    expect(hasPendingFile(1)).toBe(true);
+  });
+
+  it('reads a file when the user replies to it while pinging the bot', async () => {
+    mockAddressed.mockReturnValue(true);
+
+    await onMessage(
+      replyToDoc('что тут по суммам?', {
+        file_id: 'F9',
+        file_name: 'смета.pdf',
+        mime_type: 'application/pdf',
+      }),
+    );
+
+    expect(mockFileTurn).toHaveBeenCalledOnce();
+    const [, file, instruction] = mockFileTurn.mock.calls[0]!;
+    expect(file).toMatchObject({ fileId: 'F9', fileName: 'смета.pdf', kind: 'pdf' });
+    expect(instruction).toBe('что тут по суммам?');
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('falls through to a normal reply when the replied-to file is one it cannot read', async () => {
+    mockAddressed.mockReturnValue(true);
+    mockRoute.mockReturnValue('process');
+
+    await onMessage(
+      replyToDoc('что это?', {
+        file_id: 'F9',
+        file_name: 'archive.zip',
+        mime_type: 'application/zip',
+      }),
+    );
+
+    expect(mockFileTurn).not.toHaveBeenCalled();
+    expect(mockRun).toHaveBeenCalledOnce();
   });
 });

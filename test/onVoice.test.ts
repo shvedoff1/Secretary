@@ -35,14 +35,14 @@ vi.mock('../src/bot/flows/memory.js', () => ({
   learnMemoryFromMessage: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../src/bot/handlers/onPhoto.js', () => ({
-  handleReceiptPhoto: vi.fn(),
+  handlePhotoTurn: vi.fn(),
 }));
 
 import { onVoice } from '../src/bot/handlers/onVoice.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../src/llm/transcribe.js';
 import { isAddressed, routeMessage, addressesBotByName } from '../src/bot/triggers.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
-import { handleReceiptPhoto } from '../src/bot/handlers/onPhoto.js';
+import { handlePhotoTurn } from '../src/bot/handlers/onPhoto.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 import { learnMemoryFromMessage } from '../src/bot/flows/memory.js';
 import { bufferForward } from '../src/bot/forwardBuffer.js';
@@ -53,7 +53,7 @@ const mockAddressed = vi.mocked(isAddressed);
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
 const mockRun = vi.mocked(runAndRespond);
-const mockPhoto = vi.mocked(handleReceiptPhoto);
+const mockPhoto = vi.mocked(handlePhotoTurn);
 
 // Bare writing-hand codepoint (no variation selector) — the only form Telegram
 // accepts as a reaction.

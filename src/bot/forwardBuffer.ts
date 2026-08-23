@@ -32,7 +32,7 @@ export interface BufferedForward {
   messageId: number;
   /** Who it was forwarded from (the `forwardOrigin` label). */
   origin: string;
-  kind: 'text' | 'voice' | 'photo';
+  kind: 'text' | 'voice' | 'photo' | 'document';
   /** Message text / voice transcript / photo caption (may be empty for a photo). */
   text: string;
 }
@@ -142,6 +142,7 @@ const KIND_LABEL: Record<BufferedForward['kind'], string> = {
   text: '',
   voice: ', голосовое — расшифровка',
   photo: ', фото',
+  document: ', файл — только имя и подпись',
 };
 
 /**

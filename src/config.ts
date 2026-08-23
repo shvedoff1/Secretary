@@ -165,6 +165,19 @@ const ConfigSchema = z.object({
   // Max messages kept per batch — the batch lands in one LLM turn, so this caps
   // the context it can consume. Extra forwards are counted but not stored.
   FORWARD_BUFFER_MAX: z.coerce.number().int().positive().default(50),
+  // Attached FILES (documents): images sent uncompressed, PDFs, plain-text files.
+  // Off = the bot ignores documents exactly as it did before they were handled.
+  ENABLE_FILE_INPUT: boolish.default(true),
+  // Hard size cap on an attached file. Telegram's Bot API caps downloads at 20 MB
+  // anyway; the tighter default keeps one PDF from eating a whole turn's budget.
+  FILE_MAX_MB: z.coerce.number().positive().default(10),
+  // How much of a TEXT file reaches the model (the rest is cut, and the cut is
+  // stated in the turn so the model never pretends it read the whole thing).
+  FILE_TEXT_MAX_CHARS: z.coerce.number().int().positive().default(20000),
+  // A file that arrived with no explanation is parked (NOT read — that costs
+  // tokens) while the bot asks what to do with it. This is how long the next
+  // message can still claim it.
+  PENDING_FILE_TTL_MINUTES: z.coerce.number().int().positive().default(5),
   // Chat rules: standing behaviour instructions set in plain words («все голосовые
   // очищай от слов-паразитов», «отвечай короче»). Every rule is injected into
   // EVERY turn's context block, so the list must stay short — this cap is what

@@ -2,7 +2,7 @@ import { getDb } from '../client.js';
 
 export type LogRole = 'user' | 'assistant';
 /** Channel the line came through — a voice note reads differently from a caption. */
-export type LogKind = 'text' | 'voice' | 'photo';
+export type LogKind = 'text' | 'voice' | 'photo' | 'file';
 
 export interface LoggedMessage {
   id: number;

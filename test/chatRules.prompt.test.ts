@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  FILE_ATTACHMENT_MARKER,
   FORWARDED_MESSAGE_MARKER,
   SYSTEM_PROMPT,
   ASSISTANT_SYSTEM_PROMPT,
@@ -87,6 +88,24 @@ describe('SYSTEM_PROMPT forwarded-message guidance', () => {
   it('says a forward is not the sender’s own words or spend, and that rules win', () => {
     expect(SYSTEM_PROMPT).toMatch(/never attribute the\s+content to the sender/);
     expect(SYSTEM_PROMPT).toContain('пересланных');
+  });
+});
+
+describe('SYSTEM_PROMPT media guidance', () => {
+  it('explains the attached-file marker verbatim, so a rule can key on it', () => {
+    // The marker is applied in the file flow and explained here — they must match.
+    expect(SYSTEM_PROMPT).toContain(FILE_ATTACHMENT_MARKER);
+  });
+
+  it('says a photo is not presumed to be a receipt', () => {
+    expect(SYSTEM_PROMPT).toMatch(/Do NOT assume every\s+picture is a receipt/);
+  });
+
+  it('forbids answering a photo or a file by pitching Splid', () => {
+    // The bug: an assistant-mode chat with no Splid group answered every photo with
+    // «подключите группу Splid». The canned gate is gone from the handler; this
+    // keeps the model from re-inventing it.
+    expect(SYSTEM_PROMPT).toMatch(/A PHOTO or a FILE\s+is NEVER on its own a reason to bring Splid up/);
   });
 });
 

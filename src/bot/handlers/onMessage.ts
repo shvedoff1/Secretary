@@ -11,7 +11,10 @@ import { learnFromMessage } from '../flows/lexicon.js';
 import { learnMemoryFromMessage } from '../flows/memory.js';
 import { recordChatMessage, armChime } from '../flows/chime.js';
 import { getTranscript } from '../transcriptCache.js';
-import { handleReceiptPhoto } from './onPhoto.js';
+import { handlePhotoTurn } from './onPhoto.js';
+import { runFileTurn } from './onDocument.js';
+import { takePendingFile } from '../pendingFile.js';
+import { classifyFile } from '../media.js';
 import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { modeAllowsChime, modeAllowsSlang } from '../../modes.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
@@ -109,7 +112,43 @@ export async function onMessage(ctx: Context): Promise<void> {
     // would drop that and make the bot split the expense among everyone.
     if (replyTo.photo && replyTo.photo.length > 0 && isAddressed(ctx)) {
       const photoCaption = replyTo.caption ? `${replyTo.caption}\n\n${text}` : text;
-      await handleReceiptPhoto(ctx, replyTo.photo, photoCaption, true);
+      await handlePhotoTurn(ctx, replyTo.photo, photoCaption, true);
+      return;
+    }
+    // Same for a reply to a FILE («что тут по суммам?» under a PDF): the reply is
+    // the request, the file is what it's about. This is also the answer path for a
+    // file the bot asked about and the user replied to directly rather than just
+    // typing — the parked slot below covers the typing case.
+    if (replyTo.document && !replyTo.animation && isAddressed(ctx)) {
+      const doc = replyTo.document;
+      const kind = classifyFile(doc.mime_type, doc.file_name);
+      if (kind !== 'unsupported') {
+        takePendingFile(ctx.chat.id); // this reply names the file — drop any parked one
+        const instruction = replyTo.caption ? `${replyTo.caption}\n\n${text}` : text;
+        await runFileTurn(
+          ctx,
+          {
+            fileId: doc.file_id,
+            fileName: doc.file_name?.trim() || 'файл',
+            mimeType: doc.mime_type,
+            kind,
+            messageId: replyTo.message_id,
+          },
+          instruction,
+        );
+        return;
+      }
+    }
+  }
+
+  // A file the bot asked about is waiting: THIS message is the answer to "что с
+  // ним сделать?", so it becomes the instruction and the file is read now. Only on
+  // an addressed message — in a group, chatter around a parked file must not claim
+  // it (and burn the tokens the parking was there to save).
+  if (isAddressed(ctx)) {
+    const parked = takePendingFile(ctx.chat.id);
+    if (parked) {
+      await runFileTurn(ctx, parked, text);
       return;
     }
   }

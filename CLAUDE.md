@@ -297,6 +297,31 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   the latest messages, never decides who is speaking/paid. Off with memory on the
   expense-only scan, off in tutor chats, global `ENABLE_PROFILES`. Admin
   `/profile <chatId>` shows the exact stored cards.
+- Passive memory and MIS-HEARD NAMES: a voice note feeds the extractor its machine
+  TRANSCRIPT, and transcripts mangle names («Швец» for «Швед»). A fact filed under
+  that name opened a person who does not exist — invisible in the working set
+  (`selectForContext` keeps only `tgUserId !== null`) but live everywhere else:
+  `memorySubjects` has no such filter, so the phantom reached the model in the depth
+  hint's TOPIC INDEX every turn, `recall_memory` found it (search covers subject), and
+  `profileRefresh` could bake it into a rendered profile card. Fenced off from both
+  ends. (1) `resolveSubject` (`flows/memory.ts`) now resolves against senders PLUS
+  everyone the store already knows by name (`knownPeopleOf` over the full
+  `getAllItems`, not the top-40 extractor slice — a decayed person is still that
+  person), and after exact/token/prefix falls back to a BOUNDED fuzzy step
+  (`src/util/nameMatch.ts` `nearName`, pure): both names ≥4 chars, ≥2 shared leading
+  characters, ≤1 edit (≤2 from 8 chars) — the floors are what keep «Аня»/«Ваня» and
+  «Коля»/«Толя» apart, since a wrong FIRST letter is a different name while
+  transcribers corrupt the middle and end. It returns `{tgUserId, subject}` and on the
+  fuzzy path canonicalises to the KNOWN spelling so the bucket doesn't split; an
+  AMBIGUOUS match (two candidates near) resolves to nothing rather than to a guess,
+  and an unfamiliar name («Гоша», a brother nobody in the chat is) stays its own
+  subject — the step folds near-misses, it never invents or renames a person.
+  (2) `chat_memory_sample.source` (migration 030) records the channel, `renderSample`
+  labels a voice line with `VOICE_SAMPLE_LABEL` and the extractor prompt quotes that
+  same constant (a test pins the two together, like `VOICE_TRANSCRIPT_MARKER`): names
+  inside such a line are the transcriber's guess — reuse a known person's spelling,
+  fold a third-person self-reference onto the sender, else go chat-scope. Phantoms
+  ALREADY in the store are untouched by this — cleaning them up is `/reconcile` work.
 - Memory fact KINDS (migration 028): every `chat_memory_item` is a `trait`
   (durable — the default and the old behaviour) or a `status` — a CURRENT,
   temporary state («сейчас во Вьетнаме», «болеет») the extractor now classifies

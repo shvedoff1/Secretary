@@ -146,7 +146,7 @@ export async function onVoice(ctx: Context): Promise<void> {
   if (learnable) void learnFromMessage(ctx.chat.id, transcript);
   // Build weighted long-term memory from the transcript too. Best-effort.
   if (learnable && ctx.from) {
-    void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript);
+    void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript, 'voice');
   }
 
   // A FORWARDED voice note is someone else's voice, not the sender talking to the

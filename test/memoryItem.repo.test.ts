@@ -23,13 +23,15 @@ describe('memory sample buffer', () => {
   it('round-trips samples and preserves the sender', async () => {
     const repo = await freshRepo();
     repo.recordSample(1, 100, 'Sky', 'привет');
-    repo.recordSample(1, 200, 'Max', 'ку');
+    repo.recordSample(1, 200, 'Max', 'ку', 'voice');
     expect(repo.sampleStats(1).count).toBe(2);
 
     const claimed = repo.claimSamples(1);
+    // The channel rides along: a voice sample is a machine transcript, and the
+    // extractor is told to distrust the names inside one.
     expect(claimed).toEqual([
-      { tgUserId: 100, senderName: 'Sky', content: 'привет' },
-      { tgUserId: 200, senderName: 'Max', content: 'ку' },
+      { tgUserId: 100, senderName: 'Sky', content: 'привет', source: 'text' },
+      { tgUserId: 200, senderName: 'Max', content: 'ку', source: 'voice' },
     ]);
     // Claiming deletes them.
     expect(repo.sampleStats(1).count).toBe(0);

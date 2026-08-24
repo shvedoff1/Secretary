@@ -29,6 +29,14 @@ const EMPTY: MemoryExtraction = { newItems: [], reinforcedIds: [] };
 // and per-person ones, scores their salience, and re-uses existing facts (by id)
 // instead of duplicating them — the chief defense against the store filling with
 // near-duplicate free text.
+/**
+ * The exact label a VOICE sample carries in the batch (see `renderSample`). The
+ * system prompt below quotes this same constant, so the marker the extractor is told
+ * to look for can never drift from the one we actually write — a test pins the two
+ * together, the same way VOICE_TRANSCRIPT_MARKER is pinned in prompts.ts.
+ */
+export const VOICE_SAMPLE_LABEL = '[голосовое, машинная расшифровка]';
+
 const MEMORY_EXTRACT_SYSTEM = `You maintain a compact, human-like long-term memory for a group chat.
 You are given (1) the facts ALREADY known about this chat, each with an #id, and
 (2) a new batch of messages, each prefixed with the sender's name.
@@ -59,6 +67,15 @@ Score each new fact's "importance" 1..5: 1 = minor taste; 3 = stable preference/
 REINFORCE instead of duplicating: if a message merely restates or confirms a fact that
 is already in the known list, DO NOT create a new item — put that fact's #id (number
 only) into "reinforcedIds".
+
+NAMES FROM A TRANSCRIPT ARE UNRELIABLE. A line marked «${VOICE_SAMPLE_LABEL}» was
+transcribed by machine: the sender's name in the prefix is real, but any name INSIDE
+the text is the transcriber's guess and is routinely mangled («Швец» for «Швед»).
+Never introduce a NEW person on the strength of such a name. If it is
+clearly one of the people already in the known list or one of the senders, use THEIR
+spelling; if the line is the sender talking about themselves in the third person, the
+subject is the sender; otherwise make the fact "chat" scope, or skip it. A name you
+half-heard is not worth a person.
 
 Output ONLY a JSON object (no prose, no markdown fences):
 {"newItems":[{"scope":"chat|user","subject":"","content":"...","importance":3,"kind":"trait|status"}],"reinforcedIds":[12,7]}
@@ -131,6 +148,17 @@ function renderKnown(known: MemoryItem[]): string {
 }
 
 /**
+ * One batch line. A voice sample is LABELLED as a machine transcript: the sender name
+ * is reliable (Telegram gave it to us), but every name INSIDE the text was guessed by
+ * the transcriber, and a mis-heard one used as a fact's subject invents a person who
+ * does not exist. The system prompt says what to do about it.
+ */
+function renderSample(s: MemorySample): string {
+  const channel = s.source === 'voice' ? ` ${VOICE_SAMPLE_LABEL}` : '';
+  return `${s.senderName}${channel}: ${s.content}`;
+}
+
+/**
  * Extract durable facts from a batch of messages using a cheap model, given the
  * facts already known (so it can reinforce by id instead of duplicating). Best-effort:
  * any failure (no key, API error, bad output) returns an empty result.
@@ -143,7 +171,7 @@ export async function extractMemory(
   const cfg = loadConfig();
   const userContent =
     `Известные факты:\n${renderKnown(known)}\n\n` +
-    `Новые сообщения:\n${samples.map((s) => `${s.senderName}: ${s.content}`).join('\n')}`;
+    `Новые сообщения:\n${samples.map(renderSample).join('\n')}`;
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_MEMORY_MODEL,

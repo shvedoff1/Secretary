@@ -86,9 +86,21 @@ describe('migration 029 backfill', () => {
     const { getDb } = await import('../src/db/client.js');
     const db = getDb();
     // Synthetic pre-029 state: chat_settings as it stands before the personality
-    // migration (its shape is untouched by 027/028), recorded at version 28.
+    // migration (its shape is untouched by 027/028), recorded at version 28. Tables
+    // that LATER migrations alter have to exist too — a real v28 database has them
+    // all, and migrate() runs every pending file, not just 029.
     db.exec('CREATE TABLE schema_version (version INTEGER NOT NULL)');
     db.prepare('INSERT INTO schema_version (version) VALUES (28)').run();
+    db.exec(
+      `CREATE TABLE chat_memory_sample (
+         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+         chat_id     INTEGER NOT NULL,
+         tg_user_id  INTEGER NOT NULL,
+         sender_name TEXT    NOT NULL,
+         content     TEXT    NOT NULL,
+         created_at  INTEGER NOT NULL
+       )`,
+    );
     db.exec(
       `CREATE TABLE chat_settings (
          chat_id            INTEGER PRIMARY KEY,
@@ -112,7 +124,7 @@ describe('migration 029 backfill', () => {
     ins.run(4, null);
 
     const { migrate } = await import('../src/db/migrate.js');
-    migrate(); // applies only 029
+    migrate(); // applies 029 onwards
 
     const repo = await import('../src/db/repos/chatSettings.repo.js');
     // The calm chat keeps its old behaviour: no jokes/chime/reactions, slang on.

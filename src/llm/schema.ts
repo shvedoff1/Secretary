@@ -226,7 +226,8 @@ export const recordExpenseJsonSchema = {
     confidence: { type: 'number', description: '0..1 confidence in this extraction.' },
     notes: {
       type: ['string', 'null'],
-      description: 'Any ambiguity or assumption worth showing the user.',
+      description:
+        'DATA the user needs to check the trade: the itemised breakdown (items with prices) and any genuine ambiguity about the amount, currency or participants. NOT your reasoning — never narrate how you identified someone («голосовое распознало X как Y», «судя по памяти чата»), and never mention the transcript, the chat history or the memory sections. Null when nothing needs flagging.',
     },
   },
   required: [

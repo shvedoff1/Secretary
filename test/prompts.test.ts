@@ -71,6 +71,22 @@ describe('SYSTEM_PROMPT identity vs memory', () => {
   });
 });
 
+// A voice transcript mangles names («Швец» вместо «Швед»). Repairing that from
+// MEMORY is what put «судя по памяти чата, это Швед» into a preview's notes — the
+// roster is the authority on who exists, and notes are data, not reasoning.
+describe('SYSTEM_PROMPT garbled names and notes hygiene', () => {
+  it('sends a garbled name to the roster, not to memory', () => {
+    expect(SYSTEM_PROMPT).toContain('GARBLED NAME IS MATCHED AGAINST THE ROSTER');
+    // The sender's own mis-heard name collapses to the deterministic «я».
+    expect(SYSTEM_PROMPT).toMatch(/it is\s+the sender — emit "я"/);
+  });
+
+  it('keeps reasoning out of the notes field', () => {
+    expect(SYSTEM_PROMPT).toContain('`notes` IS DATA, NOT REASONING');
+    expect(SYSTEM_PROMPT).toContain('судя по памяти чата');
+  });
+});
+
 // A receipt with items belonging to different people must split into several
 // expenses, and "everyone except X" must be expanded from the roster — both were
 // the cases the bot used to fluff, so guard the guidance against silent removal.

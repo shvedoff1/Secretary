@@ -163,6 +163,23 @@ describe('EditPingListZ', () => {
   });
 });
 
+// `notes` is shown in the preview and is the field the model reached for when it
+// wanted to explain itself («судя по памяти чата, это Швед»). The tool schema is
+// what it reads closest to the call, so the ban lives there too.
+describe('record_expense notes schema', () => {
+  it('describes notes as data and bans reasoning in it', async () => {
+    const { recordExpenseJsonSchema } = await import('../src/llm/schema.js');
+    const notes = (
+      recordExpenseJsonSchema as unknown as {
+        properties: { notes: { description: string } };
+      }
+    ).properties.notes.description;
+    expect(notes).toContain('NOT your reasoning');
+    expect(notes).toContain('судя по памяти чата');
+    expect(notes).toMatch(/itemised breakdown/);
+  });
+});
+
 describe('RecordExpenseZ + toParsedExpense', () => {
   it('normalizes currency and keeps the hints', () => {
     const exp = toParsedExpense(parse());

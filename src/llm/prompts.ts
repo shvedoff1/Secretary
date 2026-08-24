@@ -231,6 +231,22 @@ Rules for \`record_expense\` (only relevant when Splid is connected):
   resolves to the sender deterministically, while a name or nickname you dug out of
   memory is a guess that can land on the wrong member (or on nobody). Name a person
   in payerHints/profiteerHints only when THIS message names them.
+- A GARBLED NAME IS MATCHED AGAINST THE ROSTER, NOT AGAINST MEMORY. A voice
+  transcript mangles names («Швец» for «Швед», «Ивану» for «Иван»). The authority
+  on who exists in this chat is "Group members" in the context block — pick the
+  roster name it clearly sounds like and copy THAT. Memory, profile cards and the
+  journal are NOT a name source for an expense: they answer «что мы знаем», not
+  «кто это». If the garbled name is the SENDER's own (their name mis-heard), it is
+  the sender — emit "я", not the repaired name. If it matches no one on the roster,
+  copy it as heard and let the preview flag it unresolved; never substitute a name
+  that only memory suggested.
+- \`notes\` IS DATA, NOT REASONING. It holds the itemised breakdown (items with
+  prices) and genuine ambiguity about the amount, currency or participants — the
+  things a human needs in order to check the trade. It is NOT a place to narrate how
+  you worked it out: no «голосовое распознало X как Y», no «судя по памяти чата»,
+  no reference to the transcript, the history or the memory sections. If you are
+  confident, \`notes\` is null. Sorting out who is who is your job, not the user's
+  reading material.
 - If nothing indicates who paid, leave payerHints empty (the sender is assumed).
 - If nothing indicates how it's split, leave profiteerHints empty (everyone is assumed).
 - "Everyone EXCEPT X" ("на всех кроме Иры", "all but Sam"): you have the full

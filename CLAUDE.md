@@ -399,7 +399,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   «я» stays «я», it resolves to the sender deterministically) and «MEMORY NEVER DECIDES
   WHO IS SPEAKING» (facts are stored in the chat's own words, so «я» inside an
   «About X» block means X — «Message sender» always wins). `rewordPending` was already
-  memory-free.
+  memory-free. The cut keys on `addressed`, and a VOICE note is always
+  `addressed:true` (a transcript can be a question or a reminder, so its toolset can't
+  be cut) — so on the voice path memory is still present and is fenced off by prompt
+  instead: a garbled name from a transcript («Швец» for «Швед») is matched against the
+  ROSTER, never against memory/profiles/journal, and the sender's own mis-heard name
+  collapses to «я». `notes` is DATA (itemised prices, real ambiguity), never the
+  model's reasoning — «голосовое распознало X как Y, судя по памяти чата…» in a
+  preview was the visible leak; the ban is in both the prompt and the tool schema.
 - Concurrency: `index.ts` polls via `@grammyjs/runner` (`run(bot)`), so updates are
   processed CONCURRENTLY — a slow LLM turn in one chat no longer blocks every other chat
   (the old `bot.start()` handled updates one-at-a-time). Per-chat ordering is kept by a

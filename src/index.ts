@@ -35,6 +35,7 @@ async function main(): Promise<void> {
       humor,
       humorModel: humor ? cfg.OPENAI_HUMOR_MODEL : undefined,
       slang: slangPass,
+      inline: cfg.ENABLE_INLINE,
     },
     'startup config',
   );
@@ -105,7 +106,17 @@ async function main(): Promise<void> {
   const runner = run(bot, {
     runner: {
       fetch: {
-        allowed_updates: ['message', 'callback_query', 'my_chat_member', 'message_reaction'],
+        allowed_updates: [
+          'message',
+          'callback_query',
+          'my_chat_member',
+          'message_reaction',
+          // Inline mode: the query (a card per keystroke) and the pick that
+          // triggers the real answer. chosen_inline_result additionally needs
+          // /setinlinefeedback enabled at 100% in BotFather.
+          'inline_query',
+          'chosen_inline_result',
+        ],
       },
     },
   });

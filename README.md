@@ -47,6 +47,13 @@ added without touching the core.
   rest, swapping words while every number, link and @username is checked to have survived
   unchanged. View/reset per chat with `/slang` (`/slang clear`); switch the voice on or
   off with `/slang on|off` (admin), independently of `/humor`.
+- **Inline mode**: type `@бот вопрос` in **any** chat (even one the bot isn't in), pick
+  the «Спросить секретаря» card, and the bot answers right there — the same way it would
+  answer you in your DM (your memory, mode, rules; read-only, so an inline ask can't
+  write memory or create reminders). The card posts a «⏳ думаю» placeholder and the
+  answer is edited in a few seconds later. Whitelisted users only — strangers get a
+  «доступ закрыт» stub and never reach the model. Needs one-time BotFather setup (see
+  below); toggle with `ENABLE_INLINE`.
 - **Chat modes**: every chat has a mode that decides the persona and how playful the bot
   is — `secretary` (the chill surfer default), `assistant` (calm helper: same skills, no
   jokes, no chime-ins, no random reactions — it still adapts via memory and the chat's
@@ -97,6 +104,12 @@ added without touching the core.
    - To let the bot auto-detect expense messages in groups, disable privacy mode:
      BotFather → `/setprivacy` → your bot → **Disable**. (Otherwise it only sees
      commands, @mentions, and replies.)
+   - For **inline mode** (`@бот вопрос` from any chat): BotFather → `/setinline`
+     (set a placeholder, e.g. «спроси секретаря…») **and** `/setinlinefeedback` →
+     **Enabled (100%)**. The feedback part is not optional: the bot answers by
+     editing a placeholder message after you pick the card, and without feedback
+     Telegram never tells it the card was picked — the «⏳ думаю» would hang
+     forever.
 2. **Find your Telegram numeric id** (e.g. via [@userinfobot](https://t.me/userinfobot)
    or the bot's `/whoami`). This is the admin.
 3. **Get an Anthropic API key** at https://console.anthropic.com.
@@ -143,6 +156,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CONVERSATION_HISTORY_LIMIT` | no | `20` | Turns kept as context |
 | `CONVERSATION_HISTORY_MAX_AGE_HOURS` | no | `12` | Drop dialogue history older than this so old tangents expire |
 | `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
+| `ENABLE_INLINE` | no | `true` | Inline mode: `@бот вопрос` in any chat answers as it would in the asker's DM. Needs BotFather setup (`/setinline` + `/setinlinefeedback` at 100%); whitelisted users only |
 | `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own |
 | `ENABLE_LEXICON` | no | `true` | Learn the chat's slang from messages and reuse it |
 | `ANTHROPIC_LEXICON_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model for the extraction batches |

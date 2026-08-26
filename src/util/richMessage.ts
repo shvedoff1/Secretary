@@ -59,3 +59,35 @@ export async function sendRichMarkdown(
     });
   }
 }
+
+/**
+ * Edit an INLINE-mode message (addressed by `inline_message_id`, not chat+message
+ * id) into the assistant's markdown answer. Same degradation ladder as
+ * `sendRichMarkdown` — rich markdown → classic HTML subset → plain text — so the
+ * inline answer renders exactly like a chat reply would, and is never lost to a
+ * formatting error. Editing with no reply_markup also clears the placeholder's
+ * stub keyboard (which existed only so Telegram hands us the inline_message_id).
+ */
+export async function editInlineMarkdown(
+  api: Api,
+  inlineMessageId: string,
+  text: string,
+): Promise<void> {
+  try {
+    await api.editMessageTextInline(inlineMessageId, { markdown: text });
+    return;
+  } catch (err) {
+    logger.warn({ err }, 'rich inline edit failed, falling back to HTML');
+  }
+
+  try {
+    await api.editMessageTextInline(inlineMessageId, mdToTelegramHtml(text), {
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+    });
+    return;
+  } catch (err) {
+    logger.warn({ err }, 'HTML inline edit failed, falling back to plain text');
+    await api.editMessageTextInline(inlineMessageId, stripMarkdown(text));
+  }
+}

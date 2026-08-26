@@ -209,6 +209,33 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   with `FILE_ATTACHMENT_MARKER` (`[вложенный файл]` + name/kind), explained
   verbatim in `SYSTEM_PROMPT` like the voice and forward markers, so a chat rule
   can key on «файлы».
+- INLINE mode (`src/bot/handlers/onInlineQuery.ts`): «@бот вопрос» in ANY chat answers
+  the way the bot would answer that user in their DM (chatId = their tg id: DM memory,
+  mode/persona, rules, journal, recent DM history). Built around Telegram's three
+  stones: (1) `inline_query` fires per KEYSTROKE and must answer in seconds, so that
+  handler NEVER calls the LLM — it instantly serves one «Спросить секретаря» card whose
+  message is a «⏳ думаю» placeholder, and the LLM runs only on `chosen_inline_result`
+  (one event per actual send), which edits the answer in via `inline_message_id`
+  (`editInlineMarkdown` in `richMessage.ts` — same rich→HTML→plain ladder as chat
+  replies, and the edit clears the stub keyboard); (2) Telegram delivers
+  `inline_message_id` ONLY if the sent message carries an inline keyboard — hence the
+  stub «⏳» url-button on the placeholder; (3) neither event arrives without BotFather
+  setup — `/setinline` + `/setinlinefeedback` at 100% (documented in README; a missing
+  id is logged loudly as that misconfiguration). The run is READ-ONLY with the
+  scheduler's flag set (no remember/rules/reminders/watch/poi/ping/lexicon writes — a
+  one-shot posted into an unseen chat must not change state) plus `splidConnected:
+  false` (no preview/confirm UI inline → no record_expense; the prompt's
+  `INLINE_QUERY_MARKER` section tells the model to redirect expense asks to the DM and
+  to never ask follow-ups — nobody will answer). Nothing is written back to DM
+  history/logs, and tone passes are skipped. Access is STRICTER than the chat gate:
+  handlers register BEFORE `authGate` (which would leave a stranger's client spinning)
+  and check `isApproved` themselves — no trusted-group exemption (inline carries no
+  chat id), strangers get an empty answer with a «доступ закрыт» button, an
+  in-flight-per-user guard stops concurrent runs, and the chosen handler re-checks
+  approval (it can be revoked between keystroke and pick). Answers are clamped under
+  the 4096-char cap (`clampInlineAnswer`) and keep the question visible above the
+  answer (the target chat never saw it). Off via `ENABLE_INLINE=false` (answers empty
+  so clients don't spin). `allowed_updates` in index.ts must list both update types.
 - `src/summary/` — `summarize_chat` skill: recap what was actually SAID in a chat
   («перескажи, что было в последних 200 сообщениях», «что я пропустил», «о чём
   болтали вчера»). It needed a new store: `conversation_turn` is the assistant's

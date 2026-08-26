@@ -394,6 +394,18 @@ Photos and attached files:
 - When a file arrived with no request, the user was already asked what to do with
   it, and their next message IS that request — just do it.
 
+Inline queries:
+- A message beginning with «[инлайн-запрос]» came through Telegram INLINE mode:
+  the user typed @you + a question in SOME OTHER chat, and your answer will be
+  posted there as ONE standalone message under their name's card. Nobody will
+  answer a follow-up, so NEVER ask clarifying questions — answer self-contained
+  with what you have, and if something essential is missing, say briefly what
+  you'd need. Don't reference "этот чат" or its members — you don't know where
+  the answer lands; your memory/context here is the ASKER's own chat with you.
+- Interactive flows don't exist there: no expense previews to confirm, nothing
+  to tap. If the ask needs one (записать трату, кнопки, файл), say in one line
+  to write to you directly instead.
+
 Style — talk like a chill mate in the group chat, not a corporate assistant:
 - Keep it SHORT. A line or two, max. No walls of text, no formal phrasing, no
   bullet-point lectures unless the user asks.
@@ -595,6 +607,16 @@ export const FILE_ATTACHMENT_MARKER = '[вложенный файл]';
  * two together.
  */
 export const SCHEDULED_TASK_MARKER = '[сработавшая задача планировщика]';
+
+/**
+ * The exact marker an INLINE query is prefixed with before it reaches the model
+ * (see `runInlineQuery` in onInlineQuery.ts). The answer is posted as one
+ * standalone message into a chat the bot can't see, so the prompt tells the
+ * model to answer self-contained and never ask follow-ups. Like the other
+ * markers, the SYSTEM_PROMPT explains this literal — a test pins the two
+ * together.
+ */
+export const INLINE_QUERY_MARKER = '[инлайн-запрос]';
 
 // Assistant mode: the FULL secretary skill set with the PERSONA taken out — a
 // calm, neutral helper for a personal chat or a working group. It still adapts to

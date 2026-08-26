@@ -54,6 +54,7 @@ import { onPhoto } from './handlers/onPhoto.js';
 import { onDocument } from './handlers/onDocument.js';
 import { onVoice } from './handlers/onVoice.js';
 import { onBotMembership, handleModeCallback } from './handlers/onBotMembership.js';
+import { onInlineQuery, onChosenInlineResult } from './handlers/onInlineQuery.js';
 import { onForwardReaction } from './handlers/onForwardReaction.js';
 import { registerExpiryApi } from './forwardBuffer.js';
 import { handleExpenseCallback } from './flows/confirm.js';
@@ -77,6 +78,15 @@ export function buildBot(token: string): Bot {
   // still get the join notification (with the mode picker). The handler only
   // ever DMs the admin, so it's safe in front of the gate.
   bot.on('my_chat_member', onBotMembership);
+
+  // Inline mode runs BEFORE the auth gate for the same reason: an inline query
+  // can come from anyone anywhere, and the gate would swallow a stranger's query
+  // silently — leaving their Telegram client spinning forever. The handlers do
+  // their own STRICTER check (whitelisted users only, no trusted-group exemption
+  // — inline carries no chat id to exempt by) and answer strangers with an
+  // explicit «доступ закрыт» stub, never an LLM call.
+  bot.on('inline_query', onInlineQuery);
+  bot.on('chosen_inline_result', onChosenInlineResult);
 
   // Default-deny gate (lets /start, /help, /request through for everyone).
   bot.use(authGate);

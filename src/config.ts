@@ -165,6 +165,12 @@ const ConfigSchema = z.object({
   // Max messages kept per batch — the batch lands in one LLM turn, so this caps
   // the context it can consume. Extra forwards are counted but not stored.
   FORWARD_BUFFER_MAX: z.coerce.number().int().positive().default(50),
+  // INLINE mode (@bot вопрос in any chat): the user picks the «спросить» card, a
+  // placeholder message is posted, and the bot edits the answer in via
+  // chosen_inline_result. Needs BotFather setup (/setinline + /setinlinefeedback
+  // at 100%) — without feedback the placeholder is never filled in. Whitelisted
+  // (approved) users only; randoms get a "закрыто" stub, never an LLM call.
+  ENABLE_INLINE: boolish.default(true),
   // Attached FILES (documents): images sent uncompressed, PDFs, plain-text files.
   // Off = the bot ignores documents exactly as it did before they were handled.
   ENABLE_FILE_INPUT: boolish.default(true),

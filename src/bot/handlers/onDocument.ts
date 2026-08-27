@@ -10,7 +10,13 @@ import { recordChatLog } from '../chatLog.js';
 import { bufferForward, isForwardBufferEnabled, FORWARD_MARK } from '../forwardBuffer.js';
 import { FILE_ATTACHMENT_MARKER } from '../../llm/prompts.js';
 import { armPendingFile, type PendingFile } from '../pendingFile.js';
-import { buildFileBlocks, classifyFile, fileKindLabel, type FileKind } from '../media.js';
+import {
+  buildFileBlocks,
+  classifyFile,
+  fileKindLabel,
+  imageMediaType,
+  type FileKind,
+} from '../media.js';
 
 /**
  * Attached files («док»). The rule, in one line: a file the user EXPLAINED is
@@ -50,13 +56,22 @@ export async function onDocument(ctx: Context): Promise<void> {
 
   // A FORWARDED file joins the pack like a forwarded photo — as its name and
   // caption. It's someone else's document; answering each one is the noise the
-  // batch exists to prevent.
+  // batch exists to prevent. An IMAGE sent as a file follows the photo rule
+  // even here (it's a photo that skipped compression), so it parks its file_id
+  // and joins the pack as a picture — size-capped at 5 MB (the Messages API's
+  // per-image limit) so one huge PNG can't sink the whole consuming turn.
   if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+    const asImage =
+      classifyFile(doc.mime_type, doc.file_name) === 'image' &&
+      (doc.file_size ?? 0) <= Math.min(loadConfig().FILE_MAX_MB, 5) * 1024 * 1024;
     bufferForward(ctx.chat.id, {
       messageId: ctx.message!.message_id,
       origin: forwardOrigin(ctx.message) ?? 'источник неизвестен',
-      kind: 'document',
+      kind: asImage ? 'photo' : 'document',
       text: caption ? `${fileName} — ${caption}` : fileName,
+      ...(asImage
+        ? { image: { fileId: doc.file_id, mediaType: imageMediaType(doc.mime_type, doc.file_name) } }
+        : {}),
     });
     try {
       await ctx.react(FORWARD_MARK);

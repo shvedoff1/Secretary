@@ -35,7 +35,26 @@ export interface BufferedForward {
   kind: 'text' | 'voice' | 'photo' | 'document';
   /** Message text / voice transcript / photo caption (may be empty for a photo). */
   text: string;
+  /**
+   * The PICTURE itself, when the forward carries one (a photo, or an image sent
+   * as a file). Only the file_id is parked — the bytes are downloaded at drain
+   * time, when someone actually asks about the pack, so an expired pack costs
+   * zero downloads. Without this the batch was caption-only and «что на
+   * картинке?» over a forward was unanswerable.
+   */
+  image?: {
+    fileId: string;
+    mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  };
 }
+
+/**
+ * What happened to a buffered picture when the pack was drained, keyed by entry
+ * index: attached as the N-th image below the block, failed to download (the
+ * entry says so instead of letting the model guess), or skipped over the
+ * per-pack picture cap.
+ */
+export type ForwardImageState = { attached: number } | 'failed' | 'skipped';
 
 interface BufferState {
   entries: BufferedForward[];
@@ -145,22 +164,41 @@ const KIND_LABEL: Record<BufferedForward['kind'], string> = {
   document: ', файл — только имя и подпись',
 };
 
+/** The per-entry note appended when the entry carried a picture. */
+function imageNote(state: ForwardImageState | undefined): string {
+  if (state === undefined) return '';
+  if (state === 'failed') return ' [картинку скачать не удалось — есть только подпись]';
+  if (state === 'skipped') return ' [картинка не приложена — лимит картинок на пачку]';
+  return ` [картинка приложена ниже: изображение ${state.attached}]`;
+}
+
 /**
  * Render the batch as the context block injected into the turn that consumes it.
  * Numbered, each line naming the origin and channel, so the model can reference
- * «во втором сообщении» and never attributes the content to the sender.
+ * «во втором сообщении» and never attributes the content to the sender. When the
+ * drain attached pictures, `images` (entry index → state) makes each entry say
+ * where its picture is — attached below as image N, failed, or over the cap —
+ * so the model never has to guess whether it can see a photo.
  */
-export function renderForwardBatch(entries: BufferedForward[], overflow: number): string {
+export function renderForwardBatch(
+  entries: BufferedForward[],
+  overflow: number,
+  images?: ReadonlyMap<number, ForwardImageState>,
+): string {
   const lines = entries.map((e, i) => {
     const body = e.text.trim() || (e.kind === 'photo' ? '(фото без подписи)' : '(пусто)');
-    return `${i + 1}. (${e.origin}${KIND_LABEL[e.kind]}) ${body}`;
+    return `${i + 1}. (${e.origin}${KIND_LABEL[e.kind]}) ${body}${imageNote(images?.get(i))}`;
   });
   const tail =
     overflow > 0 ? `\n…и ещё ${overflow} сообщений не поместилось в пачку (лимит).` : '';
+  const anyAttached = [...(images?.values() ?? [])].some((s) => typeof s === 'object');
+  const imagesLine = anyAttached
+    ? `\nПриложенные картинки идут сразу после этого блока, в порядке их номеров.`
+    : '';
   return (
     `[Пересланная пачка — ${entries.length} сообщений, только что пересланных в чат. ` +
     `Это ЧУЖИЕ слова из другого места (не слова отправителя) — контекст для просьбы ниже:\n` +
-    `${lines.join('\n')}${tail}\nКонец пересланной пачки.]`
+    `${lines.join('\n')}${tail}${imagesLine}\nКонец пересланной пачки.]`
   );
 }
 

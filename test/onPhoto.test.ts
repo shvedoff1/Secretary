@@ -29,6 +29,7 @@ vi.mock('../src/bot/forwardBuffer.js', () => ({
 import { onPhoto, handlePhotoTurn } from '../src/bot/handlers/onPhoto.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
 import { isAddressed } from '../src/bot/triggers.js';
+import { bufferForward, isForwardBufferEnabled } from '../src/bot/forwardBuffer.js';
 
 const mockRun = vi.mocked(runAndRespond);
 const mockAddressed = vi.mocked(isAddressed);
@@ -85,6 +86,24 @@ describe('photos are looked at, not gated on Splid', () => {
     mockRun.mockClear();
     await handlePhotoTurn(ctx(), [{ file_id: 'big' }], '', true);
     expect(mockRun.mock.calls[0]![1].historyText).toBe('[фото]');
+  });
+
+  it('buffers a FORWARDED photo with its largest file_id, so the pack can attach the picture', async () => {
+    vi.mocked(isForwardBufferEnabled).mockReturnValueOnce(true);
+    const c = ctx('смотри');
+    (c.message as unknown as Record<string, unknown>).forward_origin = {
+      type: 'user',
+      sender_user: { first_name: 'Вася' },
+    };
+
+    await onPhoto(c);
+
+    expect(mockRun).not.toHaveBeenCalled(); // buffered, not answered
+    const entry = vi.mocked(bufferForward).mock.calls[0]![1];
+    expect(entry.kind).toBe('photo');
+    expect(entry.text).toBe('смотри');
+    expect(entry.image).toEqual({ fileId: 'big', mediaType: 'image/jpeg' });
+    expect(c.react).toHaveBeenCalledWith('🫡');
   });
 
   it('still ignores an unaddressed, uncaptioned photo in a group — no download, no tokens', async () => {

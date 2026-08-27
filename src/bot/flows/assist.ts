@@ -115,7 +115,14 @@ import { sendRichMarkdown } from '../../util/richMessage.js';
 import { looksLikeExpense } from '../../util/money.js';
 import { FORWARDED_MESSAGE_MARKER, VOICE_TRANSCRIPT_MARKER } from '../../llm/prompts.js';
 import { forwardOrigin } from '../forwarded.js';
-import { takeForwards, renderForwardBatch, clearMarks } from '../forwardBuffer.js';
+import {
+  takeForwards,
+  renderForwardBatch,
+  clearMarks,
+  type BufferedForward,
+  type ForwardImageState,
+} from '../forwardBuffer.js';
+import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { modeAllowsHumor, modeAllowsSlang } from '../../modes.js';
 
 /**
@@ -668,6 +675,47 @@ function applyPrefix(
   return [{ type: 'text', text: prefix.trimEnd() }, ...content];
 }
 
+/**
+ * Download the pictures a drained forward batch parked (photos and images sent
+ * as files) and build their image blocks, in entry order. The first `maxPhotos`
+ * are attached; the rest are marked skipped, and a failed download degrades that
+ * one entry to caption-only — both states reach the model via the rendered
+ * block, and neither aborts the turn.
+ */
+async function collectForwardImages(
+  ctx: Context,
+  entries: BufferedForward[],
+  maxPhotos: number,
+): Promise<{ blocks: Anthropic.ContentBlockParam[]; states: Map<number, ForwardImageState> }> {
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  const states = new Map<number, ForwardImageState>();
+  let attached = 0;
+  for (const [i, entry] of entries.entries()) {
+    if (!entry.image) continue;
+    if (attached >= maxPhotos) {
+      states.set(i, 'skipped');
+      continue;
+    }
+    try {
+      const bytes = await downloadTelegramFile(ctx, entry.image.fileId);
+      attached++;
+      states.set(i, { attached });
+      blocks.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: entry.image.mediaType,
+          data: bytes.toString('base64'),
+        },
+      });
+    } catch (err) {
+      logger.warn({ err, chatId: ctx.chat?.id }, 'failed to download a forwarded picture');
+      states.set(i, 'failed');
+    }
+  }
+  return { blocks, states };
+}
+
 async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondOutcome> {
   const cfg = loadConfig();
   const chatId = ctx.chat!.id;
@@ -770,10 +818,35 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   if (batch.entries.length > 0) {
     void clearMarks(ctx.api, chatId, batch.entries);
   }
+  // Buffered forwards parked only file_ids for their pictures; the drain is where
+  // the downloads happen (an expired pack costs none). Each attached picture is
+  // announced in the rendered block by its number; a failed download or the
+  // over-cap tail is announced too, so the model never guesses what it can see.
+  const batchImages =
+    batch.entries.length > 0
+      ? await collectForwardImages(ctx, batch.entries, cfg.FORWARD_BUFFER_MAX_PHOTOS)
+      : { blocks: [], states: new Map<number, ForwardImageState>() };
   const batchBlock =
-    batch.entries.length > 0 ? `${renderForwardBatch(batch.entries, batch.overflow)}\n` : '';
+    batch.entries.length > 0
+      ? `${renderForwardBatch(batch.entries, batch.overflow, batchImages.states)}\n`
+      : '';
 
-  const userContent = applyPrefix(args.userContent, `${batchBlock}${prefix}`);
+  let userContent = applyPrefix(args.userContent, prefix);
+  if (batchBlock) {
+    if (batchImages.blocks.length > 0) {
+      // Pictures force the block-array shape: batch text, then the images in
+      // their announced order, then the user's own (marker-prefixed) content.
+      const rest: Anthropic.ContentBlockParam[] =
+        typeof userContent === 'string'
+          ? userContent
+            ? [{ type: 'text', text: userContent }]
+            : []
+          : userContent;
+      userContent = [{ type: 'text', text: batchBlock.trimEnd() }, ...batchImages.blocks, ...rest];
+    } else {
+      userContent = applyPrefix(userContent, batchBlock);
+    }
+  }
   // History keeps the tags too: without them, a forwarded message read back from
   // history next turn looks like something the sender said themselves, and a
   // batch-consuming exchange loses what it was about. The batch itself is NOT

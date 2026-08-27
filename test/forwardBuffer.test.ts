@@ -110,4 +110,38 @@ describe('renderForwardBatch', () => {
     const block = fb.renderForwardBatch([entry(1)], 4);
     expect(block).toContain('ещё 4 сообщений не поместилось');
   });
+
+  it('announces each picture state: attached (with its number), failed, over-cap', async () => {
+    const fb = await load();
+    const photo = (messageId: number, text = '') => ({
+      messageId,
+      origin: 'Петя',
+      kind: 'photo' as const,
+      text,
+      image: { fileId: `f${messageId}`, mediaType: 'image/jpeg' as const },
+    });
+    const block = fb.renderForwardBatch(
+      [photo(1, 'смотри что нашёл'), photo(2), photo(3)],
+      0,
+      new Map<number, import('../src/bot/forwardBuffer.js').ForwardImageState>([
+        [0, { attached: 1 }],
+        [1, 'failed'],
+        [2, 'skipped'],
+      ]),
+    );
+    expect(block).toContain('1. (Петя, фото) смотри что нашёл [картинка приложена ниже: изображение 1]');
+    expect(block).toContain('2. (Петя, фото) (фото без подписи) [картинку скачать не удалось — есть только подпись]');
+    expect(block).toContain('3. (Петя, фото) (фото без подписи) [картинка не приложена — лимит картинок на пачку]');
+    expect(block).toContain('Приложенные картинки идут сразу после этого блока');
+  });
+
+  it('renders exactly as before when no picture states are passed', async () => {
+    const fb = await load();
+    const block = fb.renderForwardBatch(
+      [{ messageId: 1, origin: 'Петя', kind: 'photo', text: '' }],
+      0,
+    );
+    expect(block).toContain('1. (Петя, фото) (фото без подписи)');
+    expect(block).not.toContain('картинка');
+  });
 });

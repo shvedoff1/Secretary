@@ -136,6 +136,12 @@ export interface AssistantContext {
   /** Topic index for the depth hint: what the deep tier has material about. */
   memoryTopics?: string[];
   /**
+   * Depth of the chat's raw message log, so the block can say the log EXISTS and
+   * how far back it reaches. Without it the model reads its short history window
+   * as the whole of the chat's past and refuses to rebuild context it could read.
+   */
+  chatLog?: { total: number; oldest: string | null } | null;
+  /**
    * EXPENSE-ONLY run: the silent auto-expense scan (a group message that was NOT
    * addressed to the bot but looks like a spend). Such a turn can only end in a
    * recorded expense or in silence — any text it produces is discarded by the
@@ -342,6 +348,10 @@ export async function runAssistant(
         episodes: expenseOnly ? [] : (ctx.episodes ?? []),
         episodeTotal: expenseOnly ? 0 : (ctx.episodeTotal ?? 0),
         memoryTopics: expenseOnly ? [] : (ctx.memoryTopics ?? []),
+        // Same rule as the journal: an unaddressed expense scan gets no
+        // conversation context, and it has no summarize_chat to follow the hint
+        // with anyway.
+        chatLog: expenseOnly ? null : (ctx.chatLog ?? null),
         rules: ctx.rules ?? [],
         botAdmins: ctx.botAdmins ?? [],
         expenseOnly,

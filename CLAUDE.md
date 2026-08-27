@@ -259,6 +259,21 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   LOG and always states what didn't fit, so the model never fills the gap itself. Stays
   live for scheduled runs (read-only, so «каждое утро перескажи вчерашнее» works); off
   in tutor chats and on the expense-only scan.
+  ASKING FOR CONTEXT ≠ asking for a period. «Восстанови картинку/картину по истории
+  чата», «подними контекст», «введи меня в курс» is the same tool, and «картинка»
+  there is the picture of EVENTS, not an image file — the bot used to read it
+  literally and answer «фото я не храню, доступ есть только к тексту сообщений»,
+  refusing without looking at anything. Both halves of that are fixed: the routing
+  (SYSTEM_PROMPT job 12 + the tool description list those phrasings, ban the «нет
+  доступа к истории» refusal, and allow only a checked «тот период пуст»; the photos
+  section keeps the honest one-liner for a genuinely wanted photo FILE, which is the
+  one thing that can't be brought back), and the visibility — `depth.ts`
+  (`chatLogDepth`, best-effort, null on any failure) feeds `buildContextBlock` a
+  ONE-line hint of how many messages are on record and since when. Without it a chat
+  whose journal is still empty showed nothing at all about the log, so «я вижу только
+  последние сообщения» was an accurate description of the context and a wrong answer
+  about what was reachable. Passed from the live flow, the scheduler and inline; null
+  in tutor chats (no `summarize_chat` to follow it with) and on the expense-only scan.
   TWO TIERS by size, because «перескажи последние 500 сообщений» is several times what
   the main model should read verbatim (500 messages ≈ 35–70k chars; a flat budget showed
   only the last ~150–200 of them). A window inside `SUMMARY_CHAR_BUDGET` goes over

@@ -24,6 +24,7 @@ import { makeSurfForecastHandler } from './surf/index.js';
 import { makeDotaLookupHandler } from './dota/lookup.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { makeSummarizeChatHandler } from './summary/handler.js';
+import { chatLogDepth } from './summary/depth.js';
 import { recordChatLog } from './bot/chatLog.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
@@ -184,6 +185,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
         episodeTotal: journalOn ? episodeCount(task.chatId) : 0,
         memoryTopics,
+        // A firing task has no history at all, so knowing the log exists matters
+        // even more here — «каждое утро перескажи вчерашнее» reads it back.
+        chatLog: mode === 'tutor' ? null : chatLogDepth(task.chatId),
         profiles:
           mode === 'tutor' || !cfg.ENABLE_PROFILES || !cfg.ENABLE_MEMORY
             ? []

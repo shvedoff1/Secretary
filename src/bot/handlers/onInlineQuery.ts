@@ -11,6 +11,7 @@ import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { makeSummarizeChatHandler } from '../../summary/handler.js';
+import { chatLogDepth } from '../../summary/depth.js';
 import {
   getChatMode,
   getPersonaPrompt,
@@ -278,6 +279,8 @@ export async function runInlineAnswer(args: {
       episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
       episodeTotal: journalOn ? episodeCount(chatId) : 0,
       memoryTopics,
+      // The asker's own DM log — «что я вчера спрашивал» works inline too.
+      chatLog: mode === 'tutor' ? null : chatLogDepth(chatId),
       profiles:
         mode === 'tutor' || !cfg.ENABLE_PROFILES || !cfg.ENABLE_MEMORY
           ? []

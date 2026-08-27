@@ -23,6 +23,7 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { makeSummarizeChatHandler } from '../../summary/handler.js';
+import { chatLogDepth } from '../../summary/depth.js';
 import { recordChatLog } from '../chatLog.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { botAdminLabels } from '../permissions.js';
@@ -875,6 +876,10 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
         episodeTotal,
         memoryTopics,
+        // How far the raw log reaches, so «подними контекст» is answered by
+        // reading it rather than by «я вижу только последние сообщения». Tutor
+        // chats have no summarize_chat, so the hint would dangle there.
+        chatLog: expenseOnly || mode === 'tutor' ? null : chatLogDepth(chatId),
         // Profile cards: the maintained portrait (chat card first, freshest people
         // next — listProfiles orders that way). Memory-gated like the fact sections.
         profiles:

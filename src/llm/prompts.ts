@@ -192,6 +192,20 @@ secretary with memory. Your core jobs:
    size and age, so if the tool says older messages were cut or the window is empty,
    say so plainly. This is NOT memory (\`recall_memory\` searches remembered FACTS;
    this reads the literal log) and NOT money (that is \`spending_report\`).
+   HOW PEOPLE ACTUALLY ASK FOR THIS — almost never with the word «лог». «Восстанови
+   картину/картинку по чату», «подними контекст», «вспомни, о чём тут шла речь»,
+   «освежи, что было», «введи меня в курс», «собери, что известно» are all the SAME
+   ask: reconstruct what was going on out of what is written in this chat. In such a
+   request «картина»/«картинку» means the PICTURE OF EVENTS, not an image file —
+   read it as context unless the user is plainly pointing at one specific photo
+   («скинь то фото чека»). Do the work across the tiers: the journal says which
+   sessions to look at, \`summarize_chat\` replays what was actually said,
+   \`recall_memory\` digs out the facts — then answer from what they return.
+   NEVER claim you have no access to this chat's past, that you only see the current
+   message, or that you keep nothing: you have the raw log, the journal and memory,
+   and refusing without looking is the failure this job exists to prevent. «Тот
+   период пуст» or «лог не достаёт так далеко» — after checking — is a different
+   sentence from «я не могу» and is the only honest form of a no.
 
 Shared-expense tracking (Splid) is an OPTIONAL add-on, not your main job. It only
 applies when "Splid" in the context block says "connected". In that case, when a
@@ -397,6 +411,12 @@ Photos and attached files:
   you'd read all of it.
 - When a file arrived with no request, the user was already asked what to do with
   it, and their next message IS that request — just do it.
+- «Восстанови картинку из истории чата» is NOT about a picture file. It is the ask
+  from job 12 — rebuild the PICTURE OF EVENTS from the chat — so go and read the
+  log/journal instead of answering that you don't store photos. A photo file is
+  the one thing you genuinely cannot bring back (you keep no copy once the turn is
+  over): if that is unmistakably what they want, say it in ONE line and give them
+  what you do have — when it was sent, by whom, and what was said around it.
 
 Inline queries:
 - A message beginning with «[инлайн-запрос]» came through Telegram INLINE mode:
@@ -765,6 +785,13 @@ export function buildContextBlock(args: {
    * model know what it COULD recall instead of just how much.
    */
   memoryTopics?: string[];
+  /**
+   * Depth of the chat's RAW message log (chat_message_log) — how many messages are
+   * on record and how far back they go (`oldest` pre-rendered as a chat-local day,
+   * so this stays free of timezone maths). Rendered as one line telling the model
+   * the log exists at all, which is what stops «у меня нет доступа к истории».
+   */
+  chatLog?: { total: number; oldest: string | null } | null;
   /** Standing behaviour rules set for this chat (see chat_rule / the set_rule tool). */
   rules?: string[];
   /**
@@ -866,6 +893,7 @@ export function buildContextBlock(args: {
   // model has continuity beyond its tiny verbatim history window.
   pushEpisodeSection(lines, args.episodes ?? [], args.episodeTotal ?? 0);
   pushMemoryDepthHint(lines, args.memoryTotal ?? 0, shownMemoryCount(args), args.memoryTopics ?? []);
+  pushChatLogHint(lines, args.chatLog ?? null);
 
   return lines.join('\n');
 }
@@ -957,6 +985,28 @@ function pushMemoryDepthHint(
     topics.length > 0 ? ` Topics with stored material: ${topics.join(', ')}.` : '';
   lines.push(
     `Memory store: ${total} facts total, ${shown} shown above — the other ${hidden} are reachable ONLY via the recall_memory tool. If the answer may depend on something remembered earlier that you cannot see here, call recall_memory BEFORE answering (and before saying you don't remember).${topicTail}`,
+  );
+}
+
+/**
+ * Tell the model the CHAT ITSELF is on record, and how far back.
+ *
+ * The journal only appears once sessions have been closed, and the verbatim
+ * history window is a couple of dozen turns — so in a chat with no episodes yet
+ * nothing in the context hinted that a raw log exists at all. That silence is how
+ * «восстанови картину по истории чата» got answered with «доступ есть только к
+ * тексту сообщений»: the model was describing what it could SEE, which was true,
+ * while summarize_chat sat unused one call away. One line, rendered only when the
+ * log actually holds something.
+ */
+function pushChatLogHint(
+  lines: string[],
+  log: { total: number; oldest: string | null } | null,
+): void {
+  if (!log || log.total <= 0) return;
+  const since = log.oldest ? ` (oldest from ${log.oldest})` : '';
+  lines.push(
+    `Chat log: ${log.total} message(s) of this chat are on record${since}, including ones you never replied to — the history above is only the last few turns. Call summarize_chat to read any window of them back BEFORE saying you don't know what was going on here.`,
   );
 }
 

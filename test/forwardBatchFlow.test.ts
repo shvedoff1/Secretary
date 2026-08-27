@@ -12,12 +12,22 @@ const runAssistantMock = vi.fn(async () => ({
 }));
 vi.mock('../src/llm/assistant.js', () => ({ runAssistant: runAssistantMock }));
 
-async function load() {
+// Forwarded pictures are downloaded at drain time — stub the Telegram file API.
+const downloadMock = vi.fn(async (_ctx: unknown, fileId: string) =>
+  Buffer.from(`bytes:${fileId}`),
+);
+vi.mock('../src/util/telegramFile.js', () => ({
+  downloadTelegramFile: (ctx: unknown, fileId: string) => downloadMock(ctx, fileId),
+}));
+
+async function load(env: Record<string, string> = {}) {
   process.env.BOT_TOKEN = 'x';
   process.env.ANTHROPIC_API_KEY = 'x';
   process.env.ADMIN_TELEGRAM_ID = '1';
   process.env.DATABASE_PATH = ':memory:';
   delete process.env.OPENAI_API_KEY;
+  delete process.env.FORWARD_BUFFER_MAX_PHOTOS;
+  for (const [k, v] of Object.entries(env)) process.env[k] = v;
   vi.resetModules();
   const { migrate } = await import('../src/db/migrate.js');
   migrate();
@@ -66,6 +76,7 @@ function assistantCall() {
 
 beforeEach(() => {
   runAssistantMock.mockClear();
+  downloadMock.mockClear();
   sent.length = 0;
   reactionCalls.length = 0;
 });
@@ -140,6 +151,92 @@ describe('consuming the batch with an addressed ask', () => {
       includeForwardBatch: true,
     });
     expect(assistantCall().userContent).toBe('привет');
+  });
+});
+
+describe('forwarded pictures in the batch', () => {
+  type Block =
+    | { type: 'text'; text: string }
+    | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+  function assistantBlocks(): Block[] {
+    return (runAssistantMock.mock.calls[0]![0] as unknown as { userContent: Block[] }).userContent;
+  }
+  const photo = (messageId: number, text = '') => ({
+    messageId,
+    origin: 'Петя',
+    kind: 'photo' as const,
+    text,
+    image: { fileId: `file-${messageId}`, mediaType: 'image/jpeg' as const },
+  });
+
+  it('downloads the parked photo at drain time and attaches it as a real image', async () => {
+    const { assist, fb } = await load();
+    fb.bufferForward(-777, photo(70, 'вот это место'));
+
+    await assist.runAndRespond(ctx(), {
+      userContent: 'что на картинке и стоит ли туда ехать?',
+      addressed: true,
+      source: 'text',
+      historyText: 'что на картинке и стоит ли туда ехать?',
+      includeForwardBatch: true,
+    });
+
+    const blocks = assistantBlocks();
+    expect(Array.isArray(blocks)).toBe(true);
+    expect(blocks[0]!.type).toBe('text');
+    const head = (blocks[0] as { text: string }).text;
+    expect(head).toContain('Пересланная пачка — 1 сообщений');
+    expect(head).toContain('[картинка приложена ниже: изображение 1]');
+    const image = blocks[1] as Extract<Block, { type: 'image' }>;
+    expect(image.type).toBe('image');
+    expect(image.source.media_type).toBe('image/jpeg');
+    expect(image.source.data).toBe(Buffer.from('bytes:file-70').toString('base64'));
+    // The user's own ask still closes the turn.
+    expect((blocks.at(-1) as { text: string }).text).toBe('что на картинке и стоит ли туда ехать?');
+    expect(downloadMock).toHaveBeenCalledTimes(1);
+    fb.resetForwardBuffers();
+  });
+
+  it('degrades a failed download to caption-only and says so instead of guessing', async () => {
+    const { assist, fb } = await load();
+    fb.bufferForward(-777, photo(70, 'вот это место'));
+    downloadMock.mockRejectedValueOnce(new Error('telegram down'));
+
+    await assist.runAndRespond(ctx(), {
+      userContent: 'что на картинке?',
+      addressed: true,
+      source: 'text',
+      historyText: 'что на картинке?',
+      includeForwardBatch: true,
+    });
+
+    // No image made it — the turn stays a plain string, and the block admits it.
+    const content = assistantCall().userContent;
+    expect(typeof content).toBe('string');
+    expect(content).toContain('[картинку скачать не удалось — есть только подпись]');
+    fb.resetForwardBuffers();
+  });
+
+  it('caps the attached pictures and marks the tail as skipped', async () => {
+    const { assist, fb } = await load({ FORWARD_BUFFER_MAX_PHOTOS: '1' });
+    fb.bufferForward(-777, photo(70));
+    fb.bufferForward(-777, photo(71));
+
+    await assist.runAndRespond(ctx(), {
+      userContent: 'о чём картинки?',
+      addressed: true,
+      source: 'text',
+      historyText: 'о чём картинки?',
+      includeForwardBatch: true,
+    });
+
+    const blocks = assistantBlocks();
+    const head = (blocks[0] as { text: string }).text;
+    expect(head).toContain('1. (Петя, фото) (фото без подписи) [картинка приложена ниже: изображение 1]');
+    expect(head).toContain('2. (Петя, фото) (фото без подписи) [картинка не приложена — лимит картинок на пачку]');
+    expect(blocks.filter((b) => b.type === 'image')).toHaveLength(1);
+    expect(downloadMock).toHaveBeenCalledTimes(1);
+    fb.resetForwardBuffers();
   });
 });
 

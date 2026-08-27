@@ -165,6 +165,10 @@ const ConfigSchema = z.object({
   // Max messages kept per batch — the batch lands in one LLM turn, so this caps
   // the context it can consume. Extra forwards are counted but not stored.
   FORWARD_BUFFER_MAX: z.coerce.number().int().positive().default(50),
+  // Max PICTURES attached to the turn that consumes a batch (each costs ~1–1.5k
+  // tokens). The first N forwarded photos go in as real images; the rest stay
+  // caption-only and the batch says so. 0 = captions only, as before.
+  FORWARD_BUFFER_MAX_PHOTOS: z.coerce.number().int().nonnegative().default(8),
   // INLINE mode (@bot вопрос in any chat): the user picks the «спросить» card, a
   // placeholder message is posted, and the bot edits the answer in via
   // chosen_inline_result. Needs BotFather setup (/setinline + /setinlinefeedback

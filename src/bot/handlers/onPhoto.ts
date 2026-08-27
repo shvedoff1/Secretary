@@ -37,15 +37,19 @@ export async function onPhoto(ctx: Context): Promise<void> {
 
   // A FORWARDED photo goes to the forward batch, not the assistant: it's someone
   // else's picture (an album arrives as one such message per photo), and answering
-  // each one is exactly the spam the batch exists to avoid. Buffered as
-  // caption-only: the batch is a text digest; the model can ask for the photo if
-  // the caption isn't enough.
+  // each one is exactly the spam the batch exists to avoid. The file_id rides
+  // along so the drain can attach the actual picture to the consuming turn —
+  // caption-only buffering made «что на картинке?» over a forward unanswerable.
+  // Nothing is downloaded here: an expired pack costs zero downloads.
   if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+    const largest = photos[photos.length - 1]!;
     bufferForward(ctx.chat.id, {
       messageId: ctx.message!.message_id,
       origin: forwardOrigin(ctx.message) ?? 'источник неизвестен',
       kind: 'photo',
       text: caption,
+      // Telegram-compressed photos are always JPEG.
+      image: { fileId: largest.file_id, mediaType: 'image/jpeg' },
     });
     try {
       await ctx.react(FORWARD_MARK);

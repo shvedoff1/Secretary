@@ -148,6 +148,32 @@ describe('makeFlightStatusHandler', () => {
     expect(out).toContain('2030-08-30'); // the nearest leg it DOES see
   });
 
+  it('offers to arm a watch in the live flow when none covers the flight', async () => {
+    const { handler, assist, repo } = await load();
+    fetchMock.mockResolvedValue([snap()]);
+
+    // Live flow (chatId passed), no watch => the card carries the offer.
+    const bare = await handler.makeFlightStatusHandler(1)({ flight: 'K6829', date: null });
+    expect(bare).toContain('Слежка за этим рейсом не стоит');
+
+    // Once a watch exists for that flight, the offer disappears.
+    assist.makeWatchFlightHandler(1, 42)({ title: 'x', flight: 'K6829', date: '2030-08-30' });
+    void repo;
+    const watched = await handler.makeFlightStatusHandler(1)({ flight: 'K6829', date: null });
+    expect(watched).not.toContain('Слежка за этим рейсом не стоит');
+
+    // Scheduler/inline (no chatId) never hint — watch_flight is off there.
+    const anon = await handler.makeFlightStatusHandler()({ flight: 'K6829', date: null });
+    expect(anon).not.toContain('Слежка за этим рейсом');
+  });
+
+  it('does not offer a watch on a flight that is already over', async () => {
+    const { handler } = await load();
+    fetchMock.mockResolvedValue([snap({ status: 'landed' })]);
+    const out = await handler.makeFlightStatusHandler(1)({ flight: 'K6829', date: null });
+    expect(out).not.toContain('Слежка за этим рейсом');
+  });
+
   it('reports a bad flight number without calling the feed', async () => {
     const { handler } = await load();
     const out = await handler.makeFlightStatusHandler()({ flight: '829', date: null });

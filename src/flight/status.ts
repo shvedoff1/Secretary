@@ -39,10 +39,12 @@ export type FlightChange =
   | { kind: 'landed'; at: string | null }
   | { kind: 'depTimeChanged'; from: string; to: string; deltaMin: number }
   | { kind: 'arrTimeChanged'; from: string; to: string; deltaMin: number }
-  // Departure gate assigned/moved — the closest thing schedule feeds have to a
-  // "boarding soon" signal (true boarding status is airport-FIDS data neither
-  // provider carries).
-  | { kind: 'gateChanged'; from: string | null; to: string };
+  // Departure gate assigned/moved — the "boarding soon" proxy on feeds that
+  // don't carry real boarding status.
+  | { kind: 'gateChanged'; from: string | null; to: string }
+  // Real boarding announced (AeroDataBox maps Boarding/GateClosed here, where
+  // the airport publishes its FIDS data).
+  | { kind: 'boarding' };
 
 /**
  * Normalize a user-written flight number («K6 829», «k6-829», «SU 100») into
@@ -131,6 +133,8 @@ export function adaptivePollMinutes(
   nowMs: number,
   fallbackMinutes: number,
 ): number {
+  // Boarding announced => departure is minutes away, whatever the times say.
+  if (snapshot?.status === 'boarding') return POLL_CLOSE_MINUTES;
   if (snapshot?.status === 'active') {
     const arrMs = parseMs(effectiveTime(snapshot.arr));
     if (arrMs === null) return INFLIGHT_UNKNOWN_ARRIVAL_MINUTES;
@@ -186,6 +190,7 @@ export function diffSnapshots(
       changes.push({ kind: 'landed', at: next.arr.actual ?? effectiveTime(next.arr) });
     else if (next.status === 'active')
       changes.push({ kind: 'departed', at: next.dep.actual ?? effectiveTime(next.dep) });
+    else if (next.status === 'boarding') changes.push({ kind: 'boarding' });
   }
 
   if (changes.some((c) => c.kind === 'cancelled')) return changes;
@@ -214,7 +219,7 @@ export function diffSnapshots(
   // Departure gate news matters only before the plane leaves; a feed dropping
   // the field (non-null -> null) is a data hiccup, not a change.
   if (
-    next.status === 'scheduled' &&
+    (next.status === 'scheduled' || next.status === 'boarding') &&
     next.dep.gate !== null &&
     next.dep.gate !== prev.dep.gate
   ) {
@@ -226,10 +231,11 @@ export function diffSnapshots(
 
 const STATUS_RU: Record<string, string> = {
   scheduled: 'по расписанию',
+  boarding: 'идёт посадка 🛄',
   active: 'в воздухе',
   landed: 'приземлился',
   cancelled: 'отменён 🚨',
-  incident: 'инцидент ⚠️',
+  incident: 'статус под вопросом (возможна отмена) ⚠️',
   diverted: 'перенаправлен в другой аэропорт ⚠️',
 };
 
@@ -295,7 +301,9 @@ export function describeChanges(changes: FlightChange[]): string[] {
       case 'diverted':
         return '⚠️ рейс перенаправили в другой аэропорт.';
       case 'incident':
-        return '⚠️ по рейсу отмечен инцидент — проверь у авиакомпании.';
+        return '⚠️ статус рейса под вопросом (возможна отмена/инцидент) — проверь у авиакомпании.';
+      case 'boarding':
+        return '📢 объявлена посадка — пора к гейту!';
       case 'departed':
         return `🛫 вылетел${c.at ? ` в ${wallClock(c.at) ?? c.at}` : ''}.`;
       case 'landed':

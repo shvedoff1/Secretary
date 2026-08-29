@@ -208,8 +208,11 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CALENDAR_SOON_MINUTES` | no | `60` | Minutes before a timed event to send the «скоро …» ping |
 | `CALENDAR_MAX_PER_CHAT` | no | `4` | Connected calendars per chat |
 | `ANTHROPIC_CALENDAR_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model that writes the one advice/quip line under a reminder (the event list itself is deterministic) |
-| `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/takeoff/landing; list with `/flight`). Both appear only when a feed key is set (`AEROAPI_KEY` or `AVIATIONSTACK_API_KEY`) |
-| `AEROAPI_KEY` | no | — | **Preferred provider**: FlightAware AeroAPI, pay-per-query with no monthly minimum and a $5/mo free usage allowance on the Personal tier (a few watched flights a week fit into it). Wins over aviationstack when both keys are set |
+| `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/gate/boarding/takeoff/landing; list with `/flight`). Both appear only when a feed key is set (`AERODATABOX_API_KEY`, `AEROAPI_KEY` or `AVIATIONSTACK_API_KEY`) |
+| `AERODATABOX_API_KEY` | no | — | **Preferred provider**: AeroDataBox — the only feed with real *Boarding/GateClosed* statuses (where the airport publishes them); free tier 600 units/mo, Pro ~$5/mo. Wins over the other two when set |
+| `AERODATABOX_BASE_URL` | no | `https://prod.api.market/api/v1/aedbx/aerodatabox` | Marketplace gateway; a RapidAPI subscription would use `https://aerodatabox.p.rapidapi.com` |
+| `AERODATABOX_KEY_HEADER` | no | `x-api-market-key` | Auth header of the marketplace (`X-RapidAPI-Key` on RapidAPI) |
+| `AEROAPI_KEY` | no | — | Second priority: FlightAware AeroAPI, pay-per-query with no monthly minimum and a $5/mo free usage allowance on the Personal tier |
 | `AEROAPI_BASE_URL` | no | `https://aeroapi.flightaware.com/aeroapi` | AeroAPI endpoint override |
 | `AVIATIONSTACK_API_KEY` | no | — | Fallback provider: free key from aviationstack.com. Mind the quota: every watch poll is one request (hourly ≈ 24/day; the free tier is ~100/month) |
 | `AVIATIONSTACK_BASE_URL` | no | `http://api.aviationstack.com/v1` | The free plan is HTTP-only; switch to `https://` on a paid plan |

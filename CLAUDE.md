@@ -424,21 +424,32 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (`poller.ts`), notifying the chat on every meaningful change (cancelled / times
   moved ≥ `FLIGHT_DELAY_NOTIFY_MINUTES` / took off / landed) and disarming itself
   on a terminal one (cancel/landing) or on expiry (a dated watch lives to its date
-  + 2 days; undated — `FLIGHT_WATCH_EXPIRES_HOURS`). TWO pluggable providers,
+  + 2 days; undated — `FLIGHT_WATCH_EXPIRES_HOURS`). THREE pluggable providers,
   picked per request by which key is set (`flightFeedProvider` in `feed.ts`;
-  flight HTTP lives ONLY in `feed.ts` + `aeroapi.ts`, mirroring the Open-Meteo
-  rule): FlightAware AeroAPI (`AEROAPI_KEY`, `aeroapi.ts`) is PREFERRED when both
-  keys are set — pay-per-query, no monthly minimum, $5/mo free allowance on the
-  Personal tier, fresher data — and aviationstack (`AVIATIONSTACK_API_KEY`) is
-  the fallback. Snapshot ISO times are airport-LOCAL wall time by contract: for
+  flight HTTP lives ONLY in `feed.ts` + `aeroapi.ts` + `aerodatabox.ts`,
+  mirroring the Open-Meteo rule), priority top-down: AeroDataBox
+  (`AERODATABOX_API_KEY`, `aerodatabox.ts`) — the only feed with REAL
+  Boarding/GateClosed statuses (mapped to snapshot status `boarding`, a notified
+  event; coverage depends on the airport publishing FIDS data) and cheap tiers
+  (free 600 units/mo, ~$5 Pro); reached through a marketplace gateway, so
+  `AERODATABOX_BASE_URL` + `AERODATABOX_KEY_HEADER` are config (defaults:
+  API.market, `x-api-market-key`). Then FlightAware AeroAPI (`AEROAPI_KEY`,
+  `aeroapi.ts`) — pay-per-query, no monthly minimum, $5/mo free allowance on the
+  Personal tier — and aviationstack (`AVIATIONSTACK_API_KEY`) as the last
+  fallback. Snapshot ISO times are airport-LOCAL wall time by contract: for
   aviationstack that is what the feed already sends (its UTC offsets are
-  unreliable, so rendering reads the strings' own wall clock), while AeroAPI
+  unreliable, so rendering reads the strings' own wall clock), AeroAPI
   reports UTC + each airport's IANA zone, so `aeroapi.ts` converts to local ISO
-  (`utcToAirportLocal`) before building the snapshot — the shared differ/renderer
-  never know which feed answered. Both feeds are queried by flight number alone
+  (`utcToAirportLocal`) before building the snapshot, and AeroDataBox sends
+  local next to UTC (only a `'T'` touch-up needed) — the shared differ/renderer
+  never know which feed answered. Feeds are queried by flight number alone
   and the wanted date is picked CLIENT-side (`pickSnapshot` in `status.ts` —
   pure, like the diffing `diffSnapshots` and all rendering); a date the feed
-  hasn't published yet is «no data yet», not an error. Delay detection is
+  hasn't published yet is «no data yet», not an error (AeroDataBox also has a
+  dated endpoint, used when the watch names a date — its schedule data reaches
+  into the future). A feed's «может быть отменён» (CanceledUncertain) maps to
+  `incident`/«статус под вопросом», never to a hard «ОТМЕНИЛИ» — a false cancel
+  alarm is the one thing this daemon must not do. Delay detection is
   BASELINE-based: the stored snapshot only advances
   when the chat was notified, so под-threshold creep (+5, +5, +5…) still fires
   once the total crosses the threshold. Both tools appear ONLY when a feed key

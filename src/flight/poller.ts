@@ -62,7 +62,7 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
 
   let snapshots: FlightSnapshot[];
   try {
-    snapshots = await fetchFlightStatuses(watch.flight);
+    snapshots = await fetchFlightStatuses(watch.flight, watch.flightDate);
   } catch (err) {
     const failCount = watch.failCount + 1;
     logger.warn({ err, watchId: watch.id, failCount }, 'flight watch fetch failed');

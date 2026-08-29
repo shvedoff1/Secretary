@@ -186,6 +186,24 @@ describe('diffSnapshots', () => {
     expect(isTerminalChange({ kind: 'gateChanged', from: null, to: 'B3' })).toBe(false);
   });
 
+  it('reports boarding as an event, keeps gate news alive during it, never ends the watch', () => {
+    const boarding = snap({ status: 'boarding' });
+    expect(diffSnapshots(snap(), boarding, 10)).toEqual([{ kind: 'boarding' }]);
+    expect(isTerminalChange({ kind: 'boarding' })).toBe(false);
+    // A gate move announced while boarding is exactly the news to pass on.
+    const boardingMoved = snap({ status: 'boarding', dep: point({ gate: 'C1' }) });
+    expect(
+      diffSnapshots(snap({ status: 'boarding', dep: point({ gate: 'B3' }) }), boardingMoved, 10),
+    ).toEqual([{ kind: 'gateChanged', from: 'B3', to: 'C1' }]);
+    // Boarding then takeoff reads as departed, not a second boarding.
+    const departed = diffSnapshots(
+      boarding,
+      snap({ status: 'active', dep: point({ actual: '2026-08-30T10:05:00+00:00' }) }),
+      10,
+    );
+    expect(departed[0]!.kind).toBe('departed');
+  });
+
   it('small under-threshold moves accumulate against the baseline until they cross it', () => {
     const baseline = snap();
     const creep1 = snap({ dep: point({ estimated: '2026-08-30T10:06:00+00:00' }) });
@@ -241,6 +259,11 @@ describe('adaptivePollMinutes', () => {
       arr: point({ iata: 'SAI', scheduled: at(-0.1) }),
     });
     expect(adaptivePollMinutes(landingSoon, null, now, 60)).toBe(POLL_LANDING_MINUTES);
+  });
+
+  it('boarding announced polls tight regardless of the times', () => {
+    const boarding = snap({ status: 'boarding' });
+    expect(adaptivePollMinutes(boarding, null, now, 60)).toBe(POLL_CLOSE_MINUTES);
   });
 
   it('in the air with no arrival estimate polls moderately, not blindly fast', () => {
@@ -301,6 +324,7 @@ describe('rendering', () => {
     expect(lines[2]).toContain('11:02');
     expect(lines[3]).toContain('назначили гейт B3');
     expect(lines[4]).toContain('B3 → C1');
+    expect(describeChanges([{ kind: 'boarding' }])[0]).toContain('посадка');
   });
 });
 

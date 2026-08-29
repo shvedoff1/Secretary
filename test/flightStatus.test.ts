@@ -7,6 +7,10 @@ import {
   isTerminalChange,
   renderFlightCard,
   wallClock,
+  adaptivePollMinutes,
+  POLL_FAR_MINUTES,
+  POLL_NEAR_MINUTES,
+  POLL_CLOSE_MINUTES,
   type FlightSnapshot,
   type FlightPoint,
 } from '../src/flight/status.js';
@@ -163,6 +167,47 @@ describe('diffSnapshots', () => {
     // still measured from 10:00 — the +12 total fires even though each step was +6.
     const creep2 = snap({ dep: point({ estimated: '2026-08-30T10:12:00+00:00' }) });
     expect(diffSnapshots(baseline, creep2, 10)).toHaveLength(1);
+  });
+});
+
+describe('adaptivePollMinutes', () => {
+  const now = Date.parse('2026-08-29T12:00:00Z');
+  const depIn = (hours: number): FlightSnapshot =>
+    snap({ dep: point({ scheduled: new Date(now + hours * 3600_000).toISOString() }) });
+
+  it('idles far from departure and tightens as the flight nears', () => {
+    expect(adaptivePollMinutes(depIn(24), null, now, 60)).toBe(POLL_FAR_MINUTES);
+    expect(adaptivePollMinutes(depIn(11), null, now, 60)).toBe(POLL_NEAR_MINUTES);
+    expect(adaptivePollMinutes(depIn(2), null, now, 60)).toBe(POLL_NEAR_MINUTES);
+    expect(adaptivePollMinutes(depIn(0.5), null, now, 60)).toBe(POLL_CLOSE_MINUTES);
+    // Past the (old) departure time but not yet reported in the air: keep fast —
+    // that is exactly when the takeoff/cancel news lands.
+    expect(adaptivePollMinutes(depIn(-0.5), null, now, 60)).toBe(POLL_CLOSE_MINUTES);
+  });
+
+  it('a reschedule moves the fast window along (поправка на перенос)', () => {
+    // Scheduled 30 min out, but the ESTIMATE already says +6h — no point burning
+    // 15-minute polls against a departure that moved away.
+    const rescheduled = snap({
+      dep: point({
+        scheduled: new Date(now + 30 * 60_000).toISOString(),
+        estimated: new Date(now + 6 * 3600_000).toISOString(),
+      }),
+    });
+    expect(adaptivePollMinutes(rescheduled, null, now, 60)).toBe(POLL_NEAR_MINUTES);
+  });
+
+  it('polls fast while the flight is in the air, whatever the times say', () => {
+    const inAir = snap({ status: 'active' });
+    expect(adaptivePollMinutes(inAir, null, now, 60)).toBe(POLL_CLOSE_MINUTES);
+  });
+
+  it('with no data yet the watched date stands in, and no date at all falls back', () => {
+    // 2026-08-31T12:00Z is 48h from `now` => far tier while the feed has nothing.
+    expect(adaptivePollMinutes(null, '2026-08-31', now, 60)).toBe(POLL_FAR_MINUTES);
+    // Same-day watch with no data: mid-day heuristic puts it in the tight tiers.
+    expect(adaptivePollMinutes(null, '2026-08-29', now, 60)).toBe(POLL_CLOSE_MINUTES);
+    expect(adaptivePollMinutes(null, null, now, 45)).toBe(45);
   });
 });
 

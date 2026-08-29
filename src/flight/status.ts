@@ -95,6 +95,43 @@ export function pickSnapshot(
   return snapshots[snapshots.length - 1]!;
 }
 
+// Adaptive poll pacing: cancellations/reschedules are RARE news, so far from
+// departure the watch idles at a slow pace and only tightens as the flight
+// nears — this is what makes a watch armed days ahead affordable on a metered
+// feed (~180/60/15-minute tiers instead of a flat hourly burn). Fixed tiers,
+// not knobs: the RATIO is the design, mirroring memoryWeight's divisor.
+export const POLL_FAR_MINUTES = 180; // more than 12h to departure
+export const POLL_NEAR_MINUTES = 60; // 1..12h to departure
+export const POLL_CLOSE_MINUTES = 15; // final hour, and in the air
+const FAR_THRESHOLD_MS = 12 * 3600_000;
+const CLOSE_THRESHOLD_MS = 1 * 3600_000;
+
+/**
+ * Minutes until a flight watch's next poll, from how far away departure is.
+ * Departure is read off the latest snapshot's EFFECTIVE time (estimated over
+ * scheduled) — so a reschedule moves the fast-polling window along with the
+ * new departure instead of burning 15-minute polls against the old one. With
+ * no snapshot yet, the watched date (assumed mid-day) stands in — data for a
+ * far-off date is polled at the slow tier while the feed has nothing. A flight
+ * already in the air polls fast: the next news is the landing.
+ */
+export function adaptivePollMinutes(
+  snapshot: FlightSnapshot | null,
+  flightDate: string | null,
+  nowMs: number,
+  fallbackMinutes: number,
+): number {
+  if (snapshot?.status === 'active') return POLL_CLOSE_MINUTES;
+  const depMs =
+    (snapshot ? parseMs(effectiveTime(snapshot.dep)) : null) ??
+    (flightDate ? parseMs(`${flightDate}T12:00:00Z`) : null);
+  if (depMs === null) return fallbackMinutes;
+  const left = depMs - nowMs;
+  if (left > FAR_THRESHOLD_MS) return POLL_FAR_MINUTES;
+  if (left > CLOSE_THRESHOLD_MS) return POLL_NEAR_MINUTES;
+  return POLL_CLOSE_MINUTES;
+}
+
 /** True when a change ends the watch — the awaited event happened (or the flight is over). */
 export function isTerminalChange(c: FlightChange): boolean {
   return (

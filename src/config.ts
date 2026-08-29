@@ -302,9 +302,11 @@ const ConfigSchema = z.object({
   // The free plan is HTTP-only; switch to https:// on a paid plan.
   AVIATIONSTACK_BASE_URL: z.string().url().default('http://api.aviationstack.com/v1'),
   FLIGHT_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
-  // Default poll pace for a flight watch. Each poll is ONE aviationstack request
-  // (hourly ≈ 24/day), and the free tier is ~100 requests/month — tighten only
-  // with a paid key. Clamped to ≥15 min at watch creation.
+  // FALLBACK poll pace for a flight watch, used only while no departure time is
+  // known. Live pacing is otherwise ADAPTIVE (status.ts adaptivePollMinutes):
+  // ~3h when departure is >12h away, hourly inside 12h, every 15 min in the
+  // final hour and in the air — cancellations are rare news far out, so the
+  // slow tiers are what make a watch affordable on a metered feed.
   FLIGHT_WATCH_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
   // Cap on active flight watches per chat so one chat can't drain the quota.
   FLIGHT_WATCH_MAX_PER_CHAT: z.coerce.number().int().positive().default(4),

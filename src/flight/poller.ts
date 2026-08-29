@@ -11,6 +11,7 @@ import { addTurn, pruneOld } from '../db/repos/conversation.repo.js';
 import { recordChatLog } from '../bot/chatLog.js';
 import { fetchFlightStatuses, flightFeedConfigured } from './feed.js';
 import {
+  adaptivePollMinutes,
   diffSnapshots,
   describeChanges,
   isTerminalChange,
@@ -54,7 +55,10 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
     return;
   }
 
-  const nextCheckAt = now + watch.intervalMinutes * 60_000;
+  // Poll pace is ADAPTIVE (rare news far out, tight near departure) and follows
+  // the freshest snapshot each path has — a reschedule moves the fast window.
+  const nextCheckAfter = (snap: FlightSnapshot | null): number =>
+    now + adaptivePollMinutes(snap, watch.flightDate, now, watch.intervalMinutes) * 60_000;
 
   let snapshots: FlightSnapshot[];
   try {
@@ -63,7 +67,7 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
     const failCount = watch.failCount + 1;
     logger.warn({ err, watchId: watch.id, failCount }, 'flight watch fetch failed');
     setFlightCheckResult(watch.id, {
-      nextCheckAt,
+      nextCheckAt: nextCheckAfter(watch.lastSnapshot),
       lastCheckedAt: now,
       lastSnapshot: watch.lastSnapshot,
       failCount,
@@ -83,7 +87,7 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
     // The feed answered but doesn't cover the watched date yet (it publishes
     // flights near their day) — not a failure, just nothing to compare yet.
     setFlightCheckResult(watch.id, {
-      nextCheckAt,
+      nextCheckAt: nextCheckAfter(null),
       lastCheckedAt: now,
       lastSnapshot: watch.lastSnapshot,
       failCount: 0,
@@ -108,7 +112,7 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
       return;
     }
     setFlightCheckResult(watch.id, {
-      nextCheckAt,
+      nextCheckAt: nextCheckAfter(next),
       lastCheckedAt: now,
       lastSnapshot: next,
       failCount: 0,
@@ -120,8 +124,9 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
   if (changes.length === 0) {
     // Keep the OLD baseline: small under-threshold moves must accumulate until
     // they cross the threshold, not be silently re-baselined every poll.
+    // Pacing still reads the NEW snapshot — the freshest departure estimate.
     setFlightCheckResult(watch.id, {
-      nextCheckAt,
+      nextCheckAt: nextCheckAfter(next),
       lastCheckedAt: now,
       lastSnapshot: prev,
       failCount: 0,
@@ -143,7 +148,7 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
     disableFlightWatch(watch.id, now);
   } else {
     setFlightCheckResult(watch.id, {
-      nextCheckAt,
+      nextCheckAt: nextCheckAfter(next),
       lastCheckedAt: now,
       lastSnapshot: next,
       failCount: 0,

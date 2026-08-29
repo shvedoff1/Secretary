@@ -56,7 +56,7 @@ export async function cmdFlight(ctx: Context): Promise<void> {
     const until = formatInTimezone(w.expiresAt, tz);
     const date = w.flightDate ? ` на ${w.flightDate}` : '';
     const fails = w.failCount > 0 ? ` ⚠️ ${w.failCount} неудачных попыток подряд` : '';
-    return `🛩 #${w.id} «${w.title}» — рейс ${w.flight}${date}, каждые ${w.intervalMinutes} мин, следующая проверка ${next}, слежу до ${until}${fails}`;
+    return `🛩 #${w.id} «${w.title}» — рейс ${w.flight}${date}, следующая проверка ${next} (чаще ближе к вылету), слежу до ${until}${fails}`;
   });
   await ctx.reply(
     [

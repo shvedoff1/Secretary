@@ -372,6 +372,10 @@ const ConfigSchema = z.object({
   CALENDAR_EARLY_HOUR: z.coerce.number().int().min(0).max(23).default(10),
   // Minutes before a timed event to send the «скоро …» ping.
   CALENDAR_SOON_MINUTES: z.coerce.number().int().positive().default(60),
+  // Same ping for TRAVEL events (flights/trains/airport-shaped titles): they
+  // need a runway, not a heads-up — at T-60 a flight reminder is a missed
+  // flight. Detected deterministically (isTravelEvent in calendar/notice.ts).
+  CALENDAR_SOON_TRAVEL_MINUTES: z.coerce.number().int().positive().default(180),
   // Cap on connected calendars per chat.
   CALENDAR_MAX_PER_CHAT: z.coerce.number().int().positive().default(4),
   // Cheap model that writes the one advice/quip line on top of a reminder digest

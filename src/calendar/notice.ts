@@ -52,11 +52,39 @@ export interface NoticePlanArgs {
   morningHour: number;
   earlyHour: number;
   soonMinutes: number;
+  /** Lead for TRAVEL events (flights/trains — see isTravelEvent). A flight
+   *  pinged 60 minutes before departure is a missed flight, not a reminder:
+   *  by then the user must already be at the airport. Default handled by the
+   *  caller (CALENDAR_SOON_TRAVEL_MINUTES, ~3h). */
+  soonTravelMinutes?: number;
   /** Has this slot already been sent? (calendar_notice lookup.) */
   isSent: (slot: string) => boolean;
   /** False while the chat has not set its timezone (tz is then just the server
    *  default): day-bucketing and rendering fall back to each event's OWN zone. */
   tzKnown?: boolean;
+}
+
+// Deterministic "needs-a-long-runway" detector: flights, trains, airport-shaped
+// events. Keyword-based over title + location (RU/EN) plus a flight-number shape
+// («K6 829», «SU100»). Wrongly classifying a meeting as travel costs an early
+// ping; wrongly classifying a flight as a meeting costs the flight — so the
+// match is deliberately generous.
+const TRAVEL_RE =
+  /(рейс|самол[её]т|вылет|перел[её]т|аэропорт|аэроэкспресс|поезд|вокзал|паром|flight|airport|departure|boarding|train|ferry|✈)/i;
+const FLIGHT_NO_RE = /\b[A-Z][A-Z0-9]\s?\d{2,4}\b/;
+
+/** Does this event need the long (travel) pre-event lead? Pure; exported for tests. */
+export function isTravelEvent(e: Pick<NoticeEvent, 'title' | 'location'>): boolean {
+  const text = `${e.title} ${e.location ?? ''}`;
+  return TRAVEL_RE.test(text) || FLIGHT_NO_RE.test(text);
+}
+
+/** «55 мин» / «3 ч» / «2 ч 40 мин» — a lead time the way a person says it. */
+export function formatLead(minutes: number): string {
+  if (minutes < 100) return `${minutes} мин`;
+  const h = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem >= 10 ? `${h} ч ${rem} мин` : `${h} ч`;
 }
 
 /** Which zone to render/bucket an event in: the chat's, or — while the chat
@@ -130,12 +158,16 @@ export function planNotices(args: NoticePlanArgs): CalendarNotice[] {
   }
 
   // Pre-event pings for timed events. An event already started is NOT pinged —
-  // a "через -20 минут" reminder is worse than none.
-  const soonWindowMs = args.soonMinutes * 60_000;
+  // a "через -20 минут" reminder is worse than none. The lead is per EVENT
+  // KIND: a meeting wants ~an hour, a flight wants hours (time to pack, get to
+  // the airport, clear security — at T-60 the reminder is useless). The slot
+  // key ignores the lead, so a travel event pings exactly once, early.
+  const travelWindowMs = (args.soonTravelMinutes ?? args.soonMinutes) * 60_000;
   for (const e of events) {
     if (e.allDay) continue;
+    const windowMs = isTravelEvent(e) ? Math.max(travelWindowMs, args.soonMinutes * 60_000) : args.soonMinutes * 60_000;
     const lead = e.startsAt - nowMs;
-    if (lead < 0 || lead > soonWindowMs) continue;
+    if (lead < 0 || lead > windowMs) continue;
     const slot = `soon:${e.uid}:${e.startsAt}`;
     if (args.isSent(slot)) continue;
     out.push({ kind: 'soon', slot, event: e, minutesLeft: Math.max(1, Math.ceil(lead / 60_000)) });
@@ -196,7 +228,7 @@ export function renderNotice(notice: CalendarNotice, tz: string, tzKnown = true)
     const place = e.location ? ` — ${e.location}` : '';
     const dtz = eventDisplayTz(e, tz, tzKnown);
     const zone = tzKnown ? '' : ` ${dtz}`;
-    return `⏰ Через ${notice.minutesLeft} мин: «${e.title}»${place} (в ${timeInTz(e.startsAt, dtz)}${zone})`;
+    return `⏰ Через ${formatLead(notice.minutesLeft)}: «${e.title}»${place} (в ${timeInTz(e.startsAt, dtz)}${zone})`;
   }
   const header =
     notice.kind === 'evening'

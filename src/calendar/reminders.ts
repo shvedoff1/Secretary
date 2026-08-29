@@ -73,6 +73,9 @@ async function sendNotice(
     noticeText: body,
     kind: notice.kind,
     hasEarly: notice.kind === 'soon' ? false : notice.hasEarly,
+    // For a pre-event ping the advice must fit the time actually left — no
+    // «выезжай сейчас, успеешь» plans for a flight an hour away.
+    minutesLeft: notice.kind === 'soon' ? notice.minutesLeft : null,
     funny,
     // Local now + the events' hidden details (booking descriptions) are what
     // turn the advice from «за 2 часа в аэропорт» into «выезжай к 8:30, T2».
@@ -128,6 +131,7 @@ export async function runDueCalendarNotices(bot: Bot): Promise<void> {
         morningHour: cfg.CALENDAR_MORNING_HOUR,
         earlyHour: cfg.CALENDAR_EARLY_HOUR,
         soonMinutes: cfg.CALENDAR_SOON_MINUTES,
+        soonTravelMinutes: cfg.CALENDAR_SOON_TRAVEL_MINUTES,
         isSent: (slot) => wasNoticeSent(chatId, slot),
       });
       for (const notice of notices) {

@@ -39,6 +39,15 @@ const ADVICE_SYSTEM = `Ты пишешь короткую приписку (1-4 
   T2») — можно; «твой гейт B12» из воздуха — нельзя.
 - Если событий несколько — сфокусируйся на самом требующем подготовки, остальные
   можно затронуть полсловом или не трогать.
+- ПИНГ НЕЗАДОЛГО ДО СОБЫТИЯ: советуй ТОЛЬКО то, что реально успеть за оставшееся
+  время (оно названо в запросе). Не предлагай подготовку, поезд на которую ушёл
+  («собери вещи», «оформи e-visa» за 40 минут до вылета — поздно). ТРЕЗВО считай:
+  если по твоей же арифметике времени НЕ хватает (до вылета час, ехать 40 минут,
+  а надо быть за час) — не строй бодрый план «выезжай сейчас, успеешь»; скажи
+  прямо, что время критичное, и назови единственное, что ещё имеет смысл сделать
+  (такси немедленно / онлайн-регистрация по дороге / позвонить и перенести).
+  Пользователь может быть уже на месте — не утверждай, где он; формулируй «если
+  ещё не выехал — …».
 - Без markdown-заголовков; обычный текст, можно 1-2 эмодзи.
 - Если сказать реально нечего — выведи ровно NOTHING (одним словом, латиницей).
 
@@ -51,6 +60,9 @@ export interface CalendarAdviceArgs {
   kind: 'evening' | 'morning' | 'soon';
   /** Any timed event starts early — lean into the prep advice. */
   hasEarly: boolean;
+  /** For a 'soon' ping: minutes actually left — the hard budget the advice must
+   *  fit into. Null for digests. */
+  minutesLeft?: number | null;
   /** Joking tone (chat humour on) vs plain practical tone. */
   funny: boolean;
   /** Chat timezone + the current local time there, for «выезжай к 8:30» math. */
@@ -75,6 +87,10 @@ export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<stri
   const early = args.hasEarly
     ? '\nВажно: есть РАННЕЕ событие — посчитай подъём/сборы/выезд и предложи, что сделать с вечера.'
     : '';
+  const left =
+    args.minutesLeft != null
+      ? `\nДо события осталось ${args.minutesLeft} мин — это ВЕСЬ бюджет времени: советуй только то, что в него влезает, и будь честен, если его не хватает.`
+      : '';
   const now =
     args.nowLocal && args.tz ? `\nСейчас у пользователя: ${args.nowLocal} (${args.tz}).` : '';
   const details =
@@ -90,7 +106,7 @@ export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<stri
         {
           role: 'user',
           content:
-            `Тип: ${kindLabel}. Тон: ${args.funny ? 'шутливо' : 'спокойно'}.${early}${now}\n\n` +
+            `Тип: ${kindLabel}. Тон: ${args.funny ? 'шутливо' : 'спокойно'}.${early}${left}${now}\n\n` +
             `Текст напоминания:\n${args.noticeText}${details}`,
         },
       ],

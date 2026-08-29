@@ -390,7 +390,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   tomorrow at `CALENDAR_EVENING_HOUR` (flagging starts before
   `CALENDAR_EARLY_HOUR` — the «самолёт с утра, собери вещи с вечера» case),
   morning digest for today, and a per-event ping `CALENDAR_SOON_MINUTES` before
-  start — deduped by SLOT KEYS persisted in `calendar_notice` (survives
+  start (TRAVEL events — flights/trains/airport-shaped titles, detected by the
+  pure `isTravelEvent` — ping `CALENDAR_SOON_TRAVEL_MINUTES` (~3h) instead: at
+  T-60 a flight reminder is a missed flight; the slot key ignores the lead, so
+  it is one early ping, not two) — deduped by SLOT KEYS persisted in
+  `calendar_notice` (survives
   restarts; digest slot = the local date covered, soon slot = the occurrence),
   and renders the event list DETERMINISTICALLY (titles/times reach the chat
   verbatim, like the spending digest's figures). TIMEZONE fallback: every cached

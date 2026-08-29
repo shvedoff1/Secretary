@@ -89,7 +89,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,AEROAPI_KEY,AVIATIONSTACK_API_KEY
           script: |
             set -euo pipefail
 
@@ -143,6 +143,16 @@ jobs:
             if [ -n "${OPENAI_HUMOR_TIMEOUT_MS:-}" ]; then
               echo "OPENAI_HUMOR_TIMEOUT_MS=$OPENAI_HUMOR_TIMEOUT_MS" >> .env
             fi
+            # Optional: flight feed keys (flight_status / watch_flight). Only
+            # written when present — without a key the flight tools are simply
+            # not offered to the model. AeroAPI wins over aviationstack in-app
+            # when both are set.
+            if [ -n "${AEROAPI_KEY:-}" ]; then
+              echo "AEROAPI_KEY=$AEROAPI_KEY" >> .env
+            fi
+            if [ -n "${AVIATIONSTACK_API_KEY:-}" ]; then
+              echo "AVIATIONSTACK_API_KEY=$AVIATIONSTACK_API_KEY" >> .env
+            fi
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export BOT_IMAGE="$DEPLOY_IMAGE"
@@ -176,3 +186,5 @@ jobs:
           OPENAI_HUMOR_MODEL: ${{ secrets.OPENAI_HUMOR_MODEL || vars.OPENAI_HUMOR_MODEL }}
           OPENAI_REASONING_EFFORT: ${{ secrets.OPENAI_REASONING_EFFORT || vars.OPENAI_REASONING_EFFORT }}
           OPENAI_HUMOR_TIMEOUT_MS: ${{ secrets.OPENAI_HUMOR_TIMEOUT_MS || vars.OPENAI_HUMOR_TIMEOUT_MS }}
+          AEROAPI_KEY: ${{ secrets.AEROAPI_KEY }}
+          AVIATIONSTACK_API_KEY: ${{ secrets.AVIATIONSTACK_API_KEY }}

@@ -9,6 +9,8 @@ import {
   EDIT_PING_LIST_TOOL,
   SCHEDULE_TASK_TOOL,
   WATCH_PAGE_TOOL,
+  FLIGHT_STATUS_TOOL,
+  WATCH_FLIGHT_TOOL,
   DOTA_LOOKUP_TOOL,
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
@@ -161,6 +163,57 @@ describe('buildTools', () => {
       buildTools({ enableWebSearch: true, enableExpense: false, enableWatch: false }),
     );
     expect(scheduled).not.toContain(WATCH_PAGE_TOOL);
+  });
+
+  it('exposes the flight tools only when the feed is configured, watch separately', () => {
+    // Off by default: without an aviationstack key the model must never see
+    // them (and unconfigured deployments keep their cached tool prefix).
+    const base = names(buildTools({ enableWebSearch: false, enableExpense: false }));
+    expect(base).not.toContain(FLIGHT_STATUS_TOOL);
+    expect(base).not.toContain(WATCH_FLIGHT_TOOL);
+
+    const both = buildTools({
+      enableWebSearch: false,
+      enableExpense: false,
+      enableFlightStatus: true,
+      enableFlightWatch: true,
+    });
+    expect(names(both)).toContain(FLIGHT_STATUS_TOOL);
+    expect(names(both)).toContain(WATCH_FLIGHT_TOOL);
+    for (const name of [FLIGHT_STATUS_TOOL, WATCH_FLIGHT_TOOL]) {
+      const tool = both.find((t) => 'name' in t && t.name === name);
+      expect('input_schema' in tool!).toBe(true);
+    }
+
+    // Scheduled/inline runs keep the read-only check but not the watch-armer.
+    const scheduled = names(
+      buildTools({
+        enableWebSearch: false,
+        enableExpense: false,
+        enableFlightStatus: true,
+        enableFlightWatch: false,
+      }),
+    );
+    expect(scheduled).toContain(FLIGHT_STATUS_TOOL);
+    expect(scheduled).not.toContain(WATCH_FLIGHT_TOOL);
+  });
+
+  it('steers flight watches away from watch_page and schedule_task (anti-misroute guard)', () => {
+    const tools = buildTools({
+      enableWebSearch: false,
+      enableExpense: false,
+      enableFlightStatus: true,
+      enableFlightWatch: true,
+    });
+    const watchFlight = tools.find((t) => 'name' in t && t.name === WATCH_FLIGHT_TOOL);
+    const flightStatus = tools.find((t) => 'name' in t && t.name === FLIGHT_STATUS_TOOL);
+    // A flight watch must not be modelled as a page watch on an airline site or
+    // as a daily cron task — the description carries the fence the model reads.
+    expect((watchFlight as { description?: string }).description).toContain('watch_page');
+    expect((watchFlight as { description?: string }).description).toContain('schedule_task');
+    // And the two flight tools point at each other for the status/watch split.
+    expect((watchFlight as { description?: string }).description).toContain('flight_status');
+    expect((flightStatus as { description?: string }).description).toContain('watch_flight');
   });
 
   it('exposes spending_report only when enabled (a Splid group is connected)', () => {

@@ -135,6 +135,20 @@ export const WatchPageZ = z.object({
 });
 export type WatchPageInput = z.infer<typeof WatchPageZ>;
 
+const FLIGHT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export const FlightStatusZ = z.object({
+  flight: z.string().min(2),
+  date: z.string().regex(FLIGHT_DATE_RE).nullable(),
+});
+export type FlightStatusInput = z.infer<typeof FlightStatusZ>;
+
+export const WatchFlightZ = z.object({
+  title: z.string().min(1),
+  flight: z.string().min(2),
+  date: z.string().regex(FLIGHT_DATE_RE).nullable(),
+});
+export type WatchFlightInput = z.infer<typeof WatchFlightZ>;
+
 export const DotaLookupZ = z.object({
   kind: z.enum(['hero', 'item', 'patch', 'any']),
   names: z.array(z.string().min(1)).max(8).nullable(),
@@ -536,6 +550,46 @@ export const watchPageJsonSchema = {
     },
   },
   required: ['title', 'url', 'condition', 'keywords', 'intervalMinutes', 'expiresInDays'],
+} as const;
+
+export const flightStatusJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    flight: {
+      type: 'string',
+      description:
+        'IATA flight number: airline code + number, as the user gave it — "K6829", "SU 100", "u6-263". Keep the airline code; a bare number is not enough.',
+    },
+    date: {
+      type: ['string', 'null'],
+      description:
+        'YYYY-MM-DD flight date in question, computed from the context block\'s current time + timezone when the user says «завтра»/«30 августа». null when no date was named (the nearest leg is reported).',
+    },
+  },
+  required: ['flight', 'date'],
+} as const;
+
+export const watchFlightJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: {
+      type: 'string',
+      description:
+        'Short human-readable title of what is being watched, e.g. "Рейс K6829 Пномпень → Сиемреап 30.08".',
+    },
+    flight: {
+      type: 'string',
+      description: 'IATA flight number: airline code + number, e.g. "K6829".',
+    },
+    date: {
+      type: ['string', 'null'],
+      description:
+        'YYYY-MM-DD departure date when the user named one (computed from the context block time/timezone for «завтра» etc.). null => the nearest upcoming leg of this flight number.',
+    },
+  },
+  required: ['title', 'flight', 'date'],
 } as const;
 
 export const dotaLookupJsonSchema = {

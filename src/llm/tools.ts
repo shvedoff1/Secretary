@@ -10,6 +10,8 @@ import {
   setRuleJsonSchema,
   scheduleTaskJsonSchema,
   watchPageJsonSchema,
+  flightStatusJsonSchema,
+  watchFlightJsonSchema,
   dotaLookupJsonSchema,
   surfForecastJsonSchema,
   addPoiJsonSchema,
@@ -28,6 +30,8 @@ export const EDIT_PING_LIST_TOOL = 'edit_ping_list';
 export const SET_RULE_TOOL = 'set_rule';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
 export const WATCH_PAGE_TOOL = 'watch_page';
+export const FLIGHT_STATUS_TOOL = 'flight_status';
+export const WATCH_FLIGHT_TOOL = 'watch_flight';
 export const DOTA_LOOKUP_TOOL = 'dota_lookup';
 export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
@@ -67,6 +71,16 @@ export interface ToolOptions {
    *  Default true; disabled for scheduled runs (a firing task must not spawn
    *  watches), tutor chats, and when ENABLE_WATCH is off. */
   enableWatch?: boolean;
+  /** Expose the flight_status tool (live «чекни рейс» lookup). Only when the
+   *  flight feed is configured (ENABLE_FLIGHTS + an aviationstack key) — keeping
+   *  it out of unconfigured deployments leaves their cached tool prefix alone.
+   *  Stays on for scheduled runs (a recurring «каждое утро чекни мой рейс» task
+   *  is read-only) and inline mode. */
+  enableFlightStatus?: boolean;
+  /** Expose the watch_flight tool (arm the poll-until-cancelled/rescheduled
+   *  daemon). Needs the same feed config; additionally off for scheduled runs
+   *  and inline (no self-spawning / no state writes) and tutor chats. */
+  enableFlightWatch?: boolean;
   /** Expose the dota_lookup tool (current-patch hero/item/ability reference read
    *  from the locally synced knowledge base). Only in dota-mode chats, and only
    *  when ENABLE_DOTA is on. Stays on for scheduled runs so a recurring "разбор
@@ -187,6 +201,24 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Start watching a WEB PAGE and notify this chat when an awaited event appears on it. Call this when the user gives a URL and asks to be told when something appears/changes there («следи за этой страницей и напиши, когда появятся сеансы фильма X», «мониторь, когда билеты поступят в продажу», «скажи, когда появится в наличии»). The bot polls the page itself and posts a notification when the event shows up — do NOT also create a schedule_task for the same thing. `condition` must describe the awaited event precisely (including what does NOT count — e.g. a «скоро в кино» teaser); `keywords` are lowercase substrings identifying the TARGET (title in the page\'s language + variants/translit) that gate the check. Never re-create a watch already listed in "Active page watches" in the context; the list is managed with /watch. Event-on-a-page waiting only — time-based reminders stay schedule_task.',
       input_schema: watchPageJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableFlightStatus) {
+    tools.push({
+      name: FLIGHT_STATUS_TOOL,
+      description:
+        'Check the LIVE status of a specific flight by its number — schedule, delays, gate, cancellation («проверь статус рейса K6829», «мой рейс SU100 завтра не отменили?», «во сколько вылетает U6-263»). Call this INSTEAD of web_search whenever a flight NUMBER is named: it returns the airline\'s current data (status, scheduled/estimated/actual times, airports, delay), which is fresher and exact. Relay the returned facts as-is in your usual tone — never adjust the times or status. If it reports no data for the asked date, say exactly that (data appears close to the flight day) instead of guessing. For «следи за рейсом / напиши, если отменят» use `watch_flight`, not repeated checks.',
+      input_schema: flightStatusJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableFlightWatch) {
+    tools.push({
+      name: WATCH_FLIGHT_TOOL,
+      description:
+        'Start WATCHING a flight and automatically notify this chat when something happens to it: cancellation, a moved departure/arrival time, takeoff, landing. Call this when the user asks to be TOLD about changes rather than for the current status — «следи за рейсом K6829», «напиши, если рейс отменят или перенесут», «дай знать, когда вылетит». The bot polls the flight itself and posts on every meaningful change until the flight is over — do NOT also create a schedule_task, and NEVER model a flight watch as a `watch_page` on some airline page (this tool reads the flight feed directly). Never re-create a watch already listed under "Active flight watches" in the context; the list is managed with /flight. For a one-off «какой сейчас статус» use `flight_status`.',
+      input_schema: watchFlightJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

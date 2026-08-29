@@ -378,7 +378,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   unsupported parts is never guessed at — wrong dates are worse than missed ones,
   so only its base/RDATE occurrences ship). The poller (`poller.ts`, minute tick
   in index.ts, `CALENDAR_FETCH_MINUTES`) swaps a `CALENDAR_HORIZON_DAYS` window
-  of expanded occurrences into `calendar_event` (migration 030, one transaction;
+  of expanded occurrences into `calendar_event` (migration 031, one transaction;
   10 consecutive failures → ONE warning to the chat, mirroring the watch poller).
   SMART REMINDERS are a deterministic PLANNER + an LLM garnish, in that order:
   `notice.ts` (pure, unit-tested) plans three kinds — evening digest for
@@ -405,6 +405,35 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   only ever see their own chat's rows — a calendar can't leak into another chat
   by construction, and events never enter memory/lexicon extractors (those read
   chat messages, not the context block). Off via `ENABLE_CALENDAR=false`.
+- `src/flight/` — flight status + flight watches: the `flight_status` tool answers
+  «проверь статус рейса K6829» with live data (status / scheduled-estimated-actual
+  times / delay / gates), and the `watch_flight` tool is the daemon behind «следи
+  за рейсом и напиши, если отменят или перенесут» — a `flight_watch` row (migration
+  030, `flightWatch.repo.ts`) polled on the same minute tick as page watches
+  (`poller.ts`), notifying the chat on every meaningful change (cancelled / times
+  moved ≥ `FLIGHT_DELAY_NOTIFY_MINUTES` / took off / landed) and disarming itself
+  on a terminal one (cancel/landing) or on expiry (a dated watch lives to its date
+  + 2 days; undated — `FLIGHT_WATCH_EXPIRES_HOURS`). Data comes from aviationstack
+  (`feed.ts` is the ONLY place flight HTTP happens, mirroring the Open-Meteo rule);
+  its quirks drive the design: the free plan filters neither by date nor over
+  HTTPS, so the feed is always queried by `flight_iata` alone and the wanted date
+  is picked CLIENT-side (`pickSnapshot` in `status.ts` — pure, like the diffing
+  `diffSnapshots` and all rendering), a date the feed hasn't published yet is «no
+  data yet», not an error, and times are shown as the ISO strings' own wall clock
+  (airport-local — the feed's UTC offsets are unreliable, and boards are local
+  anyway). Delay detection is BASELINE-based: the stored snapshot only advances
+  when the chat was notified, so под-threshold creep (+5, +5, +5…) still fires
+  once the total crosses the threshold. Both tools appear ONLY when
+  `AVIATIONSTACK_API_KEY` is set (unconfigured deployments keep their cached tool
+  prefix; web_search answers as before): `flight_status` is read-only and stays
+  live for scheduled runs and inline, `watch_flight` follows the page-watch flag
+  discipline (off for scheduled/inline/tutor, off on the expense-only scan).
+  Active watches render in the context block ("Active flight watches") so the
+  model never re-arms one; managed with `/flight` (`/flight del <id>`,
+  `/flight check <id>`). Every poll is one metered feed request (free tier ≈
+  100/month), hence the wide default `FLIGHT_WATCH_INTERVAL_MINUTES` (60, clamped
+  ≥15 at creation) and the per-chat cap `FLIGHT_WATCH_MAX_PER_CHAT`. Off via
+  `ENABLE_FLIGHTS=false`.
 - `src/dota/` — `dota_lookup` skill: CURRENT-patch Dota 2 reference (heroes, items,
   abilities, talents, facets, patch notes) so the dota persona never answers item/hero
   numbers from stale training data. A nightly job (`sync.ts`, driven by the hourly tick

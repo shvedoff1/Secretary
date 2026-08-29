@@ -284,6 +284,30 @@ const ConfigSchema = z.object({
   WATCH_MAX_PER_CHAT: z.coerce.number().int().positive().default(10),
   // Hard cap (ms) on a single page fetch.
   WATCH_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  // Flight status ("чекни рейс") + flight watches ("следи за рейсом и напиши,
+  // если отменят/перенесут"): live flight data from aviationstack.com. Both
+  // tools appear only when an API key is set — without one the model simply
+  // never sees them (web_search still answers flight questions as before).
+  ENABLE_FLIGHTS: boolish.default(true),
+  // Free aviationstack key: https://aviationstack.com (the free tier is enough
+  // to try; mind its request quota — every poll below is one request).
+  AVIATIONSTACK_API_KEY: z.string().min(1).optional(),
+  // The free plan is HTTP-only; switch to https:// on a paid plan.
+  AVIATIONSTACK_BASE_URL: z.string().url().default('http://api.aviationstack.com/v1'),
+  FLIGHT_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  // Default poll pace for a flight watch. Each poll is ONE aviationstack request
+  // (hourly ≈ 24/day), and the free tier is ~100 requests/month — tighten only
+  // with a paid key. Clamped to ≥15 min at watch creation.
+  FLIGHT_WATCH_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
+  // Cap on active flight watches per chat so one chat can't drain the quota.
+  FLIGHT_WATCH_MAX_PER_CHAT: z.coerce.number().int().positive().default(4),
+  // Watch lifetime when no flight date was named (a dated watch expires two days
+  // after its date instead — long enough to cover a reschedule to the next day).
+  FLIGHT_WATCH_EXPIRES_HOURS: z.coerce.number().int().positive().default(48),
+  // A departure/arrival move smaller than this (minutes) is feed jitter, not a
+  // reschedule worth waking the chat for. Small moves accumulate against the
+  // baseline, so a slow creep still notifies once it crosses this total.
+  FLIGHT_DELAY_NOTIFY_MINUTES: z.coerce.number().int().positive().default(10),
   // Dota knowledge base: a nightly crawl of Valve's datafeed (heroes, items,
   // abilities, talents, patch notes) into SQLite, read by the `dota_lookup` tool
   // in dota-mode chats so answers carry CURRENT-patch numbers instead of the

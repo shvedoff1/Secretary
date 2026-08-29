@@ -20,6 +20,8 @@ import {
   SET_RULE_TOOL,
   SCHEDULE_TASK_TOOL,
   WATCH_PAGE_TOOL,
+  FLIGHT_STATUS_TOOL,
+  WATCH_FLIGHT_TOOL,
   DOTA_LOOKUP_TOOL,
   SURF_FORECAST_TOOL,
   ADD_POI_TOOL,
@@ -38,6 +40,8 @@ import {
   SetRuleZ,
   ScheduleTaskZ,
   WatchPageZ,
+  FlightStatusZ,
+  WatchFlightZ,
   DotaLookupZ,
   SurfForecastZ,
   AddPoiZ,
@@ -55,6 +59,8 @@ import {
   type SetRuleInput,
   type ScheduleTaskInput,
   type WatchPageInput,
+  type FlightStatusInput,
+  type WatchFlightInput,
   type DotaLookupInput,
   type SurfForecastInput,
   type AddPoiInput,
@@ -63,6 +69,7 @@ import {
   type CalendarEventsInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
+import { flightFeedConfigured } from '../flight/feed.js';
 
 export interface AssistantContext {
   /**
@@ -110,6 +117,12 @@ export interface AssistantContext {
   allowWatch?: boolean;
   /** Active page watches in this chat, shown so the model never recreates one. */
   activeWatches?: { id: number; title: string; url: string }[];
+  /** Expose the watch_flight tool (default true; false for scheduled/inline runs —
+   *  same self-spawning/state-write risk as page watches). flight_status has no
+   *  flag: it is read-only and rides the config gate alone. */
+  allowFlightWatch?: boolean;
+  /** Active flight watches in this chat, shown so the model never recreates one. */
+  activeFlightWatches?: { id: number; flight: string; date: string | null; title: string }[];
   /** Expose the dota_lookup tool (dota-mode chats only; stays on for scheduled runs). */
   allowDota?: boolean;
   /** Expose the add_poi tool (default true; false for scheduled runs). */
@@ -187,6 +200,10 @@ export interface AssistantHandlers {
   scheduleTask: (input: ScheduleTaskInput) => string;
   /** Arm a page watch (poll a URL for an event); return a short confirmation. */
   watchPage: (input: WatchPageInput) => string;
+  /** Check a flight's live status; return a ready text card for the model to relay. */
+  flightStatus: (input: FlightStatusInput) => Promise<string>;
+  /** Arm a flight watch (poll until cancelled/rescheduled/landed); return a confirmation. */
+  watchFlight: (input: WatchFlightInput) => string;
   /** Read current-patch Dota data out of the local base; return ready text cards. */
   dotaLookup: (input: DotaLookupInput) => string;
   /** Fetch a wave forecast for the given spots; return a compact data summary. */
@@ -303,6 +320,16 @@ export async function runAssistant(
     enableRules: !expenseOnly && ctx.allowRules !== false,
     enableReminders: !expenseOnly && ctx.allowReminders !== false,
     enableWatch: !expenseOnly && !tutor && cfg.ENABLE_WATCH && ctx.allowWatch !== false,
+    // Flight tools appear only where the feed is configured (a key is set), so
+    // unconfigured deployments keep their cached tool prefix untouched. The
+    // status check is read-only and stays on for scheduled/inline runs; arming
+    // a watch writes state, so it follows the page-watch flag discipline.
+    enableFlightStatus: !expenseOnly && !tutor && flightFeedConfigured(cfg),
+    enableFlightWatch:
+      !expenseOnly &&
+      !tutor &&
+      flightFeedConfigured(cfg) &&
+      ctx.allowFlightWatch !== false,
     // Dota reference data is only ever relevant in a dota chat, and keeping it
     // out of the default tool list leaves every other chat's cached prefix alone.
     enableDota:
@@ -349,6 +376,7 @@ export async function runAssistant(
         splidConnected: ctx.splidConnected,
         activeReminders: ctx.activeReminders ?? [],
         activeWatches: ctx.activeWatches ?? [],
+        activeFlightWatches: ctx.activeFlightWatches ?? [],
         places: ctx.places ?? [],
         calendarConnected: ctx.calendarConnected ?? false,
         calendarLines: ctx.calendarLines ?? [],
@@ -619,6 +647,34 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.watchPage(parsed.data)
             : 'Could not parse the page watch.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === FLIGHT_STATUS_TOOL) {
+          const parsed = FlightStatusZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'flight_status input failed validation');
+          }
+          const card = parsed.success
+            ? await handlers.flightStatus(parsed.data)
+            : 'Could not parse the flight query.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: card,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === WATCH_FLIGHT_TOOL) {
+          const parsed = WatchFlightZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'watch_flight input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.watchFlight(parsed.data)
+            : 'Could not parse the flight watch.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

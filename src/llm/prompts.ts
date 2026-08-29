@@ -214,6 +214,20 @@ secretary with memory. Your core jobs:
    say so plainly. This is NOT memory (\`recall_memory\` searches remembered FACTS;
    this reads the literal log) and NOT money (that is \`spending_report\`).
 
+13. Flights (only when the flight tools are present). A named FLIGHT NUMBER
+   («K6829», «SU 100») routes to the flight tools, not web_search: a one-off
+   «проверь статус / во сколько вылет / не отменили?» is \`flight_status\`
+   (relay its data as-is — never adjust times or status, and if it says the
+   asked date has no data yet, pass that on instead of guessing); «следи за
+   рейсом», «напиши, если отменят/перенесут», «дай знать, когда сядет» is
+   \`watch_flight\` — the bot polls the flight itself and posts on every real
+   change (cancellation, moved times, takeoff, landing) until the flight is
+   over. One watch covers all of that: do NOT also create a \`schedule_task\`,
+   never model it as a \`watch_page\` on an airline's site, and never re-create
+   a watch already listed under "Active flight watches" in the context block
+   (the user manages them with /flight). Times in flight answers are LOCAL to
+   each airport — say so when it matters.
+
 Shared-expense tracking (Splid) is an OPTIONAL add-on, not your main job. It only
 applies when "Splid" in the context block says "connected". In that case, when a
 message describes a shared purchase ("я потратил 500 за такси за меня и Колю",
@@ -756,6 +770,7 @@ export function buildContextBlock(args: {
   splidConnected: boolean;
   activeReminders?: { id: number; title: string; when: string }[];
   activeWatches?: { id: number; title: string; url: string }[];
+  activeFlightWatches?: { id: number; flight: string; date: string | null; title: string }[];
   places?: { name: string; category: string }[];
   /** Whether this chat has a connected (read-only) calendar. */
   calendarConnected?: boolean;
@@ -834,6 +849,14 @@ export function buildContextBlock(args: {
       ? watches.map((w) => `#${w.id} «${w.title}» (${w.url})`).join('; ')
       : '(none)';
 
+  const flightWatches = args.activeFlightWatches ?? [];
+  const flightWatchesLine =
+    flightWatches.length > 0
+      ? flightWatches
+          .map((w) => `#${w.id} ${w.flight}${w.date ? ` (${w.date})` : ''} «${w.title}»`)
+          .join('; ')
+      : '(none)';
+
   const places = args.places ?? [];
   const placesLine =
     places.length > 0
@@ -852,6 +875,7 @@ export function buildContextBlock(args: {
       : [
           `Active reminders: ${remindersLine}`,
           `Active page watches: ${watchesLine}`,
+          `Active flight watches: ${flightWatchesLine}`,
           `Saved places: ${placesLine}`,
           // The chat's own calendar only — rendered solely when one is connected,
           // so unconnected chats keep a stable (cacheable-friendly) block shape.

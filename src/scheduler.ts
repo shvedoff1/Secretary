@@ -22,6 +22,7 @@ import { modeAllowsHumor, modeAllowsSlang } from './modes.js';
 import { getRecentChat } from './bot/recentChat.js';
 import { makeSurfForecastHandler } from './surf/index.js';
 import { makeDotaLookupHandler } from './dota/lookup.js';
+import { makeFlightStatusHandler } from './flight/handler.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { makeSummarizeChatHandler } from './summary/handler.js';
 import {
@@ -225,6 +226,8 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         allowReminders: false,
         // A firing task must not arm page watches either — same self-spawning risk.
         allowWatch: false,
+        // Nor flight watches (flight_status, being read-only, stays live below).
+        allowFlightWatch: false,
         allowPoi: false,
         history: [],
         userContent,
@@ -241,6 +244,10 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         setRule: () => 'noop',
         scheduleTask: () => 'noop',
         watchPage: () => 'noop',
+        // The flight check stays live: «каждое утро чекни мой рейс» is exactly a
+        // scheduled read-only lookup. Arming new watches from a firing task is not.
+        flightStatus: makeFlightStatusHandler(),
+        watchFlight: () => 'noop',
         // Dota lookup stays live: a recurring "разбор патча по утрам" task needs
         // the current-patch numbers exactly like an on-demand question does.
         dotaLookup,

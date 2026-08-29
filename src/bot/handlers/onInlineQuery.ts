@@ -8,6 +8,7 @@ import { INLINE_QUERY_MARKER } from '../../llm/prompts.js';
 import { scheduledMemory } from '../../scheduler.js';
 import { makeRecallMemoryHandler } from '../flows/assist.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
+import { makeFlightStatusHandler } from '../../flight/handler.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { makeSummarizeChatHandler } from '../../summary/handler.js';
@@ -303,6 +304,7 @@ export async function runInlineAnswer(args: {
       allowRules: false,
       allowReminders: false,
       allowWatch: false,
+      allowFlightWatch: false,
       allowPoi: false,
       // The calendar stays OFF inline even though it is read-only: the answer is
       // posted into a chat the bot can't see, and the user's personal calendar
@@ -327,6 +329,9 @@ export async function runInlineAnswer(args: {
       setRule: () => 'noop',
       scheduleTask: () => 'noop',
       watchPage: () => 'noop',
+      // Read-only, so it stays live inline — «@бот статус K6829» just answers.
+      flightStatus: makeFlightStatusHandler(),
+      watchFlight: () => 'noop',
       dotaLookup: makeDotaLookupHandler(),
       surfForecast: makeSurfForecastHandler(),
       addPoi: () => 'noop',

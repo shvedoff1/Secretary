@@ -208,6 +208,13 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CALENDAR_SOON_MINUTES` | no | `60` | Minutes before a timed event to send the «скоро …» ping |
 | `CALENDAR_MAX_PER_CHAT` | no | `4` | Connected calendars per chat |
 | `ANTHROPIC_CALENDAR_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model that writes the one advice/quip line under a reminder (the event list itself is deterministic) |
+| `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/takeoff/landing; list with `/flight`). Both appear only when `AVIATIONSTACK_API_KEY` is set |
+| `AVIATIONSTACK_API_KEY` | no | — | Free key from aviationstack.com. Mind the quota: every watch poll is one request (hourly ≈ 24/day; the free tier is ~100/month) |
+| `AVIATIONSTACK_BASE_URL` | no | `http://api.aviationstack.com/v1` | The free plan is HTTP-only; switch to `https://` on a paid plan |
+| `FLIGHT_WATCH_INTERVAL_MINUTES` | no | `60` | Flight-watch poll pace (clamped ≥15 at creation) |
+| `FLIGHT_WATCH_MAX_PER_CHAT` | no | `4` | Active flight watches per chat |
+| `FLIGHT_WATCH_EXPIRES_HOURS` | no | `48` | Lifetime of an undated flight watch (a dated one lives until its date + 2 days) |
+| `FLIGHT_DELAY_NOTIFY_MINUTES` | no | `10` | Departure/arrival moves smaller than this are jitter, not a notification (small moves accumulate until they cross it) |
 | `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |
 
 ## In-chat setup

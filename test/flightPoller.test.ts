@@ -215,6 +215,21 @@ describe('runDueFlightWatches', () => {
     expect(w!.lastSnapshot).toBeNull();
   });
 
+  it('warns on the FIRST auth failure (a dead key must not eat a short watch in silence)', async () => {
+    const { poller, repo } = await freshModules();
+    const id = armWatch(repo);
+    fetchMock.mockRejectedValue(new Error('AeroDataBox HTTP 401: invalid key'));
+
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(String(sendMessage.mock.calls[0]![1])).toContain('API-ключом');
+
+    // No nagging on every subsequent poll while the same error persists.
+    repo.forceFlightCheck(id, 100);
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('counts consecutive feed failures and warns the chat exactly once', async () => {
     const { poller, repo } = await freshModules();
     const id = armWatch(repo);

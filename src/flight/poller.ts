@@ -72,11 +72,19 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
       lastSnapshot: watch.lastSnapshot,
       failCount,
     });
-    if (failCount === FAIL_NOTIFY_COUNT) {
+    // An auth/permission failure (bad key, dead subscription) is PERMANENT —
+    // waiting out the usual 10-failure streak would let a short watch (armed a
+    // few hours before a flight) die in silence, so it warns on the FIRST hit.
+    // Transient errors keep the once-at-the-threshold discipline.
+    const authish = err instanceof Error && /HTTP 40[13]/.test(err.message);
+    if (authish ? failCount === 1 : failCount === FAIL_NOTIFY_COUNT) {
+      const reason = authish
+        ? `источник данных не пускает (похоже, проблема с API-ключом/подпиской): ${err.message}`
+        : `не могу получить данные по рейсу ${watch.flight} (уже ${failCount} попыток подряд)`;
       await notify(
         bot,
         watch.chatId,
-        `⚠️ Слежка #${watch.id} «${watch.title}»: не могу получить данные по рейсу ${watch.flight} (уже ${failCount} попыток подряд). Продолжаю пытаться. Снять: /flight del ${watch.id}`,
+        `⚠️ Слежка #${watch.id} «${watch.title}»: ${reason}. Продолжаю пытаться. Снять: /flight del ${watch.id}`,
       );
     }
     return;

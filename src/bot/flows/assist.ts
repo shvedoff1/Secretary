@@ -97,6 +97,7 @@ import type {
   EditPingListInput,
   EditMemoryInput,
   SetRuleInput,
+  SetTimezoneInput,
 } from '../../llm/schema.js';
 import {
   DEFAULT_PING_LIST,
@@ -577,6 +578,26 @@ export function makeSetRuleHandler(
 }
 
 /**
+ * Build the `set_timezone` handler for a chat — the «я во Вьетнаме» flow. The
+ * chat timezone drives reminders, calendar digests and time display, so a plain
+ * statement of where the user is must be enough to move the clock. Validated
+ * against Intl; the confirmation carries the resulting local time so a wrong
+ * mapping is immediately visible.
+ */
+export function makeSetTimezoneHandler(chatId: number): (input: SetTimezoneInput) => string {
+  return ({ timezone, place }) => {
+    const tz = timezone.trim();
+    if (!isValidTimezone(tz)) {
+      return `Не понял зону «${tz}» — назови город покрупнее или страну, я подберу таймзону.`;
+    }
+    setTimezone(chatId, tz);
+    const localNow = formatInTimezone(Date.now(), tz);
+    const label = place?.trim() ? ` (${place.trim()})` : '';
+    return `Часовой пояс чата теперь ${tz}${label}, локальное время: ${localNow}. Напоминания, календарь и расписания идут по нему.`;
+  };
+}
+
+/**
  * Build the `edit_ping_list` handler for a chat — the "добавь @vasya в основной
  * пинг" flow. Adds/removes members on a /ping roster and returns a short
  * confirmation. Names in the confirmation are given WITHOUT the @ so the model's
@@ -1002,6 +1023,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         editLexicon: makeEditLexiconHandler(chatId),
         editPingList: makeEditPingListHandler(chatId, tgUserId),
         setRule: makeSetRuleHandler(chatId, tgUserId),
+        setTimezone: makeSetTimezoneHandler(chatId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         watchPage: makeWatchPageHandler(chatId, tgUserId),
         flightStatus: makeFlightStatusHandler(),
@@ -1234,6 +1256,7 @@ async function rewordPendingInner(
       editLexicon: makeEditLexiconHandler(chatId),
       editPingList: makeEditPingListHandler(chatId, tgUserId),
       setRule: makeSetRuleHandler(chatId, tgUserId),
+      setTimezone: makeSetTimezoneHandler(chatId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       watchPage: makeWatchPageHandler(chatId, tgUserId),
       flightStatus: makeFlightStatusHandler(),

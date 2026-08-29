@@ -28,6 +28,7 @@ import {
   SPENDING_REPORT_TOOL,
   SUMMARIZE_CHAT_TOOL,
   CALENDAR_EVENTS_TOOL,
+  SET_TIMEZONE_TOOL,
 } from './tools.js';
 import {
   RecordExpenseZ,
@@ -48,6 +49,7 @@ import {
   SpendingReportZ,
   SummarizeChatZ,
   CalendarEventsZ,
+  SetTimezoneZ,
   toParsedExpense,
   type RecordExpenseInput,
   type RememberInput,
@@ -67,6 +69,7 @@ import {
   type SpendingReportInput,
   type SummarizeChatInput,
   type CalendarEventsInput,
+  type SetTimezoneInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 import { flightFeedConfigured } from '../flight/feed.js';
@@ -139,6 +142,9 @@ export interface AssistantContext {
    * can't see, and personal calendar events must never leak there.
    */
   allowCalendar?: boolean;
+  /** Expose the set_timezone tool (default true; false for scheduled runs and
+   *  inline — a one-shot must not change the chat's clock). */
+  allowTimezone?: boolean;
   /** Whether this chat has a connected calendar (gates the tool, like splidConnected). */
   calendarConnected?: boolean;
   /** Pre-rendered upcoming-event lines for the context block (chat-local time). */
@@ -219,6 +225,8 @@ export interface AssistantHandlers {
   summarizeChat: (input: SummarizeChatInput) => Promise<string>;
   /** Read the chat's cached calendar window; return the events as ready text. */
   calendarEvents: (input: CalendarEventsInput) => string;
+  /** Set the chat's timezone («я во Вьетнаме»); return a short confirmation. */
+  setTimezone: (input: SetTimezoneInput) => string;
 }
 
 export type AssistantResult =
@@ -352,6 +360,9 @@ export async function runAssistant(
       cfg.ENABLE_CALENDAR &&
       ctx.calendarConnected === true &&
       ctx.allowCalendar !== false,
+    // «я во Вьетнаме» must work in every mode — the chat clock drives reminders
+    // and digests everywhere. Off only where state writes are off.
+    enableTimezone: !expenseOnly && ctx.allowTimezone !== false,
   });
 
   const contextBlock = tutor
@@ -724,6 +735,20 @@ export async function runAssistant(
             type: 'tool_result',
             tool_use_id: block.id,
             content: transcript,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === SET_TIMEZONE_TOOL) {
+          const parsed = SetTimezoneZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'set_timezone input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.setTimezone(parsed.data)
+            : 'Could not parse the timezone.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
             is_error: !parsed.success,
           });
         } else if (block.name === CALENDAR_EVENTS_TOOL) {

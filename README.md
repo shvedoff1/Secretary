@@ -175,7 +175,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CONVERSATION_HISTORY_MAX_AGE_HOURS` | no | `12` | Drop dialogue history older than this so old tangents expire |
 | `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
 | `ENABLE_INLINE` | no | `true` | Inline mode: `@бот вопрос` in any chat answers as it would in the asker's DM. Needs BotFather setup (`/setinline` + `/setinlinefeedback` at 100%); whitelisted users only |
-| `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own |
+| `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own (just tell the bot «я во Вьетнаме» / «мой часовой пояс — Бали» and it switches the chat's clock itself) |
 | `ENABLE_LEXICON` | no | `true` | Learn the chat's slang from messages and reuse it |
 | `ANTHROPIC_LEXICON_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model for the extraction batches |
 | `LEXICON_BATCH_SIZE` | no | `30` | Extract after this many buffered messages… |

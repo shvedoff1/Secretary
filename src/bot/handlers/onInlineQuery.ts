@@ -302,6 +302,7 @@ export async function runInlineAnswer(args: {
       allowLexiconEdit: false,
       allowPingEdit: false,
       allowRules: false,
+      allowTimezone: false,
       allowReminders: false,
       allowWatch: false,
       allowFlightWatch: false,
@@ -327,6 +328,7 @@ export async function runInlineAnswer(args: {
       editLexicon: () => 'noop',
       editPingList: () => 'noop',
       setRule: () => 'noop',
+      setTimezone: () => 'noop',
       scheduleTask: () => 'noop',
       watchPage: () => 'noop',
       // Read-only, so it stays live inline — «@бот статус K6829» just answers.

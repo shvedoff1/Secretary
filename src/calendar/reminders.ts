@@ -8,8 +8,15 @@ import {
   markNoticeSent,
   pruneNotices,
 } from '../db/repos/calendar.repo.js';
-import { planNotices, renderNotice, type CalendarNotice } from './notice.js';
+import {
+  planNotices,
+  renderNotice,
+  renderEventLine,
+  type CalendarNotice,
+  type NoticeEvent,
+} from './notice.js';
 import { calendarAdviceLine } from '../llm/calendarAdvice.js';
+import { formatInTimezone } from '../util/schedule.js';
 import {
   getTimezone,
   getChatMode,
@@ -20,6 +27,27 @@ import { addTurn, pruneOld } from '../db/repos/conversation.repo.js';
 import { recordChatLog } from '../bot/chatLog.js';
 
 const DAY_MS = 86_400_000;
+// Per-event cap on the description text fed to the advice model (bookings can
+// carry pages of fare rules; the useful part — terminal/seat/confirmation —
+// lives at the top).
+const DETAIL_MAX_CHARS = 400;
+
+/**
+ * The advice model gets MORE than the digest shows: each event's description
+ * (bookings often carry the terminal / seat / confirmation number) so its
+ * advice can be concrete instead of «приезжай за 2 часа». Pure; exported for
+ * tests.
+ */
+export function noticeDetails(events: NoticeEvent[], tz: string): string[] {
+  const out: string[] = [];
+  for (const e of events) {
+    const desc = (e.description ?? '').replace(/\s*\n+\s*/g, ' • ').trim();
+    if (!desc) continue;
+    const cut = desc.length > DETAIL_MAX_CHARS ? `${desc.slice(0, DETAIL_MAX_CHARS)}…` : desc;
+    out.push(`${renderEventLine(e, tz)}: ${cut}`);
+  }
+  return out;
+}
 
 /**
  * Send one planned notice: deterministic digest first, then the optional
@@ -40,6 +68,11 @@ async function sendNotice(bot: Bot, chatId: number, notice: CalendarNotice, tz: 
     kind: notice.kind,
     hasEarly: notice.kind === 'soon' ? false : notice.hasEarly,
     funny,
+    // Local now + the events' hidden details (booking descriptions) are what
+    // turn the advice from «за 2 часа в аэропорт» into «выезжай к 8:30, T2».
+    tz,
+    nowLocal: formatInTimezone(Date.now(), tz),
+    details: noticeDetails(notice.kind === 'soon' ? [notice.event] : notice.events, tz),
   });
   const text = advice ? `${body}\n\n${advice}` : body;
 

@@ -183,6 +183,14 @@ export const SpendingReportZ = z.object({
 });
 export type SpendingReportInput = z.infer<typeof SpendingReportZ>;
 
+// Set THIS chat's timezone in plain words («я во Вьетнаме», «мой часовой пояс —
+// Бали») — it drives reminders, calendar digests and how times are shown.
+export const SetTimezoneZ = z.object({
+  timezone: z.string().min(1),
+  place: z.string().nullable(),
+});
+export type SetTimezoneInput = z.infer<typeof SetTimezoneZ>;
+
 // Read the chat's cached calendar window (connected via /calendar) so the model
 // can answer «что у меня завтра», «когда самолёт». Read-only and chat-scoped.
 export const CalendarEventsZ = z.object({
@@ -703,6 +711,24 @@ export const spendingReportJsonSchema = {
     },
   },
   required: ['fromDate', 'toDate', 'balances', 'filterLabel', 'filterKeywords', 'timezone'],
+} as const;
+
+export const setTimezoneJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    timezone: {
+      type: 'string',
+      description:
+        'IANA timezone mapped from what the user said: «я во Вьетнаме»/«в Хошимине» => "Asia/Ho_Chi_Minh"; «на Бали» => "Asia/Makassar"; «в Лиссабоне» => "Europe/Lisbon"; «по Москве» => "Europe/Moscow". A UTC offset («GMT+7») maps to the most likely zone from the conversation, or to "Etc/GMT-7" (note the INVERTED sign in Etc zones) when nothing narrows it down.',
+    },
+    place: {
+      type: ['string', 'null'],
+      description:
+        "Short label of what the user actually said, for the confirmation («Вьетнам», «Бали», «Москва»). null when they named a bare timezone/offset.",
+    },
+  },
+  required: ['timezone', 'place'],
 } as const;
 
 export const calendarEventsJsonSchema = {

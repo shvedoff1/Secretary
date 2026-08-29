@@ -259,6 +259,21 @@ describe('runDueFlightWatches', () => {
     expect(repo.listFlightWatches(100)).toEqual([]);
   });
 
+  it('notifies a gate assignment (the «скоро посадка» proxy) and keeps watching', async () => {
+    const { poller, repo } = await freshModules();
+    const id = armWatch(repo);
+    fetchMock.mockResolvedValue([snap()]);
+    await poller.runDueFlightWatches(bot); // baseline, no gate yet
+
+    fetchMock.mockResolvedValue([snap({ dep: { gate: 'B3' } as never })]);
+    repo.forceFlightCheck(id, 100);
+    await poller.runDueFlightWatches(bot);
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(String(sendMessage.mock.calls[0]![1])).toContain('назначили гейт B3');
+    expect(repo.listFlightWatches(100)).toHaveLength(1); // still armed
+  });
+
   it('paces adaptively: slow far from departure, tight in the final hour', async () => {
     const { poller, repo } = await freshModules();
     const farId = armWatch(repo, { flightDate: null });

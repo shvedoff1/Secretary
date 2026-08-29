@@ -8,9 +8,12 @@ import {
   renderFlightCard,
   wallClock,
   adaptivePollMinutes,
+  POLL_DISTANT_MINUTES,
   POLL_FAR_MINUTES,
   POLL_NEAR_MINUTES,
+  POLL_SOON_MINUTES,
   POLL_CLOSE_MINUTES,
+  POLL_LANDING_MINUTES,
   type FlightSnapshot,
   type FlightPoint,
 } from '../src/flight/status.js';
@@ -159,6 +162,30 @@ describe('diffSnapshots', () => {
     expect(isTerminalChange(land[0]!)).toBe(true);
   });
 
+  it('reports a departure gate assignment/change, but only before departure', () => {
+    const noGate = snap();
+    const gateB3 = snap({ dep: point({ gate: 'B3' }) });
+    expect(diffSnapshots(noGate, gateB3, 10)).toEqual([
+      { kind: 'gateChanged', from: null, to: 'B3' },
+    ]);
+    expect(diffSnapshots(gateB3, snap({ dep: point({ gate: 'C1' }) }), 10)).toEqual([
+      { kind: 'gateChanged', from: 'B3', to: 'C1' },
+    ]);
+    // Same gate => no event; a dropped field is a feed hiccup, not gate news.
+    expect(diffSnapshots(gateB3, snap({ dep: point({ gate: 'B3' }) }), 10)).toEqual([]);
+    expect(diffSnapshots(gateB3, noGate, 10)).toEqual([]);
+    // Once the flight departed, the origin gate is history — no gate event.
+    const departed = snap({
+      status: 'active',
+      dep: point({ gate: 'C1', actual: '2026-08-30T10:05:00+00:00' }),
+    });
+    expect(
+      diffSnapshots(gateB3, departed, 10).some((c) => c.kind === 'gateChanged'),
+    ).toBe(false);
+    // A gate ping never ends the watch.
+    expect(isTerminalChange({ kind: 'gateChanged', from: null, to: 'B3' })).toBe(false);
+  });
+
   it('small under-threshold moves accumulate against the baseline until they cross it', () => {
     const baseline = snap();
     const creep1 = snap({ dep: point({ estimated: '2026-08-30T10:06:00+00:00' }) });
@@ -172,39 +199,61 @@ describe('diffSnapshots', () => {
 
 describe('adaptivePollMinutes', () => {
   const now = Date.parse('2026-08-29T12:00:00Z');
+  const at = (hours: number): string => new Date(now + hours * 3600_000).toISOString();
   const depIn = (hours: number): FlightSnapshot =>
-    snap({ dep: point({ scheduled: new Date(now + hours * 3600_000).toISOString() }) });
+    snap({ dep: point({ scheduled: at(hours) }) });
 
   it('idles far from departure and tightens as the flight nears', () => {
-    expect(adaptivePollMinutes(depIn(24), null, now, 60)).toBe(POLL_FAR_MINUTES);
-    expect(adaptivePollMinutes(depIn(11), null, now, 60)).toBe(POLL_NEAR_MINUTES);
-    expect(adaptivePollMinutes(depIn(2), null, now, 60)).toBe(POLL_NEAR_MINUTES);
+    expect(adaptivePollMinutes(depIn(30), null, now, 60)).toBe(POLL_DISTANT_MINUTES);
+    expect(adaptivePollMinutes(depIn(18), null, now, 60)).toBe(POLL_FAR_MINUTES);
+    expect(adaptivePollMinutes(depIn(5), null, now, 60)).toBe(POLL_NEAR_MINUTES);
+    expect(adaptivePollMinutes(depIn(2), null, now, 60)).toBe(POLL_SOON_MINUTES);
     expect(adaptivePollMinutes(depIn(0.5), null, now, 60)).toBe(POLL_CLOSE_MINUTES);
     // Past the (old) departure time but not yet reported in the air: keep fast —
     // that is exactly when the takeoff/cancel news lands.
     expect(adaptivePollMinutes(depIn(-0.5), null, now, 60)).toBe(POLL_CLOSE_MINUTES);
   });
 
-  it('a reschedule moves the fast window along (поправка на перенос)', () => {
+  it('a reschedule moves the pacing window along (поправка на перенос)', () => {
     // Scheduled 30 min out, but the ESTIMATE already says +6h — no point burning
     // 15-minute polls against a departure that moved away.
     const rescheduled = snap({
-      dep: point({
-        scheduled: new Date(now + 30 * 60_000).toISOString(),
-        estimated: new Date(now + 6 * 3600_000).toISOString(),
-      }),
+      dep: point({ scheduled: at(0.5), estimated: at(6) }),
     });
     expect(adaptivePollMinutes(rescheduled, null, now, 60)).toBe(POLL_NEAR_MINUTES);
   });
 
-  it('polls fast while the flight is in the air, whatever the times say', () => {
-    const inAir = snap({ status: 'active' });
-    expect(adaptivePollMinutes(inAir, null, now, 60)).toBe(POLL_CLOSE_MINUTES);
+  it('in the air sleeps until expected arrival minus the early-arrival margin', () => {
+    // Departed 1h ago, landing expected in 2h: a 3h flight => 18-min margin, so
+    // the next poll is scheduled ~102 min out — no polls wasted on the cruise.
+    const cruising = snap({
+      status: 'active',
+      dep: point({ scheduled: at(-1), actual: at(-1) }),
+      arr: point({ iata: 'SAI', scheduled: at(2) }),
+    });
+    expect(adaptivePollMinutes(cruising, null, now, 60)).toBe(102);
+  });
+
+  it('holds a tight landing watch once arrival is due (or overdue)', () => {
+    const landingSoon = snap({
+      status: 'active',
+      dep: point({ scheduled: at(-3), actual: at(-3) }),
+      arr: point({ iata: 'SAI', scheduled: at(-0.1) }),
+    });
+    expect(adaptivePollMinutes(landingSoon, null, now, 60)).toBe(POLL_LANDING_MINUTES);
+  });
+
+  it('in the air with no arrival estimate polls moderately, not blindly fast', () => {
+    const noArr = snap({
+      status: 'active',
+      arr: point({ iata: 'SAI', scheduled: null, estimated: null, actual: null }),
+    });
+    expect(adaptivePollMinutes(noArr, null, now, 60)).toBe(30);
   });
 
   it('with no data yet the watched date stands in, and no date at all falls back', () => {
-    // 2026-08-31T12:00Z is 48h from `now` => far tier while the feed has nothing.
-    expect(adaptivePollMinutes(null, '2026-08-31', now, 60)).toBe(POLL_FAR_MINUTES);
+    // 2026-08-31T12:00Z is 48h from `now` => slowest tier while the feed has nothing.
+    expect(adaptivePollMinutes(null, '2026-08-31', now, 60)).toBe(POLL_DISTANT_MINUTES);
     // Same-day watch with no data: mid-day heuristic puts it in the tight tiers.
     expect(adaptivePollMinutes(null, '2026-08-29', now, 60)).toBe(POLL_CLOSE_MINUTES);
     expect(adaptivePollMinutes(null, null, now, 45)).toBe(45);
@@ -243,11 +292,15 @@ describe('rendering', () => {
         deltaMin: 90,
       },
       { kind: 'landed', at: '2026-08-30T11:02:00+00:00' },
+      { kind: 'gateChanged', from: null, to: 'B3' },
+      { kind: 'gateChanged', from: 'B3', to: 'C1' },
     ]);
     expect(lines[0]).toContain('ОТМЕНИЛИ');
     expect(lines[1]).toContain('30.08 10:00 → 30.08 11:30');
     expect(lines[1]).toContain('90 мин позже');
     expect(lines[2]).toContain('11:02');
+    expect(lines[3]).toContain('назначили гейт B3');
+    expect(lines[4]).toContain('B3 → C1');
   });
 });
 

@@ -213,7 +213,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `AEROAPI_BASE_URL` | no | `https://aeroapi.flightaware.com/aeroapi` | AeroAPI endpoint override |
 | `AVIATIONSTACK_API_KEY` | no | — | Fallback provider: free key from aviationstack.com. Mind the quota: every watch poll is one request (hourly ≈ 24/day; the free tier is ~100/month) |
 | `AVIATIONSTACK_BASE_URL` | no | `http://api.aviationstack.com/v1` | The free plan is HTTP-only; switch to `https://` on a paid plan |
-| `FLIGHT_WATCH_INTERVAL_MINUTES` | no | `60` | **Fallback** flight-watch poll pace, used only while no departure time is known. Otherwise pacing is adaptive: ~3h when departure is >12h away, hourly inside 12h, every 15 min in the final hour and in flight (a reschedule moves the fast window along) |
+| `FLIGHT_WATCH_INTERVAL_MINUTES` | no | `60` | **Fallback** flight-watch poll pace, used only while no departure time is known. Otherwise pacing is adaptive: 6h/3h/1h/30m/15m as departure nears (a reschedule moves the window along); in the air the watch sleeps until expected arrival −10% (flights often land early), then a 10-min landing watch |
 | `FLIGHT_WATCH_MAX_PER_CHAT` | no | `4` | Active flight watches per chat |
 | `FLIGHT_WATCH_EXPIRES_HOURS` | no | `48` | Lifetime of an undated flight watch (a dated one lives until its date + 2 days) |
 | `FLIGHT_DELAY_NOTIFY_MINUTES` | no | `10` | Departure/arrival moves smaller than this are jitter, not a notification (small moves accumulate until they cross it) |

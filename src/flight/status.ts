@@ -38,7 +38,11 @@ export type FlightChange =
   | { kind: 'departed'; at: string | null }
   | { kind: 'landed'; at: string | null }
   | { kind: 'depTimeChanged'; from: string; to: string; deltaMin: number }
-  | { kind: 'arrTimeChanged'; from: string; to: string; deltaMin: number };
+  | { kind: 'arrTimeChanged'; from: string; to: string; deltaMin: number }
+  // Departure gate assigned/moved — the closest thing schedule feeds have to a
+  // "boarding soon" signal (true boarding status is airport-FIDS data neither
+  // provider carries).
+  | { kind: 'gateChanged'; from: string | null; to: string };
 
 /**
  * Normalize a user-written flight number («K6 829», «k6-829», «SU 100») into
@@ -95,25 +99,31 @@ export function pickSnapshot(
   return snapshots[snapshots.length - 1]!;
 }
 
-// Adaptive poll pacing: cancellations/reschedules are RARE news, so far from
-// departure the watch idles at a slow pace and only tightens as the flight
-// nears — this is what makes a watch armed days ahead affordable on a metered
-// feed (~180/60/15-minute tiers instead of a flat hourly burn). Fixed tiers,
-// not knobs: the RATIO is the design, mirroring memoryWeight's divisor.
-export const POLL_FAR_MINUTES = 180; // more than 12h to departure
-export const POLL_NEAR_MINUTES = 60; // 1..12h to departure
-export const POLL_CLOSE_MINUTES = 15; // final hour, and in the air
-const FAR_THRESHOLD_MS = 12 * 3600_000;
-const CLOSE_THRESHOLD_MS = 1 * 3600_000;
+// Adaptive poll pacing, tiered by when the NEWS can actually happen.
+// Cancellations far out are rare (a slow idle covers them); delays concentrate
+// in the last hours (the aircraft's rotation is known by then); gates/boarding
+// live in the final hour. In the AIR there is nothing to poll at all until the
+// plane can plausibly be down — flights often land EARLY, so the wake-up is
+// the expected arrival minus a 10% margin of the flight's duration, then a
+// tight landing-watch. Fixed tiers, not knobs: the ratio is the design,
+// mirroring memoryWeight's divisor.
+export const POLL_DISTANT_MINUTES = 360; // more than 24h to departure
+export const POLL_FAR_MINUTES = 180; // 12..24h
+export const POLL_NEAR_MINUTES = 60; // 3..12h
+export const POLL_SOON_MINUTES = 30; // 1..3h
+export const POLL_CLOSE_MINUTES = 15; // final hour, and awaiting takeoff
+export const POLL_LANDING_MINUTES = 10; // landing window / overdue arrival
+const INFLIGHT_UNKNOWN_ARRIVAL_MINUTES = 30;
+export const EARLY_ARRIVAL_FRACTION = 0.1;
 
 /**
- * Minutes until a flight watch's next poll, from how far away departure is.
- * Departure is read off the latest snapshot's EFFECTIVE time (estimated over
- * scheduled) — so a reschedule moves the fast-polling window along with the
- * new departure instead of burning 15-minute polls against the old one. With
- * no snapshot yet, the watched date (assumed mid-day) stands in — data for a
- * far-off date is polled at the slow tier while the feed has nothing. A flight
- * already in the air polls fast: the next news is the landing.
+ * Minutes until a flight watch's next poll. Pre-departure, tiers by how far
+ * the EFFECTIVE departure (estimated over scheduled) is — so a reschedule
+ * moves the whole pacing window along with the new time. With no snapshot
+ * yet, the watched date (assumed mid-day) stands in. In the air, sleeps until
+ * expected arrival minus the early-arrival margin and only then starts the
+ * landing-watch; past-due departures/arrivals poll tight — that is exactly
+ * when the takeoff/landing/cancel news lands.
  */
 export function adaptivePollMinutes(
   snapshot: FlightSnapshot | null,
@@ -121,14 +131,26 @@ export function adaptivePollMinutes(
   nowMs: number,
   fallbackMinutes: number,
 ): number {
-  if (snapshot?.status === 'active') return POLL_CLOSE_MINUTES;
+  if (snapshot?.status === 'active') {
+    const arrMs = parseMs(effectiveTime(snapshot.arr));
+    if (arrMs === null) return INFLIGHT_UNKNOWN_ARRIVAL_MINUTES;
+    const depMs = parseMs(snapshot.dep.actual) ?? parseMs(effectiveTime(snapshot.dep));
+    const marginMs =
+      depMs !== null && arrMs > depMs
+        ? (arrMs - depMs) * EARLY_ARRIVAL_FRACTION
+        : POLL_CLOSE_MINUTES * 60_000;
+    const wakeInMin = Math.floor((arrMs - marginMs - nowMs) / 60_000);
+    return Math.max(POLL_LANDING_MINUTES, Math.min(wakeInMin, POLL_DISTANT_MINUTES));
+  }
   const depMs =
     (snapshot ? parseMs(effectiveTime(snapshot.dep)) : null) ??
     (flightDate ? parseMs(`${flightDate}T12:00:00Z`) : null);
   if (depMs === null) return fallbackMinutes;
   const left = depMs - nowMs;
-  if (left > FAR_THRESHOLD_MS) return POLL_FAR_MINUTES;
-  if (left > CLOSE_THRESHOLD_MS) return POLL_NEAR_MINUTES;
+  if (left > 24 * 3600_000) return POLL_DISTANT_MINUTES;
+  if (left > 12 * 3600_000) return POLL_FAR_MINUTES;
+  if (left > 3 * 3600_000) return POLL_NEAR_MINUTES;
+  if (left > 1 * 3600_000) return POLL_SOON_MINUTES;
   return POLL_CLOSE_MINUTES;
 }
 
@@ -188,6 +210,16 @@ export function diffSnapshots(
   if (dep) changes.push(dep);
   const arr = timeMove('arrTimeChanged', prev.arr, next.arr);
   if (arr) changes.push(arr);
+
+  // Departure gate news matters only before the plane leaves; a feed dropping
+  // the field (non-null -> null) is a data hiccup, not a change.
+  if (
+    next.status === 'scheduled' &&
+    next.dep.gate !== null &&
+    next.dep.gate !== prev.dep.gate
+  ) {
+    changes.push({ kind: 'gateChanged', from: prev.dep.gate, to: next.dep.gate });
+  }
 
   return changes;
 }
@@ -276,6 +308,10 @@ export function describeChanges(changes: FlightChange[]): string[] {
         const dir = c.deltaMin > 0 ? 'позже' : 'раньше';
         return `🕒 прилёт теперь: ${wallClock(c.from) ?? c.from} → ${wallClock(c.to) ?? c.to} (на ${Math.abs(c.deltaMin)} мин ${dir}).`;
       }
+      case 'gateChanged':
+        return c.from
+          ? `🚪 гейт поменяли: ${c.from} → ${c.to}.`
+          : `🚪 назначили гейт ${c.to} — похоже, скоро посадка.`;
     }
   });
 }

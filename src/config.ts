@@ -289,8 +289,15 @@ const ConfigSchema = z.object({
   // tools appear only when an API key is set — without one the model simply
   // never sees them (web_search still answers flight questions as before).
   ENABLE_FLIGHTS: boolish.default(true),
-  // Free aviationstack key: https://aviationstack.com (the free tier is enough
-  // to try; mind its request quota — every poll below is one request).
+  // FlightAware AeroAPI key (https://www.flightaware.com/commercial/aeroapi/):
+  // the PREFERRED provider — pay-per-query with no monthly minimum and a $5/mo
+  // free usage allowance on the Personal tier, which comfortably covers a few
+  // watched flights a week. Takes precedence over aviationstack when both keys
+  // are set.
+  AEROAPI_KEY: z.string().min(1).optional(),
+  AEROAPI_BASE_URL: z.string().url().default('https://aeroapi.flightaware.com/aeroapi'),
+  // Fallback provider: free aviationstack key (https://aviationstack.com; mind
+  // its ~100 req/month free quota — every poll below is one request).
   AVIATIONSTACK_API_KEY: z.string().min(1).optional(),
   // The free plan is HTTP-only; switch to https:// on a paid plan.
   AVIATIONSTACK_BASE_URL: z.string().url().default('http://api.aviationstack.com/v1'),

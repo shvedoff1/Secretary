@@ -413,18 +413,25 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (`poller.ts`), notifying the chat on every meaningful change (cancelled / times
   moved ≥ `FLIGHT_DELAY_NOTIFY_MINUTES` / took off / landed) and disarming itself
   on a terminal one (cancel/landing) or on expiry (a dated watch lives to its date
-  + 2 days; undated — `FLIGHT_WATCH_EXPIRES_HOURS`). Data comes from aviationstack
-  (`feed.ts` is the ONLY place flight HTTP happens, mirroring the Open-Meteo rule);
-  its quirks drive the design: the free plan filters neither by date nor over
-  HTTPS, so the feed is always queried by `flight_iata` alone and the wanted date
-  is picked CLIENT-side (`pickSnapshot` in `status.ts` — pure, like the diffing
-  `diffSnapshots` and all rendering), a date the feed hasn't published yet is «no
-  data yet», not an error, and times are shown as the ISO strings' own wall clock
-  (airport-local — the feed's UTC offsets are unreliable, and boards are local
-  anyway). Delay detection is BASELINE-based: the stored snapshot only advances
+  + 2 days; undated — `FLIGHT_WATCH_EXPIRES_HOURS`). TWO pluggable providers,
+  picked per request by which key is set (`flightFeedProvider` in `feed.ts`;
+  flight HTTP lives ONLY in `feed.ts` + `aeroapi.ts`, mirroring the Open-Meteo
+  rule): FlightAware AeroAPI (`AEROAPI_KEY`, `aeroapi.ts`) is PREFERRED when both
+  keys are set — pay-per-query, no monthly minimum, $5/mo free allowance on the
+  Personal tier, fresher data — and aviationstack (`AVIATIONSTACK_API_KEY`) is
+  the fallback. Snapshot ISO times are airport-LOCAL wall time by contract: for
+  aviationstack that is what the feed already sends (its UTC offsets are
+  unreliable, so rendering reads the strings' own wall clock), while AeroAPI
+  reports UTC + each airport's IANA zone, so `aeroapi.ts` converts to local ISO
+  (`utcToAirportLocal`) before building the snapshot — the shared differ/renderer
+  never know which feed answered. Both feeds are queried by flight number alone
+  and the wanted date is picked CLIENT-side (`pickSnapshot` in `status.ts` —
+  pure, like the diffing `diffSnapshots` and all rendering); a date the feed
+  hasn't published yet is «no data yet», not an error. Delay detection is
+  BASELINE-based: the stored snapshot only advances
   when the chat was notified, so под-threshold creep (+5, +5, +5…) still fires
-  once the total crosses the threshold. Both tools appear ONLY when
-  `AVIATIONSTACK_API_KEY` is set (unconfigured deployments keep their cached tool
+  once the total crosses the threshold. Both tools appear ONLY when a feed key
+  is set (unconfigured deployments keep their cached tool
   prefix; web_search answers as before): `flight_status` is read-only and stays
   live for scheduled runs and inline, `watch_flight` follows the page-watch flag
   discipline (off for scheduled/inline/tutor, off on the expense-only scan).

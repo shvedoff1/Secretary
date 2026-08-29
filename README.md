@@ -208,8 +208,10 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CALENDAR_SOON_MINUTES` | no | `60` | Minutes before a timed event to send the «скоро …» ping |
 | `CALENDAR_MAX_PER_CHAT` | no | `4` | Connected calendars per chat |
 | `ANTHROPIC_CALENDAR_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model that writes the one advice/quip line under a reminder (the event list itself is deterministic) |
-| `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/takeoff/landing; list with `/flight`). Both appear only when `AVIATIONSTACK_API_KEY` is set |
-| `AVIATIONSTACK_API_KEY` | no | — | Free key from aviationstack.com. Mind the quota: every watch poll is one request (hourly ≈ 24/day; the free tier is ~100/month) |
+| `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/takeoff/landing; list with `/flight`). Both appear only when a feed key is set (`AEROAPI_KEY` or `AVIATIONSTACK_API_KEY`) |
+| `AEROAPI_KEY` | no | — | **Preferred provider**: FlightAware AeroAPI, pay-per-query with no monthly minimum and a $5/mo free usage allowance on the Personal tier (a few watched flights a week fit into it). Wins over aviationstack when both keys are set |
+| `AEROAPI_BASE_URL` | no | `https://aeroapi.flightaware.com/aeroapi` | AeroAPI endpoint override |
+| `AVIATIONSTACK_API_KEY` | no | — | Fallback provider: free key from aviationstack.com. Mind the quota: every watch poll is one request (hourly ≈ 24/day; the free tier is ~100/month) |
 | `AVIATIONSTACK_BASE_URL` | no | `http://api.aviationstack.com/v1` | The free plan is HTTP-only; switch to `https://` on a paid plan |
 | `FLIGHT_WATCH_INTERVAL_MINUTES` | no | `60` | Flight-watch poll pace (clamped ≥15 at creation) |
 | `FLIGHT_WATCH_MAX_PER_CHAT` | no | `4` | Active flight watches per chat |

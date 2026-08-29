@@ -484,7 +484,9 @@ export function makeWatchFlightHandler(
     if (active.length >= cfg.FLIGHT_WATCH_MAX_PER_CHAT) {
       return `В этом чате уже ${active.length} рейсов под наблюдением — это потолок. Сними лишний: /flight del <id> (список: /flight)`;
     }
-    // Clamped to ≥15 min: every poll is one metered aviationstack request.
+    // Stored pace is only the FALLBACK for when no departure time is known yet —
+    // live pacing is adaptive (see adaptivePollMinutes). Clamped to ≥15 min:
+    // every poll is one metered feed request.
     const interval = Math.min(Math.max(cfg.FLIGHT_WATCH_INTERVAL_MINUTES, 15), 24 * 60);
     const id = createFlightWatch({
       chatId,
@@ -498,9 +500,10 @@ export function makeWatchFlightHandler(
       nextCheckAt: now,
     });
     return (
-      `🛩 Слежка #${id} «${input.title}»: проверяю рейс ${flight}` +
-      `${input.date ? ` на ${input.date}` : ''} каждые ${interval} мин и напишу сюда, ` +
-      `если его отменят, перенесут, он вылетит или сядет. Список: /flight`
+      `🛩 Слежка #${id} «${input.title}»: слежу за рейсом ${flight}` +
+      `${input.date ? ` на ${input.date}` : ''} и напишу сюда, если его отменят, ` +
+      `перенесут, он вылетит или сядет. Проверяю адаптивно: изредка задолго до ` +
+      `вылета, каждые 15 минут — в последний час и в полёте. Список: /flight`
     );
   };
 }

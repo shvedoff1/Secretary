@@ -437,10 +437,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   discipline (off for scheduled/inline/tutor, off on the expense-only scan).
   Active watches render in the context block ("Active flight watches") so the
   model never re-arms one; managed with `/flight` (`/flight del <id>`,
-  `/flight check <id>`). Every poll is one metered feed request (free tier ≈
-  100/month), hence the wide default `FLIGHT_WATCH_INTERVAL_MINUTES` (60, clamped
-  ≥15 at creation) and the per-chat cap `FLIGHT_WATCH_MAX_PER_CHAT`. Off via
-  `ENABLE_FLIGHTS=false`.
+  `/flight check <id>`). Every poll is one metered feed request, so pacing is
+  ADAPTIVE (`adaptivePollMinutes` in `status.ts`, fixed tiers not knobs): ~3h
+  while departure is >12h away, hourly inside 12h, 15 min in the final hour and
+  in the air — measured against the freshest EFFECTIVE departure time, so a
+  reschedule moves the fast window along; with no data yet the watched date
+  (mid-day) stands in, and `FLIGHT_WATCH_INTERVAL_MINUTES` (60) is only the
+  fallback when even the date is unknown. Per-chat cap
+  `FLIGHT_WATCH_MAX_PER_CHAT`. Off via `ENABLE_FLIGHTS=false`.
 - `src/dota/` — `dota_lookup` skill: CURRENT-patch Dota 2 reference (heroes, items,
   abilities, talents, facets, patch notes) so the dota persona never answers item/hero
   numbers from stale training data. A nightly job (`sync.ts`, driven by the hourly tick

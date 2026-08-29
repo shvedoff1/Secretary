@@ -259,6 +259,29 @@ describe('runDueFlightWatches', () => {
     expect(repo.listFlightWatches(100)).toEqual([]);
   });
 
+  it('paces adaptively: slow far from departure, tight in the final hour', async () => {
+    const { poller, repo } = await freshModules();
+    const farId = armWatch(repo, { flightDate: null });
+    const nearId = armWatch(repo, { flight: 'SU100', flightDate: null });
+
+    const dep = (hours: number): string => new Date(Date.now() + hours * 3600_000).toISOString();
+    fetchMock.mockImplementation(async (flight) => [
+      flight === 'K6829'
+        ? snap({ dep: { scheduled: dep(48) } as never })
+        : snap({ flightIata: 'SU100', dep: { scheduled: dep(0.5) } as never }),
+    ]);
+
+    await poller.runDueFlightWatches(bot);
+
+    const far = repo.listFlightWatches(100).find((w) => w.id === farId)!;
+    const near = repo.listFlightWatches(100).find((w) => w.id === nearId)!;
+    const minutesOut = (w: { nextCheckAt: number }): number =>
+      Math.round((w.nextCheckAt - Date.now()) / 60_000);
+    expect(minutesOut(far)).toBeGreaterThanOrEqual(170); // ~3h tier
+    expect(minutesOut(near)).toBeLessThanOrEqual(16); // ~15-min tier
+    expect(minutesOut(near)).toBeGreaterThanOrEqual(10);
+  });
+
   it('does nothing when the feature is switched off', async () => {
     process.env.ENABLE_FLIGHTS = 'false';
     const { poller, repo } = await freshModules();

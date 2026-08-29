@@ -1,4 +1,5 @@
 import { loadConfig, type Config } from '../config.js';
+import { logger } from '../logger.js';
 import type { FlightPoint, FlightSnapshot } from './status.js';
 import { fetchAeroApiStatuses } from './aeroapi.js';
 import { fetchAeroDataBoxStatuses } from './aerodatabox.js';
@@ -45,15 +46,42 @@ export function flightFeedConfigured(cfg: Config = loadConfig()): boolean {
  * picked client-side as before. Throws on transport/API errors and when no
  * provider is configured.
  */
+/** Card-visible labels per provider; also what the request log line carries. */
+export const PROVIDER_LABELS: Record<FlightFeedProvider, string> = {
+  aerodatabox: 'AeroDataBox',
+  aeroapi: 'FlightAware',
+  aviationstack: 'aviationstack',
+};
+
+/** Stamp the answering feed onto each snapshot (pure; exported for tests). */
+export function tagSource(
+  snapshots: FlightSnapshot[],
+  provider: FlightFeedProvider,
+): FlightSnapshot[] {
+  return snapshots.map((s) => ({ ...s, source: PROVIDER_LABELS[provider] }));
+}
+
 export async function fetchFlightStatuses(
   flightIata: string,
   dateLocal?: string | null,
 ): Promise<FlightSnapshot[]> {
   const provider = flightFeedProvider();
-  if (provider === 'aerodatabox') return fetchAeroDataBoxStatuses(flightIata, dateLocal);
-  if (provider === 'aeroapi') return fetchAeroApiStatuses(flightIata);
-  if (provider === 'aviationstack') return fetchAviationstackStatuses(flightIata);
-  throw new Error('flight feed is not configured');
+  if (provider === null) throw new Error('flight feed is not configured');
+  let snapshots: FlightSnapshot[];
+  if (provider === 'aerodatabox') {
+    snapshots = await fetchAeroDataBoxStatuses(flightIata, dateLocal);
+  } else if (provider === 'aeroapi') {
+    snapshots = await fetchAeroApiStatuses(flightIata);
+  } else {
+    snapshots = await fetchAviationstackStatuses(flightIata);
+  }
+  // One INFO line per metered request: which feed, for what, and how much it
+  // saw — the first thing to read when an answer looks thin or stale.
+  logger.info(
+    { provider, flight: flightIata, date: dateLocal ?? null, results: snapshots.length },
+    'flight feed request',
+  );
+  return tagSource(snapshots, provider);
 }
 
 // --- aviationstack ---

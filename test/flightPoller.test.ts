@@ -274,6 +274,21 @@ describe('runDueFlightWatches', () => {
     expect(repo.listFlightWatches(100)).toHaveLength(1); // still armed
   });
 
+  it('notifies when boarding is announced and keeps watching for the takeoff', async () => {
+    const { poller, repo } = await freshModules();
+    const id = armWatch(repo);
+    fetchMock.mockResolvedValue([snap()]);
+    await poller.runDueFlightWatches(bot); // baseline
+
+    fetchMock.mockResolvedValue([snap({ status: 'boarding' })]);
+    repo.forceFlightCheck(id, 100);
+    await poller.runDueFlightWatches(bot);
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(String(sendMessage.mock.calls[0]![1])).toContain('посадка');
+    expect(repo.listFlightWatches(100)).toHaveLength(1); // still armed
+  });
+
   it('paces adaptively: slow far from departure, tight in the final hour', async () => {
     const { poller, repo } = await freshModules();
     const farId = armWatch(repo, { flightDate: null });

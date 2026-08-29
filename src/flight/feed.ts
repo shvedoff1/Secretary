@@ -1,6 +1,7 @@
 import { loadConfig, type Config } from '../config.js';
 import type { FlightPoint, FlightSnapshot } from './status.js';
 import { fetchAeroApiStatuses } from './aeroapi.js';
+import { fetchAeroDataBoxStatuses } from './aerodatabox.js';
 
 // The flight feed: a per-request dispatcher over two providers (flight HTTP
 // lives only here and in aeroapi.ts — the splid-js / Open-Meteo rule). Which
@@ -15,11 +16,18 @@ import { fetchAeroApiStatuses } from './aeroapi.js';
 // the feed hasn't published yet is "no data yet", not an error. AeroAPI is
 // queried the same one-call-per-poll way, so the metering stays predictable.
 
-export type FlightFeedProvider = 'aeroapi' | 'aviationstack';
+export type FlightFeedProvider = 'aerodatabox' | 'aeroapi' | 'aviationstack';
 
-/** Which provider a request would use, or null when the feature can't work. */
+/**
+ * Which provider a request would use, or null when the feature can't work.
+ * Priority: AeroDataBox (the only one carrying real Boarding/GateClosed
+ * statuses, and its cheap tiers cover this bot's volumes) → AeroAPI
+ * (pay-per-query, fresh) → aviationstack (free-tier fallback). The user
+ * steers this simply by which keys are set.
+ */
 export function flightFeedProvider(cfg: Config = loadConfig()): FlightFeedProvider | null {
   if (!cfg.ENABLE_FLIGHTS) return null;
+  if (cfg.AERODATABOX_API_KEY) return 'aerodatabox';
   if (cfg.AEROAPI_KEY) return 'aeroapi';
   if (cfg.AVIATIONSTACK_API_KEY) return 'aviationstack';
   return null;
@@ -31,12 +39,18 @@ export function flightFeedConfigured(cfg: Config = loadConfig()): boolean {
 }
 
 /**
- * All statuses the configured feed currently has for one IATA flight number
- * (usually the same flight across a few nearby dates). Throws on transport/API
- * errors and when no provider is configured.
+ * All statuses the configured feed currently has for one IATA flight number.
+ * `dateLocal` is a hint: AeroDataBox has a dated endpoint (its schedule data
+ * reaches into the future), the other two return nearby days and the date is
+ * picked client-side as before. Throws on transport/API errors and when no
+ * provider is configured.
  */
-export async function fetchFlightStatuses(flightIata: string): Promise<FlightSnapshot[]> {
+export async function fetchFlightStatuses(
+  flightIata: string,
+  dateLocal?: string | null,
+): Promise<FlightSnapshot[]> {
   const provider = flightFeedProvider();
+  if (provider === 'aerodatabox') return fetchAeroDataBoxStatuses(flightIata, dateLocal);
   if (provider === 'aeroapi') return fetchAeroApiStatuses(flightIata);
   if (provider === 'aviationstack') return fetchAviationstackStatuses(flightIata);
   throw new Error('flight feed is not configured');

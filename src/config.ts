@@ -289,11 +289,22 @@ const ConfigSchema = z.object({
   // tools appear only when an API key is set — without one the model simply
   // never sees them (web_search still answers flight questions as before).
   ENABLE_FLIGHTS: boolish.default(true),
+  // AeroDataBox key — the PREFERRED provider when set: the only feed carrying
+  // real Boarding/GateClosed statuses (where the airport publishes them), and
+  // its cheap tiers (free 600 units/mo; ~$5/mo Pro) cover this bot's volumes.
+  // Sold through marketplace gateways, hence the base URL + key header being
+  // config: the defaults are API.market; a RapidAPI subscription would use
+  // https://aerodatabox.p.rapidapi.com with header X-RapidAPI-Key.
+  AERODATABOX_API_KEY: z.string().min(1).optional(),
+  AERODATABOX_BASE_URL: z
+    .string()
+    .url()
+    .default('https://prod.api.market/api/v1/aedbx/aerodatabox'),
+  AERODATABOX_KEY_HEADER: z.string().min(1).default('x-api-market-key'),
   // FlightAware AeroAPI key (https://www.flightaware.com/commercial/aeroapi/):
-  // the PREFERRED provider — pay-per-query with no monthly minimum and a $5/mo
-  // free usage allowance on the Personal tier, which comfortably covers a few
-  // watched flights a week. Takes precedence over aviationstack when both keys
-  // are set.
+  // second in priority — pay-per-query with no monthly minimum and a $5/mo
+  // free usage allowance on the Personal tier. Takes precedence over
+  // aviationstack when both are set; AeroDataBox (above) wins over both.
   AEROAPI_KEY: z.string().min(1).optional(),
   AEROAPI_BASE_URL: z.string().url().default('https://aeroapi.flightaware.com/aeroapi'),
   // Fallback provider: free aviationstack key (https://aviationstack.com; mind

@@ -22,7 +22,7 @@ export function makeFlightStatusHandler(): (input: FlightStatusInput) => Promise
     }
     let snapshots;
     try {
-      snapshots = await fetchFlightStatuses(flight);
+      snapshots = await fetchFlightStatuses(flight, input.date);
     } catch (err) {
       logger.warn({ err, flight }, 'flight_status fetch failed');
       return `Источник данных по рейсам сейчас недоступен — статус ${flight} проверить не смог. Попробуй чуть позже.`;

@@ -183,6 +183,15 @@ export const SpendingReportZ = z.object({
 });
 export type SpendingReportInput = z.infer<typeof SpendingReportZ>;
 
+// Read the chat's cached calendar window (connected via /calendar) so the model
+// can answer «что у меня завтра», «когда самолёт». Read-only and chat-scoped.
+export const CalendarEventsZ = z.object({
+  fromDate: z.string().regex(DATE_RE).nullable(),
+  toDate: z.string().regex(DATE_RE).nullable(),
+  timezone: z.string().min(1),
+});
+export type CalendarEventsInput = z.infer<typeof CalendarEventsZ>;
+
 // Read back the chat's raw message log (chat_message_log) so the model can recap
 // what was said — including everything the bot never replied to.
 export const SummarizeChatZ = z.object({
@@ -694,6 +703,29 @@ export const spendingReportJsonSchema = {
     },
   },
   required: ['fromDate', 'toDate', 'balances', 'filterLabel', 'filterKeywords', 'timezone'],
+} as const;
+
+export const calendarEventsJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    fromDate: {
+      type: ['string', 'null'],
+      description:
+        'Start of the period as a chat-LOCAL date YYYY-MM-DD (inclusive), when the user asks about a specific day/period ("что у меня завтра" => tomorrow for both from and to; "на выходных" => Saturday..Sunday). Compute concrete dates from "Current time (UTC)" + "Chat timezone" in the context block. null (with toDate null) => the whole cached window ahead.',
+    },
+    toDate: {
+      type: ['string', 'null'],
+      description:
+        'End of the period as a chat-LOCAL date YYYY-MM-DD (inclusive). Equal to fromDate for a single day; null when fromDate is null.',
+    },
+    timezone: {
+      type: 'string',
+      description:
+        'IANA timezone for resolving the local dates and rendering event times. Use the chat timezone from the context block.',
+    },
+  },
+  required: ['fromDate', 'toDate', 'timezone'],
 } as const;
 
 export const summarizeChatJsonSchema = {

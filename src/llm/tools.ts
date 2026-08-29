@@ -17,6 +17,7 @@ import {
   addPoiJsonSchema,
   spendingReportJsonSchema,
   summarizeChatJsonSchema,
+  calendarEventsJsonSchema,
 } from './schema.js';
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
@@ -36,6 +37,7 @@ export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
 export const SPENDING_REPORT_TOOL = 'spending_report';
 export const SUMMARIZE_CHAT_TOOL = 'summarize_chat';
+export const CALENDAR_EVENTS_TOOL = 'calendar_events';
 
 export interface ToolOptions {
   enableWebSearch: boolean;
@@ -98,6 +100,12 @@ export interface ToolOptions {
    *  пересказ вчерашнего" task needs it. Off when ENABLE_CHAT_LOG is off (nothing
    *  is recorded) and in tutor chats. */
   enableSummary?: boolean;
+  /** Expose the calendar_events tool. Only where a calendar is actually connected
+   *  (keeps every other chat's cached tool prefix untouched, like dota). Read-only,
+   *  so it stays on for scheduled runs («каждое утро скажи, что в календаре»);
+   *  off in tutor chats, on the expense-only scan, and INLINE (an inline answer
+   *  lands in a foreign chat — personal calendar events must not follow it there). */
+  enableCalendar?: boolean;
 }
 
 export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
@@ -256,6 +264,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         "Read back what was actually SAID in this chat — the raw message log, including every message you never replied to — and recap it. Call this whenever the user asks what happened/was discussed here: «что было в последних 200 сообщениях», «перескажи, что я пропустил», «о чём тут болтали вчера», «краткая выжимка за сегодня», «what did I miss». Ask by COUNT (limit) when the user names a number of messages, or by chat-LOCAL DATES (fromDate/toDate) when they name a period. The tool returns the transcript itself — YOU write the summary from it, in the user's language and your usual voice, and you never invent anything that isn't there. This is NOT memory (recall_memory searches remembered FACTS; this reads the literal chat log) and NOT money (that's spending_report). The log is bounded in size and age, so it may not reach as far back as asked — the tool says so, and you must pass that on rather than filling the gap.",
       input_schema: summarizeChatJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableCalendar) {
+    tools.push({
+      name: CALENDAR_EVENTS_TOOL,
+      description:
+        "Read the upcoming events of THIS chat's connected (read-only) calendar. Call it whenever the answer depends on what is in the calendar: «что у меня завтра/сегодня/на неделе», «когда у меня самолёт/встреча/врач», «что по календарю», «успею ли я в пятницу», «what's on my calendar». Pass chat-LOCAL dates YYYY-MM-DD computed from \"Current time (UTC)\" + \"Chat timezone\" (single day => equal dates; both null => the whole cached window ahead). It returns the events with exact titles/times — relay them as-is, never invent or shift an event, and if the asked period is beyond the cached window the tool says so: pass that on. The calendar is READ-ONLY — you cannot add/move/delete events; to change something the user edits Google Calendar itself. The bot already sends automatic reminders for these events (вечерний и утренний дайджест + пинг незадолго до события), so do NOT create a schedule_task duplicate for an event unless the user explicitly asks for an extra reminder at a specific time.",
+      input_schema: calendarEventsJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

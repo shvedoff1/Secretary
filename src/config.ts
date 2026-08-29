@@ -335,6 +335,40 @@ const ConfigSchema = z.object({
   DOTA_MAX_CARDS: z.coerce.number().int().positive().default(4),
   // Fallback IANA timezone for reminders when a chat hasn't set one yet.
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
+  // Calendar connection («календарь»): a chat links its Google Calendar by the
+  // SECRET iCal (ICS) address (Google Calendar → настройки календаря →
+  // «Секретный адрес в формате iCal») — read-only by construction, no OAuth. A
+  // poller caches upcoming events per chat; a planner turns them into smart
+  // reminders (evening digest for tomorrow, morning digest for today, a ping
+  // shortly before each event) and the calendar_events tool answers «что у меня
+  // завтра». Events are strictly per-chat — a calendar only ever surfaces in the
+  // chat it was connected to.
+  ENABLE_CALENDAR: boolish.default(true),
+  // How often each calendar feed is re-fetched.
+  CALENDAR_FETCH_MINUTES: z.coerce.number().int().positive().default(30),
+  // Hard cap (ms) on a single feed fetch.
+  CALENDAR_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
+  // How far ahead events are cached (and how far calendar_events can see).
+  CALENDAR_HORIZON_DAYS: z.coerce.number().int().positive().default(14),
+  // How many upcoming events the assistant context block shows per turn (the
+  // calendar_events tool reads the full cached window; this is the per-turn
+  // token budget).
+  CALENDAR_CONTEXT_EVENTS: z.coerce.number().int().positive().default(5),
+  // Local hour the «завтра у тебя …» evening digest goes out (chat timezone).
+  CALENDAR_EVENING_HOUR: z.coerce.number().int().min(0).max(23).default(21),
+  // Local hour the «сегодня у тебя …» morning digest goes out.
+  CALENDAR_MORNING_HOUR: z.coerce.number().int().min(0).max(23).default(8),
+  // An event starting before this local hour counts as EARLY: the evening digest
+  // flags it and the advice line leans into prep («собери вещи с вечера»).
+  CALENDAR_EARLY_HOUR: z.coerce.number().int().min(0).max(23).default(10),
+  // Minutes before a timed event to send the «скоро …» ping.
+  CALENDAR_SOON_MINUTES: z.coerce.number().int().positive().default(60),
+  // Cap on connected calendars per chat.
+  CALENDAR_MAX_PER_CHAT: z.coerce.number().int().positive().default(4),
+  // Cheap model that writes the one advice/quip line on top of a reminder digest
+  // (the event list itself is rendered deterministically — the model can't touch
+  // the times/titles).
+  ANTHROPIC_CALENDAR_MODEL: z.string().default('claude-haiku-4-5-20251001'),
   // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't
   // addressed in, continuing the conversation by context as if it had been pinged.
   // To avoid butting into an active back-and-forth (and lagging behind), it does NOT

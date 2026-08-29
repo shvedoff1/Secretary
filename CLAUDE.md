@@ -70,8 +70,13 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (`chat_settings.reactions_disabled`, migration 019, checked in `maybeAutoReact`
   after the probability roll).
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
-  edit_memory | learn_expense_pattern | edit_lexicon | set_rule | schedule_task |
-  surf_forecast | add_poi | spending_report | summarize_chat | web_search`. `remember` pins a fact verbatim and can
+  edit_memory | learn_expense_pattern | edit_lexicon | set_rule | set_timezone |
+  schedule_task | surf_forecast | add_poi | spending_report | summarize_chat |
+  web_search`. `set_timezone` moves the chat's clock in plain words («я во
+  Вьетнаме» → Asia/Ho_Chi_Minh; `makeSetTimezoneHandler` validates via Intl and
+  confirms with the resulting local time) — the tz drives reminders, calendar
+  digests and time display, so it stays on in every mode; off for scheduled runs
+  and inline (state writes). `remember` pins a fact verbatim and can
   SUPERSEDE contradicted facts (its `replaces` arg → the handler fuzzy-matches and
   removes them first, so a correction overrides instead of coexisting; the model pushes
   back once before overriding — prompt-driven). `edit_memory` fixes an existing fact in
@@ -389,9 +394,15 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   restarts; digest slot = the local date covered, soon slot = the occurrence),
   and renders the event list DETERMINISTICALLY (titles/times reach the chat
   verbatim, like the spending digest's figures). `src/llm/calendarAdvice.ts`
-  (Haiku, best-effort) then writes ONE advice/quip line appended UNDER that list
-  — funny when the chat's humor allows (`modeAllowsHumor` + `isChatHumorEnabled`;
-  tutor stays sober), practical otherwise — and can't touch the facts above it.
+  (Haiku, best-effort) then writes a short advice/quip block appended UNDER that
+  list — funny when the chat's humor allows (`modeAllowsHumor` +
+  `isChatHumorEnabled`; tutor stays sober), practical otherwise — and can't
+  touch the facts above it. The advice is fed MORE than the digest shows so it
+  can be concrete rather than «приезжай за 2 часа»: each event's ICS DESCRIPTION
+  (`noticeDetails` in reminders.ts — bookings carry terminal/seat/confirmation)
+  plus the current chat-local time for «выезжай к 8:30» math; its prompt allows
+  the model's own knowledge of famous PLACES (airports, cities, visa rules) but
+  bans invented BOOKING data (a terminal/gate/time not present in the event).
   `reminders.ts` sends (notify first, mark slot after — a failed send retries
   next tick) and records the post as an assistant turn + chat-log line, like the
   watch/scheduler posts. The `calendar_events` tool (`handler.ts`) answers «что

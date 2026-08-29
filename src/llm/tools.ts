@@ -18,6 +18,7 @@ import {
   spendingReportJsonSchema,
   summarizeChatJsonSchema,
   calendarEventsJsonSchema,
+  setTimezoneJsonSchema,
 } from './schema.js';
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
@@ -38,6 +39,7 @@ export const ADD_POI_TOOL = 'add_poi';
 export const SPENDING_REPORT_TOOL = 'spending_report';
 export const SUMMARIZE_CHAT_TOOL = 'summarize_chat';
 export const CALENDAR_EVENTS_TOOL = 'calendar_events';
+export const SET_TIMEZONE_TOOL = 'set_timezone';
 
 export interface ToolOptions {
   enableWebSearch: boolean;
@@ -106,6 +108,11 @@ export interface ToolOptions {
    *  off in tutor chats, on the expense-only scan, and INLINE (an inline answer
    *  lands in a foreign chat — personal calendar events must not follow it there). */
   enableCalendar?: boolean;
+  /** Expose the set_timezone tool (set the chat's timezone in plain words —
+   *  «я во Вьетнаме»). Default true, every mode: reminders/digests all key on the
+   *  chat tz, so saying where you are must just work. Off for scheduled runs and
+   *  inline (state writes). */
+  enableTimezone?: boolean;
 }
 
 export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
@@ -264,6 +271,15 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         "Read back what was actually SAID in this chat — the raw message log, including every message you never replied to — and recap it. Call this whenever the user asks what happened/was discussed here: «что было в последних 200 сообщениях», «перескажи, что я пропустил», «о чём тут болтали вчера», «краткая выжимка за сегодня», «what did I miss». Ask by COUNT (limit) when the user names a number of messages, or by chat-LOCAL DATES (fromDate/toDate) when they name a period. The tool returns the transcript itself — YOU write the summary from it, in the user's language and your usual voice, and you never invent anything that isn't there. This is NOT memory (recall_memory searches remembered FACTS; this reads the literal chat log) and NOT money (that's spending_report). The log is bounded in size and age, so it may not reach as far back as asked — the tool says so, and you must pass that on rather than filling the gap.",
       input_schema: summarizeChatJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableTimezone !== false) {
+    tools.push({
+      name: SET_TIMEZONE_TOOL,
+      description:
+        'Set THIS chat\'s timezone. Call it when the user states where they are or their timezone, or asks for local time — «я во Вьетнаме», «мы сейчас на Бали», «переехал в Лиссабон», «мой часовой пояс GMT+7», «ставь время по местному» — and the "Chat timezone" in the context block is different or unknown. Map the place to an IANA zone yourself (country => its main zone unless a city narrows it). This drives reminders, calendar digests and time display for the whole chat, so do NOT call it for a place merely mentioned in passing (a trip being planned, someone ELSE\'s location) — only when the SPEAKER says where they/this chat are now or names the zone to use. After setting, confirm in one line with the resulting local time.',
+      input_schema: setTimezoneJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

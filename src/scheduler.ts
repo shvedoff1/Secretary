@@ -223,6 +223,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         allowPingEdit: false,
         // A firing task must not rewrite how the bot behaves in the chat either.
         allowRules: false,
+        allowTimezone: false,
         allowReminders: false,
         // A firing task must not arm page watches either — same self-spawning risk.
         allowWatch: false,
@@ -242,6 +243,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         editLexicon: () => 'noop',
         editPingList: () => 'noop',
         setRule: () => 'noop',
+        setTimezone: () => 'noop',
         scheduleTask: () => 'noop',
         watchPage: () => 'noop',
         // The flight check stays live: «каждое утро чекни мой рейс» is exactly a

@@ -18,6 +18,10 @@ export interface NoticeEvent {
   uid: string;
   title: string;
   location: string | null;
+  /** ICS DESCRIPTION — often carries the booking details (terminal, seat,
+   *  confirmation number) that make the advice line concrete. Never rendered
+   *  into the digest itself; fed to the advice model only. */
+  description?: string | null;
   startsAt: number;
   endsAt: number | null;
   allDay: boolean;

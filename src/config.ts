@@ -303,10 +303,11 @@ const ConfigSchema = z.object({
   AVIATIONSTACK_BASE_URL: z.string().url().default('http://api.aviationstack.com/v1'),
   FLIGHT_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
   // FALLBACK poll pace for a flight watch, used only while no departure time is
-  // known. Live pacing is otherwise ADAPTIVE (status.ts adaptivePollMinutes):
-  // ~3h when departure is >12h away, hourly inside 12h, every 15 min in the
-  // final hour and in the air — cancellations are rare news far out, so the
-  // slow tiers are what make a watch affordable on a metered feed.
+  // known. Live pacing is otherwise ADAPTIVE (status.ts adaptivePollMinutes),
+  // tiered by when news can actually happen: 6h/3h/1h/30m/15m as departure
+  // nears (>24h / 12-24h / 3-12h / 1-3h / final hour); in the AIR the watch
+  // sleeps until expected arrival minus a 10% early-arrival margin, then
+  // holds a 10-minute landing watch.
   FLIGHT_WATCH_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
   // Cap on active flight watches per chat so one chat can't drain the quota.
   FLIGHT_WATCH_MAX_PER_CHAT: z.coerce.number().int().positive().default(4),

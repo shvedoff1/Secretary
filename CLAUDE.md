@@ -449,13 +449,19 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   Active watches render in the context block ("Active flight watches") so the
   model never re-arms one; managed with `/flight` (`/flight del <id>`,
   `/flight check <id>`). Every poll is one metered feed request, so pacing is
-  ADAPTIVE (`adaptivePollMinutes` in `status.ts`, fixed tiers not knobs): ~3h
-  while departure is >12h away, hourly inside 12h, 15 min in the final hour and
-  in the air — measured against the freshest EFFECTIVE departure time, so a
-  reschedule moves the fast window along; with no data yet the watched date
-  (mid-day) stands in, and `FLIGHT_WATCH_INTERVAL_MINUTES` (60) is only the
-  fallback when even the date is unknown. Per-chat cap
-  `FLIGHT_WATCH_MAX_PER_CHAT`. Off via `ENABLE_FLIGHTS=false`.
+  ADAPTIVE (`adaptivePollMinutes` in `status.ts`, fixed tiers not knobs), tiered
+  by when news can actually happen: 6h/3h/1h/30m/15m as departure nears
+  (>24h / 12-24h / 3-12h / 1-3h / final hour), measured against the freshest
+  EFFECTIVE departure time so a reschedule moves the whole window along; in the
+  AIR the watch does not poll the cruise at all — it sleeps until expected
+  arrival minus a 10% early-arrival margin of the flight's duration, then holds
+  a 10-minute landing watch (unknown arrival => 30m). A departure-gate
+  assignment/change is a notified event too (`gateChanged`) — the closest thing
+  these feeds have to «скоро посадка»; true boarding status is airport-FIDS
+  data neither provider carries. With no data yet the watched date (mid-day)
+  stands in, and `FLIGHT_WATCH_INTERVAL_MINUTES` (60) is only the fallback when
+  even the date is unknown. Per-chat cap `FLIGHT_WATCH_MAX_PER_CHAT`. Off via
+  `ENABLE_FLIGHTS=false`.
 - `src/dota/` — `dota_lookup` skill: CURRENT-patch Dota 2 reference (heroes, items,
   abilities, talents, facets, patch notes) so the dota persona never answers item/hero
   numbers from stale training data. A nightly job (`sync.ts`, driven by the hourly tick

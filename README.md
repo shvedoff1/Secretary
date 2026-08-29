@@ -97,6 +97,24 @@ added without touching the core.
   time it asks the chat for its timezone, then reuses it). Manage with `/tasks` and
   `/canceltask <id>`. A background scheduler fires due tasks every minute and posts the
   result back to the chat.
+- **Google Calendar («что у меня завтра?») + smart reminders**: connect a calendar by its
+  **secret iCal link** — Google Calendar → настройки календаря → «Интеграция календаря» →
+  «Секретный адрес в формате iCal» — with `/calendar add <ссылка> [имя]` (no OAuth; the
+  link is read-only by construction). The bot re-fetches the feed every
+  `CALENDAR_FETCH_MINUTES`, caches the next `CALENDAR_HORIZON_DAYS` of events (recurring
+  events expanded), and reminds on its own: an **evening digest** about tomorrow (with
+  extra prep emphasis when something starts early — «самолёт в 7:40 → собери вещи и закажи
+  такси с вечера»), a **morning digest** about today, and a ping `CALENDAR_SOON_MINUTES`
+  before each event. The event list in a reminder is rendered deterministically (titles
+  and times exactly as the calendar says); a cheap model adds one advice/quip line under
+  it — jokey where the chat's humour is on, sober otherwise. Ask in words any time:
+  «что у меня завтра?», «когда у меня самолёт?» (the `calendar_events` tool). Strictly
+  per chat: a calendar's events only ever appear in the chat it was connected to (and
+  never in inline answers, which land in other chats); the secret link is stored once,
+  shown only masked, and a link posted in a group is deleted by the bot best-effort.
+  Manage with `/calendar` / `/calendar del <id>` / `/calendar check`; admins can manage
+  another chat's calendars from the DM (`/calendar <chatId> …`). Toggle with
+  `ENABLE_CALENDAR`.
 
 ## Setup
 
@@ -179,6 +197,17 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `SUMMARY_CONDENSE_CHUNK_CHARS` | no | `20000` | Transcript per compression call |
 | `SUMMARY_CONDENSE_MAX_CHUNKS` | no | `8` | Max compression calls per recap (they run in parallel); chunk × max is how far back one recap can reach |
 | `CHAT_RULES_MAX` | no | `30` | Max standing chat rules per chat (they go into every turn's context) |
+| `ENABLE_CALENDAR` | no | `true` | Google-Calendar connection by secret iCal link: cached events, the `calendar_events` tool and the automatic smart reminders |
+| `CALENDAR_FETCH_MINUTES` | no | `30` | How often each connected feed is re-fetched |
+| `CALENDAR_FETCH_TIMEOUT_MS` | no | `20000` | Hard cap (ms) on one feed fetch |
+| `CALENDAR_HORIZON_DAYS` | no | `14` | How far ahead events are cached (and how far «что у меня …» can see) |
+| `CALENDAR_CONTEXT_EVENTS` | no | `5` | Upcoming events shown in the assistant context per turn (the tool reads the full window) |
+| `CALENDAR_EVENING_HOUR` | no | `21` | Chat-local hour of the «завтра у тебя …» digest |
+| `CALENDAR_MORNING_HOUR` | no | `8` | Chat-local hour of the «сегодня у тебя …» digest |
+| `CALENDAR_EARLY_HOUR` | no | `10` | An event starting before this hour counts as **early** — the evening digest leans into prep advice |
+| `CALENDAR_SOON_MINUTES` | no | `60` | Minutes before a timed event to send the «скоро …» ping |
+| `CALENDAR_MAX_PER_CHAT` | no | `4` | Connected calendars per chat |
+| `ANTHROPIC_CALENDAR_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model that writes the one advice/quip line under a reminder (the event list itself is deterministic) |
 | `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/takeoff/landing; list with `/flight`). Both appear only when a feed key is set (`AEROAPI_KEY` or `AVIATIONSTACK_API_KEY`) |
 | `AEROAPI_KEY` | no | — | **Preferred provider**: FlightAware AeroAPI, pay-per-query with no monthly minimum and a $5/mo free usage allowance on the Personal tier (a few watched flights a week fit into it). Wins over aviationstack when both keys are set |
 | `AEROAPI_BASE_URL` | no | `https://aeroapi.flightaware.com/aeroapi` | AeroAPI endpoint override |
@@ -212,7 +241,8 @@ Then just talk:
 
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
-· reminders: `/tasks` `/canceltask <id>` · lexicon: `/slang` (`/slang clear`, `/slang on|off`)
+· reminders: `/tasks` `/canceltask <id>` · calendar: `/calendar` (`/calendar add <ics-url> [имя]`, `/calendar del <id>`, `/calendar check`)
+· lexicon: `/slang` (`/slang clear`, `/slang on|off`)
 · expense dictionary: `/trata` (`/trata <word>`, `/trata clear`)
 · chat log: admin `/chatlog <chatId>` (`/chatlog <chatId> clear`)
 

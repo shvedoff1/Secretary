@@ -8,6 +8,8 @@ import { expireOld } from './db/repos/pending.repo.js';
 import { buildBot, BOT_COMMANDS } from './bot/bot.js';
 import { runDueTasks } from './scheduler.js';
 import { runDueWatches } from './watch/poller.js';
+import { runDueCalendarFetches } from './calendar/poller.js';
+import { runDueCalendarNotices } from './calendar/reminders.js';
 import { runDueFlightWatches } from './flight/poller.js';
 import { runDueEpisodes } from './episodes/closer.js';
 import { runDueDotaSync } from './dota/sync.js';
@@ -32,6 +34,7 @@ async function main(): Promise<void> {
       surf: cfg.ENABLE_SURF,
       memory: cfg.ENABLE_MEMORY,
       watch: cfg.ENABLE_WATCH,
+      calendar: cfg.ENABLE_CALENDAR,
       dota: cfg.ENABLE_DOTA,
       humor,
       humorModel: humor ? cfg.OPENAI_HUMOR_MODEL : undefined,
@@ -76,6 +79,13 @@ async function main(): Promise<void> {
     void runDueEpisodes().catch((err) => {
       logger.warn({ err }, 'episode tick failed');
     });
+    // Calendars ride it too: re-fetch due ICS feeds, then plan/send the smart
+    // reminders (each keeps its own due times, the tick is just the heartbeat).
+    void runDueCalendarFetches(bot)
+      .then(() => runDueCalendarNotices(bot))
+      .catch((err) => {
+        logger.warn({ err }, 'calendar tick failed');
+      });
   }, 60_000);
   scheduler.unref();
 

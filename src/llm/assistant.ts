@@ -27,6 +27,7 @@ import {
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
   SUMMARIZE_CHAT_TOOL,
+  CALENDAR_EVENTS_TOOL,
 } from './tools.js';
 import {
   RecordExpenseZ,
@@ -46,6 +47,7 @@ import {
   AddPoiZ,
   SpendingReportZ,
   SummarizeChatZ,
+  CalendarEventsZ,
   toParsedExpense,
   type RecordExpenseInput,
   type RememberInput,
@@ -64,6 +66,7 @@ import {
   type AddPoiInput,
   type SpendingReportInput,
   type SummarizeChatInput,
+  type CalendarEventsInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 import { flightFeedConfigured } from '../flight/feed.js';
@@ -130,6 +133,16 @@ export interface AssistantContext {
    * перескажи вчерашнее» task needs exactly this. Off when chat logging is off.
    */
   allowSummary?: boolean;
+  /**
+   * Expose the calendar_events tool. Default true where a calendar is connected;
+   * set false for INLINE runs — an inline answer is posted into a chat the bot
+   * can't see, and personal calendar events must never leak there.
+   */
+  allowCalendar?: boolean;
+  /** Whether this chat has a connected calendar (gates the tool, like splidConnected). */
+  calendarConnected?: boolean;
+  /** Pre-rendered upcoming-event lines for the context block (chat-local time). */
+  calendarLines?: string[];
   /** Saved places in this chat, shown so the model can recall them and not duplicate. */
   places?: { name: string; category: string }[];
   /** Top shared facts about the group (human-like weighted memory). */
@@ -204,6 +217,8 @@ export interface AssistantHandlers {
    * cheap-model notes plus a verbatim tail) for the model to recap.
    */
   summarizeChat: (input: SummarizeChatInput) => Promise<string>;
+  /** Read the chat's cached calendar window; return the events as ready text. */
+  calendarEvents: (input: CalendarEventsInput) => string;
 }
 
 export type AssistantResult =
@@ -327,6 +342,16 @@ export async function runAssistant(
     // nothing to read.
     enableSummary:
       !expenseOnly && !tutor && cfg.ENABLE_CHAT_LOG && ctx.allowSummary !== false,
+    // Calendar reads are gated on a calendar actually being connected (like
+    // record_expense on splidConnected), so unconnected chats keep their cached
+    // tool prefix. Read-only, hence live for scheduled runs; off for inline
+    // (allowCalendar: false there — see the ToolOptions doc).
+    enableCalendar:
+      !expenseOnly &&
+      !tutor &&
+      cfg.ENABLE_CALENDAR &&
+      ctx.calendarConnected === true &&
+      ctx.allowCalendar !== false,
   });
 
   const contextBlock = tutor
@@ -353,6 +378,8 @@ export async function runAssistant(
         activeWatches: ctx.activeWatches ?? [],
         activeFlightWatches: ctx.activeFlightWatches ?? [],
         places: ctx.places ?? [],
+        calendarConnected: ctx.calendarConnected ?? false,
+        calendarLines: ctx.calendarLines ?? [],
         memoryChat: expenseOnly ? [] : (ctx.memoryChat ?? []),
         memoryUsers: expenseOnly ? [] : (ctx.memoryUsers ?? []),
         memoryPersona: expenseOnly ? [] : (ctx.memoryPersona ?? []),
@@ -697,6 +724,20 @@ export async function runAssistant(
             type: 'tool_result',
             tool_use_id: block.id,
             content: transcript,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === CALENDAR_EVENTS_TOOL) {
+          const parsed = CalendarEventsZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'calendar_events input failed validation');
+          }
+          const found = parsed.success
+            ? handlers.calendarEvents(parsed.data)
+            : 'Could not parse the calendar query.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: found,
             is_error: !parsed.success,
           });
         } else if (block.name === ADD_POI_TOOL) {

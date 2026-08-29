@@ -304,6 +304,10 @@ export async function runInlineAnswer(args: {
       allowReminders: false,
       allowWatch: false,
       allowPoi: false,
+      // The calendar stays OFF inline even though it is read-only: the answer is
+      // posted into a chat the bot can't see, and the user's personal calendar
+      // events must never land in a foreign chat via a quick inline ask.
+      allowCalendar: false,
       // Recent DM history rides along so «а что я спрашивал вчера?» works the
       // same as it would in the DM itself.
       history: recentTurns(
@@ -328,6 +332,8 @@ export async function runInlineAnswer(args: {
       addPoi: () => 'noop',
       spendingReport: makeSpendingReportHandler(chatId),
       summarizeChat: makeSummarizeChatHandler(chatId),
+      // Never exposed inline (allowCalendar: false above) — noop belt-and-braces.
+      calendarEvents: () => 'noop',
     },
   );
 

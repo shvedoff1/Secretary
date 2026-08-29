@@ -361,6 +361,50 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `ENABLE_WATCH=false`; the tool is off for scheduled runs (no self-spawning) and
   tutor chats. Knobs: `WATCH_INTERVAL_MINUTES` (default 15, clamped ≥5),
   `WATCH_EXPIRES_DAYS`, `WATCH_MAX_PER_CHAT`, `ANTHROPIC_WATCH_MODEL`.
+- `src/calendar/` — Google-Calendar connection («календарь»): фетч всего, что есть
+  в календаре, + умные напоминания. NO OAUTH — a chat links a calendar by its
+  SECRET iCal (ICS) address (Google Calendar → настройки → «Секретный адрес в
+  формате iCal»), which is read-only by construction; `/calendar add <ссылка>
+  [имя]` verifies the link by fetching it immediately (a secret that doesn't read
+  is not stored), `/calendar` lists (URL always MASKED via `maskIcsUrl` — the
+  link grants access to the whole calendar and must never be echoed), `del`/`check`
+  manage, and the admin cross-chat form `/calendar <chatId> …` works from the DM
+  (`canManageChat`). An add posted in a GROUP gets the message deleted
+  best-effort + a warning to prefer the DM. `fetch.ts` is the only place calendar
+  HTTP happens (secret never appears in errors/logs); `ics.ts` is the pure
+  dependency-free parser + recurrence expander (DAILY/WEEKLY/MONTHLY/YEARLY,
+  INTERVAL/BYDAY/BYMONTHDAY/COUNT/UNTIL, EXDATE, RECURRENCE-ID overrides,
+  TZID-correct across DST via `zonedTimeToUtcMs` in util/day.ts; an RRULE with
+  unsupported parts is never guessed at — wrong dates are worse than missed ones,
+  so only its base/RDATE occurrences ship). The poller (`poller.ts`, minute tick
+  in index.ts, `CALENDAR_FETCH_MINUTES`) swaps a `CALENDAR_HORIZON_DAYS` window
+  of expanded occurrences into `calendar_event` (migration 030, one transaction;
+  10 consecutive failures → ONE warning to the chat, mirroring the watch poller).
+  SMART REMINDERS are a deterministic PLANNER + an LLM garnish, in that order:
+  `notice.ts` (pure, unit-tested) plans three kinds — evening digest for
+  tomorrow at `CALENDAR_EVENING_HOUR` (flagging starts before
+  `CALENDAR_EARLY_HOUR` — the «самолёт с утра, собери вещи с вечера» case),
+  morning digest for today, and a per-event ping `CALENDAR_SOON_MINUTES` before
+  start — deduped by SLOT KEYS persisted in `calendar_notice` (survives
+  restarts; digest slot = the local date covered, soon slot = the occurrence),
+  and renders the event list DETERMINISTICALLY (titles/times reach the chat
+  verbatim, like the spending digest's figures). `src/llm/calendarAdvice.ts`
+  (Haiku, best-effort) then writes ONE advice/quip line appended UNDER that list
+  — funny when the chat's humor allows (`modeAllowsHumor` + `isChatHumorEnabled`;
+  tutor stays sober), practical otherwise — and can't touch the facts above it.
+  `reminders.ts` sends (notify first, mark slot after — a failed send retries
+  next tick) and records the post as an assistant turn + chat-log line, like the
+  watch/scheduler posts. The `calendar_events` tool (`handler.ts`) answers «что
+  у меня завтра» from the cache: exposed ONLY when a calendar is connected (like
+  dota — other chats' cached tool prefix untouched), read-only so it stays live
+  for scheduled runs; OFF in tutor chats, on the expense-only scan and INLINE —
+  an inline answer lands in a foreign chat, and events must not follow it there.
+  ISOLATION is the design constraint: every `calendar_event` row carries
+  chat_id, every repo read is chat-scoped, the context-block peek
+  (`upcomingCalendarLines`, `CALENDAR_CONTEXT_EVENTS`) and the reminder planner
+  only ever see their own chat's rows — a calendar can't leak into another chat
+  by construction, and events never enter memory/lexicon extractors (those read
+  chat messages, not the context block). Off via `ENABLE_CALENDAR=false`.
 - `src/dota/` — `dota_lookup` skill: CURRENT-patch Dota 2 reference (heroes, items,
   abilities, talents, facets, patch notes) so the dota persona never answers item/hero
   numbers from stale training data. A nightly job (`sync.ts`, driven by the hourly tick

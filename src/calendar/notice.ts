@@ -1,0 +1,174 @@
+import { zonedParts, nextDateStr } from '../util/day.js';
+
+// The "smart reminder" PLANNER — pure and deterministic, so «что и когда бот
+// напомнит» is unit-testable without a DB or a clock. Three reminder kinds:
+//
+//  - evening : «завтра у тебя …» — fired once per evening (chat-local) when
+//              tomorrow has events; flags an EARLY start so the advice line can
+//              lean into prep («собери вещи с вечера, поставь будильник»).
+//  - morning : «сегодня у тебя …» — fired once per morning for today's
+//              remaining events.
+//  - soon    : «через N минут …» — one ping per timed event shortly before it.
+//
+// Deduplication is by SLOT KEY, persisted in calendar_notice (survives
+// restarts): a digest's slot is the local DATE it covers, a soon-ping's slot is
+// the event occurrence itself. The planner never re-plans a sent slot.
+
+export interface NoticeEvent {
+  uid: string;
+  title: string;
+  location: string | null;
+  startsAt: number;
+  endsAt: number | null;
+  allDay: boolean;
+}
+
+export type CalendarNotice =
+  | {
+      kind: 'evening' | 'morning';
+      slot: string;
+      /** The chat-local YYYY-MM-DD the digest covers. */
+      dateStr: string;
+      events: NoticeEvent[];
+      /** Any timed event starts before the configured "early" hour. */
+      hasEarly: boolean;
+    }
+  | { kind: 'soon'; slot: string; event: NoticeEvent; minutesLeft: number };
+
+export interface NoticePlanArgs {
+  events: NoticeEvent[];
+  nowMs: number;
+  tz: string;
+  eveningHour: number;
+  morningHour: number;
+  earlyHour: number;
+  soonMinutes: number;
+  /** Has this slot already been sent? (calendar_notice lookup.) */
+  isSent: (slot: string) => boolean;
+}
+
+/** The chat-local calendar date of an event. All-day events carry a bare DATE
+ *  (stored as UTC midnight), so their date is read without tz conversion. */
+export function eventLocalDate(e: NoticeEvent, tz: string): string {
+  if (e.allDay) {
+    const d = new Date(e.startsAt);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  return zonedParts(e.startsAt, tz).dateStr;
+}
+
+function hasEarlyStart(events: NoticeEvent[], tz: string, earlyHour: number): boolean {
+  return events.some((e) => !e.allDay && zonedParts(e.startsAt, tz).hour < earlyHour);
+}
+
+export function planNotices(args: NoticePlanArgs): CalendarNotice[] {
+  const { events, nowMs, tz } = args;
+  const now = zonedParts(nowMs, tz);
+  const out: CalendarNotice[] = [];
+  const byDate = (dateStr: string): NoticeEvent[] =>
+    events
+      .filter((e) => eventLocalDate(e, tz) === dateStr)
+      .sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.startsAt - b.startsAt);
+
+  // Evening digest for tomorrow, once the local evening hour is reached.
+  if (now.hour >= args.eveningHour) {
+    const tomorrow = nextDateStr(now.dateStr);
+    const slot = `evening:${tomorrow}`;
+    const tomorrowEvents = byDate(tomorrow);
+    if (tomorrowEvents.length > 0 && !args.isSent(slot)) {
+      out.push({
+        kind: 'evening',
+        slot,
+        dateStr: tomorrow,
+        events: tomorrowEvents,
+        hasEarly: hasEarlyStart(tomorrowEvents, tz, args.earlyHour),
+      });
+    }
+  }
+
+  // Morning digest for today. Bounded above by the evening hour so a calendar
+  // connected late at night doesn't fire «сегодня у тебя…» next to the evening
+  // digest; only events that haven't started yet are listed.
+  if (now.hour >= args.morningHour && now.hour < args.eveningHour) {
+    const slot = `morning:${now.dateStr}`;
+    const todays = byDate(now.dateStr).filter((e) => e.allDay || e.startsAt >= nowMs);
+    if (todays.length > 0 && !args.isSent(slot)) {
+      out.push({
+        kind: 'morning',
+        slot,
+        dateStr: now.dateStr,
+        events: todays,
+        hasEarly: hasEarlyStart(todays, tz, args.earlyHour),
+      });
+    }
+  }
+
+  // Pre-event pings for timed events. An event already started is NOT pinged —
+  // a "через -20 минут" reminder is worse than none.
+  const soonWindowMs = args.soonMinutes * 60_000;
+  for (const e of events) {
+    if (e.allDay) continue;
+    const lead = e.startsAt - nowMs;
+    if (lead < 0 || lead > soonWindowMs) continue;
+    const slot = `soon:${e.uid}:${e.startsAt}`;
+    if (args.isSent(slot)) continue;
+    out.push({ kind: 'soon', slot, event: e, minutesLeft: Math.max(1, Math.ceil(lead / 60_000)) });
+  }
+
+  return out;
+}
+
+// --- deterministic rendering ------------------------------------------------
+// The digest LIST is rendered here, never by a model: titles, times and places
+// reach the chat exactly as the calendar states them. The optional LLM line
+// (see src/llm/calendarAdvice.ts) is appended UNDER this text and cannot touch it.
+
+function timeInTz(ms: number, tz: string): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date(ms));
+  } catch {
+    return new Date(ms).toISOString().slice(11, 16);
+  }
+}
+
+/** «сб, 30 августа» for a chat-local YYYY-MM-DD. */
+export function dayLabel(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'UTC',
+      weekday: 'short',
+      day: 'numeric',
+      month: 'long',
+    }).format(new Date(Date.UTC(y!, m! - 1, d!)));
+  } catch {
+    return dateStr;
+  }
+}
+
+/** One event as a digest line: «07:40 Самолёт в Москву — Шереметьево». */
+export function renderEventLine(e: NoticeEvent, tz: string): string {
+  const when = e.allDay ? 'весь день' : timeInTz(e.startsAt, tz);
+  const place = e.location ? ` — ${e.location}` : '';
+  return `${when} ${e.title}${place}`;
+}
+
+/** The deterministic body of a notice (the advice line is appended by the sender). */
+export function renderNotice(notice: CalendarNotice, tz: string): string {
+  if (notice.kind === 'soon') {
+    const e = notice.event;
+    const place = e.location ? ` — ${e.location}` : '';
+    return `⏰ Через ${notice.minutesLeft} мин: «${e.title}»${place} (в ${timeInTz(e.startsAt, tz)})`;
+  }
+  const header =
+    notice.kind === 'evening'
+      ? `🗓 Завтра (${dayLabel(notice.dateStr)}) по календарю:`
+      : `🗓 Сегодня (${dayLabel(notice.dateStr)}) по календарю:`;
+  const lines = notice.events.map((e) => `• ${renderEventLine(e, tz)}`);
+  return [header, ...lines].join('\n');
+}

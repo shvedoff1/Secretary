@@ -24,6 +24,11 @@ import { makeSurfForecastHandler } from './surf/index.js';
 import { makeDotaLookupHandler } from './dota/lookup.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { makeSummarizeChatHandler } from './summary/handler.js';
+import {
+  makeCalendarEventsHandler,
+  upcomingCalendarLines,
+  calendarConnected,
+} from './calendar/handler.js';
 import { recordChatLog } from './bot/chatLog.js';
 import { getProvider } from './core/registry.js';
 import { getChatConfig } from './db/repos/chatConfig.repo.js';
@@ -202,6 +207,12 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // a live reply — «без эмодзи» must not lapse just because a timer fired it.
         rules: listRules(task.chatId).map((r) => r.text),
         splidConnected: !!chatCfg?.provider_group_id,
+        // The chat's calendar follows its scheduled runs too, so a recurring
+        // «каждое утро скажи, что по календарю» task can read it (read-only).
+        calendarConnected: calendarConnected(task.chatId),
+        calendarLines: calendarConnected(task.chatId)
+          ? upcomingCalendarLines(task.chatId, journalTz, cfg.CALENDAR_CONTEXT_EVENTS)
+          : [],
         // A firing reminder just produces text (optionally via web search). It must
         // NOT be able to create reminders or write memory — otherwise a reminder
         // could spawn more reminders every time it runs.
@@ -243,6 +254,8 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // Recapping the chat log stays live as well: «каждое утро перескажи, что
         // было вчера» is exactly a scheduled summary, and the tool only reads.
         summarizeChat: makeSummarizeChatHandler(task.chatId),
+        // Calendar reads stay live too (read-only, chat-scoped).
+        calendarEvents: makeCalendarEventsHandler(task.chatId),
       },
     );
     if (result.kind === 'text' && result.text.trim()) {

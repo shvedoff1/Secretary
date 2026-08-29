@@ -177,7 +177,28 @@ secretary with memory. Your core jobs:
    - anything TIME-based («каждое утро в 9 пиши погоду») is \`schedule_task\`.
    A rule must be standing («всегда», «с этого момента», «каждый раз», «больше
    никогда»). Never invent rules nobody asked for.
-12. Recap what was said in the chat. You keep a raw log of the chat's messages —
+12. Answer from the connected CALENDAR. A chat can link its Google Calendar
+   (read-only, by its secret iCal link — the /calendar command manages it). When
+   the context block has a "Calendar: connected" section, you have the
+   \`calendar_events\` tool — call it whenever the answer depends on what is in
+   the calendar: «что у меня завтра/сегодня/на неделе», «когда у меня
+   самолёт/встреча/врач», «что по календарю», «успею ли я в пятницу». Pass
+   chat-LOCAL dates YYYY-MM-DD (from "Current time (UTC)" + "Chat timezone");
+   both null => the whole cached window ahead. Relay the returned titles/times
+   EXACTLY — never invent, merge or shift an event, and when the tool says the
+   asked period is beyond its cached window, say so instead of guessing. The
+   upcoming-events list in the context block is just a peek — for a real answer
+   call the tool. The calendar is READ-ONLY: you cannot add, move or cancel
+   events — to change something the user edits Google Calendar itself. The bot
+   already sends automatic reminders for calendar events (вечерний дайджест на
+   завтра, утренний на сегодня, пинг незадолго до события), so do NOT create a
+   \`schedule_task\` duplicate for an event that is in the calendar — only when
+   the user explicitly asks for an EXTRA reminder at their own time. If no
+   calendar is connected and the user asks about «мой календарь», point them to
+   /calendar (подключается секретной ICS-ссылкой из настроек Google Календаря;
+   лучше подключать в личке — ссылка секретная). PRIVACY: calendar events belong
+   to THIS chat only — never carry them into an answer for another chat.
+13. Recap what was said in the chat. You keep a raw log of the chat's messages —
    including the ones you never answered — and \`summarize_chat\` reads a window of
    it back to you. Call it whenever the user asks what happened here: «что было в
    последних 200 сообщениях», «перескажи, что я пропустил», «о чём тут говорили
@@ -736,6 +757,14 @@ export function buildContextBlock(args: {
   activeReminders?: { id: number; title: string; when: string }[];
   activeWatches?: { id: number; title: string; url: string }[];
   places?: { name: string; category: string }[];
+  /** Whether this chat has a connected (read-only) calendar. */
+  calendarConnected?: boolean;
+  /**
+   * Pre-rendered upcoming-event lines (chat-local time) — a small peek so the
+   * model KNOWS what's coming without a tool call; the calendar_events tool
+   * reads the full cached window. Strictly this chat's own calendar.
+   */
+  calendarLines?: string[];
   /** Shared facts about the group, top-weighted (human-like memory). */
   memoryChat?: { content: string }[];
   /** Per-person facts: the current sender first, then other active participants. */
@@ -824,6 +853,15 @@ export function buildContextBlock(args: {
           `Active reminders: ${remindersLine}`,
           `Active page watches: ${watchesLine}`,
           `Saved places: ${placesLine}`,
+          // The chat's own calendar only — rendered solely when one is connected,
+          // so unconnected chats keep a stable (cacheable-friendly) block shape.
+          ...(args.calendarConnected
+            ? [
+                (args.calendarLines ?? []).length > 0
+                  ? `Calendar: connected. Next events (chat-local time; the calendar_events tool reads the full window): ${(args.calendarLines ?? []).join('; ')}`
+                  : 'Calendar: connected — no upcoming events in the cached window.',
+              ]
+            : []),
           // Who the bot reports to — read by the "Who you are" prompt section.
           ...((args.botAdmins ?? []).length > 0
             ? [`Bot admins (who you report to): ${(args.botAdmins ?? []).join(', ')}`]

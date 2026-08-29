@@ -23,6 +23,11 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { makeSummarizeChatHandler } from '../../summary/handler.js';
+import {
+  makeCalendarEventsHandler,
+  upcomingCalendarLines,
+  calendarConnected,
+} from '../../calendar/handler.js';
 import { recordChatLog } from '../chatLog.js';
 import { getChatConfig, setChatTitle } from '../../db/repos/chatConfig.repo.js';
 import { botAdminLabels } from '../permissions.js';
@@ -899,6 +904,14 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           url: w.url,
         })),
         places: listPois(chatId).map((p) => ({ name: p.name, category: p.category })),
+        // The chat's OWN calendar only (repo reads are chat-scoped): gates the
+        // calendar_events tool and gives the model a peek at what's coming.
+        // Skipped on the expense-only scan — conversation-only context.
+        calendarConnected: !expenseOnly && calendarConnected(chatId),
+        calendarLines:
+          !expenseOnly && calendarConnected(chatId)
+            ? upcomingCalendarLines(chatId, journalTz, cfg.CALENDAR_CONTEXT_EVENTS)
+            : [],
         // Standing behaviour rules for this chat — orders, not context (see
         // chat_rule / the set_rule tool). They apply in every mode.
         rules: listRules(chatId).map((r) => r.text),
@@ -922,6 +935,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         addPoi: makeAddPoiHandler(chatId, tgUserId),
         spendingReport: makeSpendingReportHandler(chatId),
         summarizeChat: makeSummarizeChatHandler(chatId),
+        calendarEvents: makeCalendarEventsHandler(chatId),
       },
     );
   } catch (err) {
@@ -1151,6 +1165,7 @@ async function rewordPendingInner(
       addPoi: makeAddPoiHandler(chatId, tgUserId),
       spendingReport: makeSpendingReportHandler(chatId),
       summarizeChat: makeSummarizeChatHandler(chatId),
+      calendarEvents: makeCalendarEventsHandler(chatId),
     },
   );
 

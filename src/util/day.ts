@@ -63,6 +63,37 @@ function tzOffsetMs(utcMs: number, tz: string): number {
 }
 
 /**
+ * The UTC instant of a wall-clock time in `tz` (DST-aware to the minute). Used by
+ * the ICS parser: a calendar event's DTSTART;TZID=… is a wall-clock time in that
+ * zone, and each expanded occurrence must be converted at ITS OWN date so a
+ * weekly meeting stays at 10:00 local across a DST switch.
+ */
+export function zonedTimeToUtcMs(
+  year: number,
+  month: number, // 1–12
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  tz: string,
+): number {
+  const guess = Date.UTC(year, month - 1, day, hour, minute, second);
+  let utc = guess - tzOffsetMs(guess, tz);
+  // One correction pass: near a DST transition the offset at the guessed instant
+  // can differ from the offset at the real instant.
+  const offset = tzOffsetMs(utc, tz);
+  if (guess - offset !== utc) utc = guess - offset;
+  return utc;
+}
+
+/** YYYY-MM-DD for the day after `dateStr` (calendar arithmetic, DST-safe). */
+export function nextDateStr(dateStr: string): string {
+  const [y, m, d] = splitDate(dateStr);
+  const next = new Date(Date.UTC(y, m - 1, d) + 86_400_000);
+  return `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
+}
+
+/**
  * The UTC instant of local midnight that starts `dateStr` (YYYY-MM-DD) in `tz`.
  * Resolves the timezone offset at that wall-clock time (DST-aware to the minute).
  */

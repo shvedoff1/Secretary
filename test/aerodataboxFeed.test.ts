@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeAdbTime, parseAdbFlight } from '../src/flight/aerodatabox.js';
-import { flightFeedProvider } from '../src/flight/feed.js';
+import { flightFeedProvider, tagSource } from '../src/flight/feed.js';
+import type { FlightSnapshot } from '../src/flight/status.js';
 import type { Config } from '../src/config.js';
 
 // AeroDataBox adapter: the contract is the same as the other feeds' — a
@@ -88,6 +89,13 @@ describe('parseAdbFlight', () => {
 describe('flightFeedProvider priority', () => {
   const cfg = (over: Partial<Config>): Config =>
     ({ ENABLE_FLIGHTS: true, ...over }) as Config;
+
+  it('tagSource stamps the human feed label onto snapshots', () => {
+    const s = parseAdbFlight(fixture()) as FlightSnapshot;
+    expect(tagSource([s], 'aerodatabox')[0]!.source).toBe('AeroDataBox');
+    expect(tagSource([s], 'aeroapi')[0]!.source).toBe('FlightAware');
+    expect(tagSource([s], 'aviationstack')[0]!.source).toBe('aviationstack');
+  });
 
   it('AeroDataBox wins over both other providers when its key is set', () => {
     expect(

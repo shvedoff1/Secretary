@@ -305,6 +305,14 @@ describe('rendering', () => {
     expect(card).toContain('время местное');
   });
 
+  it('names the answering feed on the card so «кто отвечал?» is visible in chat', () => {
+    expect(renderFlightCard(snap({ source: 'AeroDataBox' }))).toContain(
+      'данные: AeroDataBox',
+    );
+    // Old stored baselines have no source — the card must not dangle a label.
+    expect(renderFlightCard(snap())).not.toContain('данные:');
+  });
+
   it('describes each change kind in Russian with the times', () => {
     const lines = describeChanges([
       { kind: 'cancelled' },

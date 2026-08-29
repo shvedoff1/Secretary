@@ -28,6 +28,9 @@ export interface FlightSnapshot {
   airline: string | null;
   dep: FlightPoint;
   arr: FlightPoint;
+  /** Human label of the feed that answered (set by the dispatcher) — rendered on
+   *  the card so «кто отвечал?» is visible in the chat, not only in server logs. */
+  source?: string | null;
 }
 
 /** A meaningful difference between two polls of the same flight. */
@@ -288,7 +291,7 @@ export function renderFlightCard(s: FlightSnapshot): string {
     `Статус: ${statusRu(s.status)}`,
     renderPoint('Вылет', s.dep),
     renderPoint('Прилёт', s.arr),
-    '(время местное для каждого аэропорта)',
+    `(время местное для каждого аэропорта${s.source ? ` · данные: ${s.source}` : ''})`,
   ].join('\n');
 }
 

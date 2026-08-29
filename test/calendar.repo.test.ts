@@ -33,6 +33,7 @@ function sampleEvent(over: Partial<{ uid: string; startsAt: number }> = {}) {
     startsAt: 1000,
     endsAt: 2000,
     allDay: false,
+    tzid: null,
     ...over,
   };
 }

@@ -36,6 +36,7 @@ function tomorrowEvent(uid: string, title: string) {
     startsAt: NOW + 20 * 60 * 60 * 1000,
     endsAt: NOW + 21 * 60 * 60 * 1000,
     allDay: false,
+    tzid: null as string | null,
   };
 }
 
@@ -88,6 +89,7 @@ describe('calendar_events handler', () => {
         startsAt: NOW - 3 * 60 * 60 * 1000,
         endsAt: NOW - 2 * 60 * 60 * 1000,
         allDay: false,
+        tzid: null,
       },
     ]);
     const lines = handler.upcomingCalendarLines(1, TZ, 5);

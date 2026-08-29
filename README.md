@@ -206,6 +206,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CALENDAR_MORNING_HOUR` | no | `8` | Chat-local hour of the «сегодня у тебя …» digest |
 | `CALENDAR_EARLY_HOUR` | no | `10` | An event starting before this hour counts as **early** — the evening digest leans into prep advice |
 | `CALENDAR_SOON_MINUTES` | no | `60` | Minutes before a timed event to send the «скоро …» ping |
+| `CALENDAR_SOON_TRAVEL_MINUTES` | no | `180` | The same ping for **travel** events (flight/train/airport-shaped titles, detected deterministically): they need a runway — a flight pinged 60 min before departure is a missed flight |
 | `CALENDAR_MAX_PER_CHAT` | no | `4` | Connected calendars per chat |
 | `ANTHROPIC_CALENDAR_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model that writes the one advice/quip line under a reminder (the event list itself is deterministic) |
 | `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/takeoff/landing; list with `/flight`). Both appear only when a feed key is set (`AEROAPI_KEY` or `AVIATIONSTACK_API_KEY`) |

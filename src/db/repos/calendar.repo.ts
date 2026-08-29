@@ -45,6 +45,8 @@ export interface CalendarEvent {
   startsAt: number;
   endsAt: number | null;
   allDay: boolean;
+  /** The event's own IANA zone from the feed (null = UTC/floating/all-day). */
+  tzid: string | null;
 }
 
 interface EventRow {
@@ -58,6 +60,7 @@ interface EventRow {
   starts_at: number;
   ends_at: number | null;
   all_day: number;
+  tzid: string | null;
 }
 
 function toCalendar(r: CalendarRow): ChatCalendar {
@@ -88,6 +91,7 @@ function toEvent(r: EventRow): CalendarEvent {
     startsAt: r.starts_at,
     endsAt: r.ends_at,
     allDay: r.all_day === 1,
+    tzid: r.tzid,
   };
 }
 
@@ -207,13 +211,14 @@ export function replaceEvents(
     startsAt: number;
     endsAt: number | null;
     allDay: boolean;
+    tzid: string | null;
   }[],
 ): void {
   const db = getDb();
   const insert = db.prepare(
     `INSERT OR REPLACE INTO calendar_event
-       (calendar_id, chat_id, uid, title, location, description, starts_at, ends_at, all_day, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch() * 1000)`,
+       (calendar_id, chat_id, uid, title, location, description, starts_at, ends_at, all_day, tzid, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch() * 1000)`,
   );
   const run = db.transaction(() => {
     db.prepare('DELETE FROM calendar_event WHERE calendar_id = ? AND chat_id = ?').run(
@@ -231,6 +236,7 @@ export function replaceEvents(
         e.startsAt,
         e.endsAt,
         e.allDay ? 1 : 0,
+        e.tzid,
       );
     }
   });

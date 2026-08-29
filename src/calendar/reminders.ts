@@ -38,13 +38,13 @@ const DETAIL_MAX_CHARS = 400;
  * advice can be concrete instead of «приезжай за 2 часа». Pure; exported for
  * tests.
  */
-export function noticeDetails(events: NoticeEvent[], tz: string): string[] {
+export function noticeDetails(events: NoticeEvent[], tz: string, tzKnown = true): string[] {
   const out: string[] = [];
   for (const e of events) {
     const desc = (e.description ?? '').replace(/\s*\n+\s*/g, ' • ').trim();
     if (!desc) continue;
     const cut = desc.length > DETAIL_MAX_CHARS ? `${desc.slice(0, DETAIL_MAX_CHARS)}…` : desc;
-    out.push(`${renderEventLine(e, tz)}: ${cut}`);
+    out.push(`${renderEventLine(e, tz, tzKnown)}: ${cut}`);
   }
   return out;
 }
@@ -55,9 +55,15 @@ export function noticeDetails(events: NoticeEvent[], tz: string): string[] {
  * failed Telegram send throws, the slot stays unsent and the next minute tick
  * retries (mirroring the watch poller's disarm order).
  */
-async function sendNotice(bot: Bot, chatId: number, notice: CalendarNotice, tz: string): Promise<void> {
+async function sendNotice(
+  bot: Bot,
+  chatId: number,
+  notice: CalendarNotice,
+  tz: string,
+  tzKnown: boolean,
+): Promise<void> {
   const cfg = loadConfig();
-  const body = renderNotice(notice, tz);
+  const body = renderNotice(notice, tz, tzKnown);
 
   // Tone: joking where the chat's humour is on (and the mode allows jokes at
   // all — a tutor room stays sober), plain practical advice otherwise. The
@@ -67,12 +73,15 @@ async function sendNotice(bot: Bot, chatId: number, notice: CalendarNotice, tz: 
     noticeText: body,
     kind: notice.kind,
     hasEarly: notice.kind === 'soon' ? false : notice.hasEarly,
+    // For a pre-event ping the advice must fit the time actually left — no
+    // «выезжай сейчас, успеешь» plans for a flight an hour away.
+    minutesLeft: notice.kind === 'soon' ? notice.minutesLeft : null,
     funny,
     // Local now + the events' hidden details (booking descriptions) are what
     // turn the advice from «за 2 часа в аэропорт» into «выезжай к 8:30, T2».
     tz,
     nowLocal: formatInTimezone(Date.now(), tz),
-    details: noticeDetails(notice.kind === 'soon' ? [notice.event] : notice.events, tz),
+    details: noticeDetails(notice.kind === 'soon' ? [notice.event] : notice.events, tz, tzKnown),
   });
   const text = advice ? `${body}\n\n${advice}` : body;
 
@@ -108,21 +117,25 @@ export async function runDueCalendarNotices(bot: Bot): Promise<void> {
 
   for (const chatId of chatIds) {
     try {
-      const tz = getTimezone(chatId) ?? cfg.DEFAULT_TIMEZONE;
+      const storedTz = getTimezone(chatId);
+      const tz = storedTz ?? cfg.DEFAULT_TIMEZONE;
+      const tzKnown = storedTz !== null;
       const events = listEvents(chatId, now - DAY_MS, now + cfg.CALENDAR_HORIZON_DAYS * DAY_MS);
       if (events.length === 0) continue;
       const notices = planNotices({
         events,
         nowMs: now,
         tz,
+        tzKnown,
         eveningHour: cfg.CALENDAR_EVENING_HOUR,
         morningHour: cfg.CALENDAR_MORNING_HOUR,
         earlyHour: cfg.CALENDAR_EARLY_HOUR,
         soonMinutes: cfg.CALENDAR_SOON_MINUTES,
+        soonTravelMinutes: cfg.CALENDAR_SOON_TRAVEL_MINUTES,
         isSent: (slot) => wasNoticeSent(chatId, slot),
       });
       for (const notice of notices) {
-        await sendNotice(bot, chatId, notice, tz);
+        await sendNotice(bot, chatId, notice, tz, tzKnown);
       }
     } catch (err) {
       // One chat's failure (Telegram send, LLM hiccup) must not starve the rest;

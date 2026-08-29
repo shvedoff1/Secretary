@@ -18,25 +18,28 @@ const MAX_LINES = 60;
 export function renderEventsForModel(
   events: CalendarEvent[],
   tz: string,
-  args: { periodLabel: string; horizonNote: string | null },
+  args: { periodLabel: string; horizonNote: string | null; tzKnown?: boolean },
 ): string {
+  const tzKnown = args.tzKnown ?? true;
   if (events.length === 0) {
     const tail = args.horizonNote ? `\n${args.horizonNote}` : '';
     return `В календаре нет событий за период: ${args.periodLabel}.${tail}`;
   }
-  const out: string[] = [
-    `События календаря (${args.periodLabel}), время местное (${tz}). Передавай названия и времена КАК ЕСТЬ:`,
-  ];
+  const header = tzKnown
+    ? `События календаря (${args.periodLabel}), время местное (${tz}). Передавай названия и времена КАК ЕСТЬ:`
+    : `События календаря (${args.periodLabel}). ЧАСОВОЙ ПОЯС ЧАТА НЕ ЗАДАН, поэтому время каждого события показано в его СОБСТВЕННОЙ зоне из календаря (или UTC, если зоны нет) — это время «как на билете». Передавай названия и времена КАК ЕСТЬ, НЕ сравнивай их с временами из других источников без учёта зон, и предложи пользователю задать пояс («я во Вьетнаме» — см. set_timezone):`;
+  const out: string[] = [header];
   let day = '';
   let lines = 0;
   for (const e of events) {
     if (lines >= MAX_LINES) break;
-    const d = eventLocalDate(e, tz);
+    const d = eventLocalDate(e, tz, tzKnown);
     if (d !== day) {
       day = d;
       out.push(`${dayLabel(d)} (${d}):`);
     }
-    out.push(`- ${renderEventLine(e, tz)}`);
+    const zone = !tzKnown && e.tzid ? ` [${e.tzid}]` : '';
+    out.push(`- ${renderEventLine(e, tz, tzKnown)}${zone}`);
     lines++;
   }
   if (events.length > MAX_LINES) {
@@ -60,6 +63,9 @@ export function makeCalendarEventsHandler(
     if (listCalendars(chatId).length === 0) {
       return 'К этому чату не подключён календарь. Подключается секретной ICS-ссылкой: /calendar add <ссылка> (Google Календарь → настройки календаря → «Секретный адрес в формате iCal»).';
     }
+    // While the CHAT has no stored timezone, whatever zone the model passed is a
+    // guess from an "unknown" context line — fall back to per-event zones.
+    const tzKnown = getTimezone(chatId) !== null;
     const tz = isValidTimezone(timezone)
       ? timezone
       : (getTimezone(chatId) ?? cfg.DEFAULT_TIMEZONE);
@@ -83,7 +89,7 @@ export function makeCalendarEventsHandler(
         : null;
 
     const events = listEvents(chatId, fromMs, Math.min(toMs, horizonEndMs + DAY_MS));
-    return renderEventsForModel(events, tz, { periodLabel, horizonNote });
+    return renderEventsForModel(events, tz, { periodLabel, horizonNote, tzKnown });
   };
 }
 
@@ -94,12 +100,16 @@ export function makeCalendarEventsHandler(
  */
 export function upcomingCalendarLines(chatId: number, tz: string, limit: number): string[] {
   const cfg = loadConfig();
+  const tzKnown = getTimezone(chatId) !== null;
   const now = Date.now();
   const events = listEvents(chatId, now - DAY_MS, now + cfg.CALENDAR_HORIZON_DAYS * DAY_MS)
     // An already-finished timed event is noise; ongoing and upcoming stay.
     .filter((e) => e.allDay || (e.endsAt ?? e.startsAt) >= now)
     .slice(0, limit);
-  return events.map((e) => `${dayLabel(eventLocalDate(e, tz))} ${renderEventLine(e, tz)}`);
+  return events.map(
+    (e) =>
+      `${dayLabel(eventLocalDate(e, tz, tzKnown))} ${renderEventLine(e, tz, tzKnown)}${!tzKnown && e.tzid ? ` [${e.tzid}]` : ''}`,
+  );
 }
 
 /** Whether this chat has at least one connected calendar (gates the tool). */

@@ -596,7 +596,14 @@ export function makeSetTimezoneHandler(chatId: number): (input: SetTimezoneInput
     setTimezone(chatId, tz);
     const localNow = formatInTimezone(Date.now(), tz);
     const label = place?.trim() ? ` (${place.trim()})` : '';
-    return `Часовой пояс чата теперь ${tz}${label}, локальное время: ${localNow}. Напоминания, календарь и расписания идут по нему.`;
+    return (
+      `Часовой пояс чата теперь ${tz}${label}, локальное время: ${localNow}. Напоминания, календарь и расписания идут по нему.` +
+      // The context block of THIS turn was rendered before the switch — any
+      // times the model already saw there may be in the old zone. Without this
+      // note it compares them with fresh tool data and reports phantom
+      // discrepancies («в календаре 11:25, а рейс в 18:25»).
+      ' (Важно: контекст этого сообщения был собран ДО смены пояса — показанные выше времена календаря могли быть в старой зоне. Не сравнивай их с другими источниками; нужны времена — вызови calendar_events заново с новой зоной.)'
+    );
   };
 }
 

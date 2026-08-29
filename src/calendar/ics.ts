@@ -19,6 +19,10 @@ export interface IcsOccurrence {
   startsAt: number;
   endsAt: number | null;
   allDay: boolean;
+  /** The event's own IANA zone from DTSTART;TZID=…, when the feed stated one
+   *  (and it is valid). Kept so an unset-tz chat can render the time the way
+   *  the calendar itself states it — a flight's ticket time — instead of UTC. */
+  tzid: string | null;
 }
 
 /** Wall-clock date-time as written in the feed, before timezone resolution. */
@@ -494,6 +498,10 @@ export function expandIcs(
       location: ev.location,
       description: ev.description,
       allDay,
+      tzid:
+        !allDay && !ev.start.utc && ev.start.tzid && isValidTz(ev.start.tzid)
+          ? ev.start.tzid
+          : null,
     };
     const withStart = (occStartMs: number): IcsOccurrence => ({
       ...base,

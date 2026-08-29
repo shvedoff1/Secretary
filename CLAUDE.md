@@ -393,7 +393,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   start — deduped by SLOT KEYS persisted in `calendar_notice` (survives
   restarts; digest slot = the local date covered, soon slot = the occurrence),
   and renders the event list DETERMINISTICALLY (titles/times reach the chat
-  verbatim, like the spending digest's figures). `src/llm/calendarAdvice.ts`
+  verbatim, like the spending digest's figures). TIMEZONE fallback: every cached
+  occurrence keeps its DTSTART TZID (`calendar_event.tzid`, migration 032), and
+  while the CHAT's timezone is unset every render path (digests, the tool, the
+  context peek — all take `tzKnown`) shows each event in its OWN zone — the
+  ticket time — with an explicit footnote, instead of UTC. Rendering a flight
+  stored as 18:25 Asia/Saigon as «11:25» (UTC) made the bot "find" a phantom
+  mismatch against the flight feed; the set_timezone confirmation also warns the
+  model that THIS turn's context was rendered pre-switch. `src/llm/calendarAdvice.ts`
   (Haiku, best-effort) then writes a short advice/quip block appended UNDER that
   list — funny when the chat's humor allows (`modeAllowsHumor` +
   `isChatHumorEnabled`; tutor stays sober), practical otherwise — and can't

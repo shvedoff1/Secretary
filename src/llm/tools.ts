@@ -70,7 +70,7 @@ export interface ToolOptions {
    *  watches), tutor chats, and when ENABLE_WATCH is off. */
   enableWatch?: boolean;
   /** Expose the flight_status tool (live «чекни рейс» lookup). Only when the
-   *  flight feed is configured (ENABLE_FLIGHTS + an aviationstack key) — keeping
+   *  flight feed is configured (ENABLE_FLIGHTS + an AeroAPI or aviationstack key) — keeping
    *  it out of unconfigured deployments leaves their cached tool prefix alone.
    *  Stays on for scheduled runs (a recurring «каждое утро чекни мой рейс» task
    *  is read-only) and inline mode. */

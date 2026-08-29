@@ -1,12 +1,48 @@
 import { loadConfig, type Config } from '../config.js';
 import type { FlightPoint, FlightSnapshot } from './status.js';
+import { fetchAeroApiStatuses } from './aeroapi.js';
 
-// aviationstack client. This is the ONLY place flight-status HTTP happens
-// (mirrors the splid-js / Open-Meteo / dota-feed rule). One quirk drives the
-// design: the free plan neither filters by `flight_date` nor serves HTTPS, so
-// we always query by `flight_iata` alone (the feed returns the flight's recent/
-// nearby days) and pick the wanted date CLIENT-side in status.ts — a watch for
-// a date the feed hasn't published yet is "no data yet", not an error.
+// The flight feed: a per-request dispatcher over two providers (flight HTTP
+// lives only here and in aeroapi.ts — the splid-js / Open-Meteo rule). Which
+// provider runs is decided by which key is configured; AeroAPI wins when both
+// are set (pay-per-query with a free monthly allowance suits bursty use far
+// better than aviationstack's monthly quota, and its data is fresher).
+//
+// The aviationstack client below keeps its original design, driven by that
+// feed's free-plan quirks: no `flight_date` filter and no HTTPS, so we always
+// query by `flight_iata` alone (the feed returns the flight's recent/nearby
+// days) and pick the wanted date CLIENT-side in status.ts — a watch for a date
+// the feed hasn't published yet is "no data yet", not an error. AeroAPI is
+// queried the same one-call-per-poll way, so the metering stays predictable.
+
+export type FlightFeedProvider = 'aeroapi' | 'aviationstack';
+
+/** Which provider a request would use, or null when the feature can't work. */
+export function flightFeedProvider(cfg: Config = loadConfig()): FlightFeedProvider | null {
+  if (!cfg.ENABLE_FLIGHTS) return null;
+  if (cfg.AEROAPI_KEY) return 'aeroapi';
+  if (cfg.AVIATIONSTACK_API_KEY) return 'aviationstack';
+  return null;
+}
+
+/** Whether the flight tools can work at all (switch on + some API key present). */
+export function flightFeedConfigured(cfg: Config = loadConfig()): boolean {
+  return flightFeedProvider(cfg) !== null;
+}
+
+/**
+ * All statuses the configured feed currently has for one IATA flight number
+ * (usually the same flight across a few nearby dates). Throws on transport/API
+ * errors and when no provider is configured.
+ */
+export async function fetchFlightStatuses(flightIata: string): Promise<FlightSnapshot[]> {
+  const provider = flightFeedProvider();
+  if (provider === 'aeroapi') return fetchAeroApiStatuses(flightIata);
+  if (provider === 'aviationstack') return fetchAviationstackStatuses(flightIata);
+  throw new Error('flight feed is not configured');
+}
+
+// --- aviationstack ---
 
 function str(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
@@ -48,16 +84,7 @@ export function parseFeedItem(raw: unknown): FlightSnapshot | null {
   };
 }
 
-/** Whether the flight tools can work at all (switch on + API key present). */
-export function flightFeedConfigured(cfg: Config = loadConfig()): boolean {
-  return cfg.ENABLE_FLIGHTS && !!cfg.AVIATIONSTACK_API_KEY;
-}
-
-/**
- * All statuses the feed currently has for one IATA flight number (usually the
- * same flight across a few nearby dates). Throws on transport/API errors.
- */
-export async function fetchFlightStatuses(flightIata: string): Promise<FlightSnapshot[]> {
+async function fetchAviationstackStatuses(flightIata: string): Promise<FlightSnapshot[]> {
   const cfg = loadConfig();
   const key = cfg.AVIATIONSTACK_API_KEY;
   if (!key) throw new Error('AVIATIONSTACK_API_KEY is not configured');

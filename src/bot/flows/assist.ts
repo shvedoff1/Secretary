@@ -71,6 +71,13 @@ import {
   findDuplicateWatch,
 } from '../../db/repos/pageWatch.repo.js';
 import {
+  createFlightWatch,
+  listFlightWatches,
+  findDuplicateFlightWatch,
+} from '../../db/repos/flightWatch.repo.js';
+import { makeFlightStatusHandler } from '../../flight/handler.js';
+import { normalizeFlightNumber } from '../../flight/status.js';
+import {
   nextRunMs,
   isValidSchedule,
   isValidTimezone,
@@ -79,6 +86,7 @@ import {
 import type {
   ScheduleTaskInput,
   WatchPageInput,
+  WatchFlightInput,
   AddPoiInput,
   EditLexiconInput,
   EditPingListInput,
@@ -428,6 +436,66 @@ export function makeWatchPageHandler(
     return (
       `👁 Вотчер #${id} «${input.title}» поставлен: проверяю страницу каждые ${interval} мин ` +
       `(слежу до ${until}). Как появится — сразу напишу сюда. Список: /watch`
+    );
+  };
+}
+
+/**
+ * Build the `watch_flight` handler for a chat — the «следи за рейсом и напиши,
+ * если отменят/перенесут» flow. Validates the flight number, guards against
+ * duplicates and a per-chat cap (each poll is a metered feed request), computes
+ * the watch's lifetime from the flight date, arms it (first poll on the next
+ * runner tick) and returns a human confirmation.
+ */
+export function makeWatchFlightHandler(
+  chatId: number,
+  tgUserId: number,
+): (input: WatchFlightInput) => string {
+  return (input) => {
+    const cfg = loadConfig();
+    const flight = normalizeFlightNumber(input.flight);
+    if (!flight) {
+      return `Не похоже на номер рейса: «${input.flight}». Нужен код авиакомпании + номер, например K6829.`;
+    }
+    const now = Date.now();
+    // Lifetime: a dated watch lives until two days past its date (covers a
+    // reschedule to the next day); an undated one gets the configured default.
+    let expiresAt: number;
+    if (input.date) {
+      const dateMs = Date.parse(`${input.date}T00:00:00Z`);
+      if (Number.isNaN(dateMs)) return 'Не понял дату рейса — назови её как YYYY-MM-DD.';
+      expiresAt = dateMs + 2 * 24 * 3600_000;
+      if (expiresAt <= now) {
+        return `Рейс ${flight} на ${input.date} уже в прошлом — следить не за чем. Могу проверить, чем он закончился: спроси статус.`;
+      }
+    } else {
+      expiresAt = now + cfg.FLIGHT_WATCH_EXPIRES_HOURS * 3600_000;
+    }
+    const active = listFlightWatches(chatId);
+    const dup = findDuplicateFlightWatch(active, { flight, flightDate: input.date });
+    if (dup) {
+      return `Уже слежу за этим рейсом — #${dup.id} «${dup.title}». Список: /flight`;
+    }
+    if (active.length >= cfg.FLIGHT_WATCH_MAX_PER_CHAT) {
+      return `В этом чате уже ${active.length} рейсов под наблюдением — это потолок. Сними лишний: /flight del <id> (список: /flight)`;
+    }
+    // Clamped to ≥15 min: every poll is one metered aviationstack request.
+    const interval = Math.min(Math.max(cfg.FLIGHT_WATCH_INTERVAL_MINUTES, 15), 24 * 60);
+    const id = createFlightWatch({
+      chatId,
+      tgUserId,
+      title: input.title,
+      flight,
+      flightDate: input.date,
+      intervalMinutes: interval,
+      expiresAt,
+      // Due immediately: the runner's next minute tick does the first poll.
+      nextCheckAt: now,
+    });
+    return (
+      `🛩 Слежка #${id} «${input.title}»: проверяю рейс ${flight}` +
+      `${input.date ? ` на ${input.date}` : ''} каждые ${interval} мин и напишу сюда, ` +
+      `если его отменят, перенесут, он вылетит или сядет. Список: /flight`
     );
   };
 }
@@ -898,6 +966,12 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
           title: w.title,
           url: w.url,
         })),
+        activeFlightWatches: listFlightWatches(chatId).map((w) => ({
+          id: w.id,
+          flight: w.flight,
+          date: w.flightDate,
+          title: w.title,
+        })),
         places: listPois(chatId).map((p) => ({ name: p.name, category: p.category })),
         // Standing behaviour rules for this chat — orders, not context (see
         // chat_rule / the set_rule tool). They apply in every mode.
@@ -917,6 +991,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         setRule: makeSetRuleHandler(chatId, tgUserId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
         watchPage: makeWatchPageHandler(chatId, tgUserId),
+        flightStatus: makeFlightStatusHandler(),
+        watchFlight: makeWatchFlightHandler(chatId, tgUserId),
         dotaLookup: makeDotaLookupHandler(),
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
@@ -1146,6 +1222,8 @@ async function rewordPendingInner(
       setRule: makeSetRuleHandler(chatId, tgUserId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
       watchPage: makeWatchPageHandler(chatId, tgUserId),
+      flightStatus: makeFlightStatusHandler(),
+      watchFlight: makeWatchFlightHandler(chatId, tgUserId),
       dotaLookup: makeDotaLookupHandler(),
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),

@@ -93,7 +93,7 @@ export interface CalendarAdviceArgs {
 }
 
 /**
- * Ask the cheap model for the advice block. Returns null when there is nothing
+ * Ask the model for the advice block. Returns null when there is nothing
  * worth saying or on ANY failure — the digest ships fine without it.
  */
 export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<string | null> {
@@ -119,7 +119,7 @@ export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<stri
       : '';
   try {
     const res = await getAnthropic().messages.create({
-      model: cfg.ANTHROPIC_CALENDAR_MODEL,
+      model: cfg.ANTHROPIC_CALENDAR_MODEL ?? cfg.ANTHROPIC_MODEL,
       max_tokens: 600,
       system: ADVICE_SYSTEM,
       messages: [

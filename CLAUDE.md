@@ -405,7 +405,9 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   stored as 18:25 Asia/Saigon as «11:25» (UTC) made the bot "find" a phantom
   mismatch against the flight feed; the set_timezone confirmation also warns the
   model that THIS turn's context was rendered pre-switch. `src/llm/calendarAdvice.ts`
-  (Haiku, best-effort) then writes a short advice/quip block appended UNDER that
+  (the MAIN model by default — the advice trades on real place knowledge and Haiku
+  answered from a stale world; `ANTHROPIC_CALENDAR_MODEL` overrides; best-effort)
+  then writes a short advice/quip block appended UNDER that
   list — funny when the chat's humor allows (`modeAllowsHumor` +
   `isChatHumorEnabled`; tutor stays sober), practical otherwise — and can't
   touch the facts above it. The advice is fed MORE than the digest shows so it

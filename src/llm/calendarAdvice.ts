@@ -32,6 +32,14 @@ export const ADVICE_SYSTEM = `Ты пишешь короткую приписк�
   городах, районах: какой это аэропорт, сколько до него ехать, большой или
   маленький, какие там очереди, визовые правила страны, сезонная погода. Если
   уверен в факте о месте — говори его; если не уверен — не выдумывай.
+- ДОРОГА в аэропорт: определи аэропорт по КОДУ из события (SGN, BKK, SAI…), а не
+  по городу. Города строят НОВЫЕ аэропорты далеко от старых: старый мог быть в
+  15 минутах от центра, а новый, куда реально летают, — в часе езды (Сием-Реап:
+  старый REP был у города, новый SAI — ~50 км на восток, ехать около часа), и
+  твоя память могла запомнить дорогу до СТАРОГО. Если код тебе не знаком или ты
+  не уверен, что твоя цифра дороги — именно про ЭТОТ аэропорт, НЕ называй
+  уверенное короткое время в пути: считай, что аэропорт может быть далеко,
+  закладывай дорогу с запасом и предложи проверить маршрут в картах заранее.
 - В ДЕТАЛЯХ событий (ниже списка) часто лежат номер брони, терминал, место,
   адрес — используй их, они точные.
 - НИКОГДА не выдумывай данные КОНКРЕТНОЙ брони/рейса, которых нет в данных:
@@ -85,7 +93,7 @@ export interface CalendarAdviceArgs {
 }
 
 /**
- * Ask the cheap model for the advice block. Returns null when there is nothing
+ * Ask the model for the advice block. Returns null when there is nothing
  * worth saying or on ANY failure — the digest ships fine without it.
  */
 export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<string | null> {
@@ -111,7 +119,7 @@ export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<stri
       : '';
   try {
     const res = await getAnthropic().messages.create({
-      model: cfg.ANTHROPIC_CALENDAR_MODEL,
+      model: cfg.ANTHROPIC_CALENDAR_MODEL ?? cfg.ANTHROPIC_MODEL,
       max_tokens: 600,
       system: ADVICE_SYSTEM,
       messages: [

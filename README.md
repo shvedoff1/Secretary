@@ -208,7 +208,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CALENDAR_SOON_MINUTES` | no | `60` | Minutes before a timed event to send the «скоро …» ping |
 | `CALENDAR_SOON_TRAVEL_MINUTES` | no | `180` | The same ping for **travel** events (flight/train/airport-shaped titles, detected deterministically): they need a runway — a flight pinged 60 min before departure is a missed flight |
 | `CALENDAR_MAX_PER_CHAT` | no | `4` | Connected calendars per chat |
-| `ANTHROPIC_CALENDAR_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model that writes the one advice/quip line under a reminder (the event list itself is deterministic) |
+| `ANTHROPIC_CALENDAR_MODEL` | no | the main `ANTHROPIC_MODEL` | Model that writes the one advice/quip line under a reminder (the event list itself is deterministic). The advice trades on real knowledge of places, so it runs on the main model by default; set a Haiku id to cheap out |
 | `ENABLE_FLIGHTS` | no | `true` | Flight tools: `flight_status` («проверь статус рейса K6829») and `watch_flight` («следи за рейсом, напиши если отменят/перенесут» — the bot polls the flight and posts on cancel/reschedule/gate/boarding/takeoff/landing; list with `/flight`). Both appear only when a feed key is set (`AERODATABOX_API_KEY`, `AEROAPI_KEY` or `AVIATIONSTACK_API_KEY`) |
 | `AERODATABOX_API_KEY` | no | — | **Preferred provider**: AeroDataBox — the only feed with real *Boarding/GateClosed* statuses (where the airport publishes them); free tier 600 units/mo, Pro ~$5/mo. Wins over the other two when set |
 | `AERODATABOX_BASE_URL` | no | `https://prod.api.market/api/v1/aedbx/aerodatabox` | Marketplace gateway; a RapidAPI subscription would use `https://aerodatabox.p.rapidapi.com` |

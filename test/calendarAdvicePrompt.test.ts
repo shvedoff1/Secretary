@@ -22,6 +22,21 @@ describe('calendar advice prompt — flight rules', () => {
     expect(ADVICE_SYSTEM).toContain('заполнить их с вечера');
   });
 
+  it('pins the stale-airport road-time rule', () => {
+    // The advice pass told a user «до аэропорта 15-20 минут» three times for a
+    // flight out of Siem Reap: its memory described the OLD in-town airport
+    // (REP), while the flight left from the new SAI, ~50 km out — over an hour
+    // away. The rule makes the model key on the airport CODE, warns that its
+    // remembered road time may be for a replaced airport, and forbids a
+    // confident short travel time when unsure.
+    expect(ADVICE_SYSTEM).toContain('по КОДУ из события');
+    expect(ADVICE_SYSTEM).toContain('новый SAI — ~50 км');
+    expect(ADVICE_SYSTEM).toContain('дорогу до СТАРОГО');
+    expect(ADVICE_SYSTEM).toContain('НЕ называй');
+    expect(ADVICE_SYSTEM).toContain('уверенное короткое время в пути');
+    expect(ADVICE_SYSTEM).toContain('проверить маршрут в картах');
+  });
+
   it('does not damn the airport buffer in the bad example', () => {
     // The old bad example read «в аэропорт лучше за 2 часа» — teaching the
     // model that naming a proper buffer is the mistake. The vagueness is the

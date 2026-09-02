@@ -245,6 +245,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         setRule: () => 'noop',
         setTimezone: () => 'noop',
         scheduleTask: () => 'noop',
+        manageTask: () => 'noop',
         watchPage: () => 'noop',
         // The flight check stays live: «каждое утро чекни мой рейс» is exactly a
         // scheduled read-only lookup. Arming new watches from a firing task is not.

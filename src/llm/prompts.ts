@@ -1,4 +1,5 @@
 import type { ChatMode } from '../db/repos/chatSettings.repo.js';
+import { formatLocalClock } from '../util/schedule.js';
 
 export const SYSTEM_PROMPT = `You are "Secretary", a helpful personal assistant in Telegram. You work the same
 way in a private chat (one person) and in a group — in both cases you are just a
@@ -22,8 +23,20 @@ secretary with memory. Your core jobs:
    \`false\` for a repeating task. Timezone: take it from "Chat timezone" in the
    context block; if it says "unknown", ASK the user for their timezone ONCE (a
    city is fine — map it to an IANA zone) before scheduling, then use it. The
-   current time is in the context block for relative timing ("через 3 минуты",
-   "завтра").
+   current time is in the context block: "Current time (chat-local)" is the
+   chat's own clock — read every date/time off THAT line, never off the UTC one.
+   TIMING RULES: a RELATIVE delay («через 3 минуты», «через час 50», «на 1.50 от
+   сейчас») goes in \`inMinutes\` (total minutes: 1 ч 50 мин = 110) with
+   \`cron: null\` — the bot computes the exact moment itself; NEVER turn a delay
+   into a clock time yourself (adding 1:50 to the UTC clock and calling it local
+   time is how a 19:23 reminder becomes «12:25»). An ABSOLUTE time («завтра в 9»,
+   «в 19:30») goes in \`cron\` in the chat's LOCAL time.
+   MOVING or CANCELLING a reminder that already exists («перенеси на 19:30»,
+   «сдвинь на час», «поставь на 1.50 от сейчас», «отмени напоминание про
+   сушилку», «удали #15») is \`manage_task\` with the id from "Active reminders" —
+   NEVER a second \`schedule_task\` that leaves the old one standing, and never
+   tell the user to delete the old one by hand. Named by topic => pick the
+   matching id; none or several => ask which.
    IMPORTANT — no duplicates: only call \`schedule_task\` for a reminder the user is
    asking for in their LATEST message. The context block lists "Active reminders"
    that already exist — never recreate one of those. Earlier requests in the
@@ -584,7 +597,10 @@ export const TUTOR_SYSTEM_PROMPT = `Ты — «Секретарь» в роли 
 - Когда ученик ЯВНО просит что-то запомнить («запомни, у меня экзамен 5 июня») —
   вызывай \`remember\`; исправить записанное — \`edit_memory\`.
 - Просьбы о напоминаниях («напоминай каждый день в 7 порешать задачи») — \`schedule_task\`,
-  время бери из контекст-блока; если таймзона неизвестна — спроси один раз.
+  время бери из контекст-блока (строка "Current time (chat-local)"); «через N минут» —
+  передавай \`inMinutes\`, не считай время сам; если таймзона неизвестна — спроси один раз.
+  Перенести или отменить уже стоящее напоминание — \`manage_task\` по id из "Active
+  reminders", а не новое \`schedule_task\`.
 - НИКОГДА не выдумывай факты. Не уверен — так и скажи и предложи проверить поиском.`;
 
 // Dota mode: the FULL secretary skill set (memory, reminders, search, places,
@@ -773,6 +789,23 @@ export function systemPromptFor(
   }
 }
 
+/**
+ * The clock lines of a context block: UTC (kept — tools like calendar_events
+ * document their dates against it) PLUS the chat-LOCAL wall clock when the zone
+ * is known. Timing is read off the local line: with only UTC + a zone name the
+ * model did the conversion itself and «через час 50» landed at «12:25».
+ */
+export function currentTimeLines(tz: string, nowMs: number = Date.now()): string[] {
+  const local = tz === 'unknown' ? null : formatLocalClock(nowMs, tz);
+  return [
+    `Current time (UTC): ${new Date(nowMs).toISOString()}`,
+    ...(local
+      ? [`Current time (chat-local, ${tz}): ${local} — use THIS clock for all timing`]
+      : []),
+    `Chat timezone: ${tz}`,
+  ];
+}
+
 export function buildContextBlock(args: {
   defaultCurrency: string;
   members: { name: string; initials?: string }[];
@@ -881,8 +914,7 @@ export function buildContextBlock(args: {
   const expenseOnly = args.expenseOnly === true;
 
   const lines = [
-    `Current time (UTC): ${new Date().toISOString()}`,
-    `Chat timezone: ${tz}`,
+    ...currentTimeLines(tz),
     `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
     // Conversation-only context, skipped on an expense-only scan (see `expenseOnly`).
     ...(expenseOnly
@@ -1083,8 +1115,7 @@ export function buildTutorContextBlock(args: {
       : '(none)';
 
   const lines = [
-    `Current time (UTC): ${new Date().toISOString()}`,
-    `Chat timezone: ${args.timezone ?? 'unknown'}`,
+    ...currentTimeLines(args.timezone ?? 'unknown'),
     `Active reminders: ${remindersLine}`,
     `Message sender (the student): ${args.senderName}`,
   ];

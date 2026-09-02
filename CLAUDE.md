@@ -71,8 +71,22 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   after the probability roll).
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   edit_memory | learn_expense_pattern | edit_lexicon | set_rule | set_timezone |
-  schedule_task | surf_forecast | add_poi | spending_report | summarize_chat |
-  web_search`. `set_timezone` moves the chat's clock in plain words («я во
+  schedule_task | manage_task | surf_forecast | add_poi | spending_report |
+  summarize_chat | web_search`. REMINDER TIMING is split by shape so the model never
+  does timezone arithmetic: a RELATIVE delay («через час 50», «на 1.50 от сейчас»)
+  is passed as `schedule_task.inMinutes` and the handler (`resolveTiming` in
+  `flows/assist.ts`) computes the fire instant from the server clock, storing a
+  cron DERIVED from it (`cronForInstant` in `util/schedule.ts`) for /tasks and
+  dedup — a relative reminder is always one-off; an ABSOLUTE time goes in `cron`
+  in the chat's LOCAL time, read off the `Current time (chat-local, <tz>)` line
+  that `currentTimeLines` adds to both context blocks next to the UTC one (with
+  only UTC + a zone name the model added 1:50 to the UTC clock and called it
+  Vietnam time — the «12:25 вместо 19:23» bug). `manage_task` (same
+  `enableReminders` flag, so off for scheduled/inline/expense-only runs) MOVES
+  (`reschedule` → `rescheduleTask`, title/prompt kept) or CANCELS an existing
+  task by its id from "Active reminders", so «перенеси на 19:30» edits the row
+  instead of creating a duplicate and telling the user to `/canceltask` the old
+  one; both tools mark the turn `scheduled` (kept out of history). `set_timezone` moves the chat's clock in plain words («я во
   Вьетнаме» → Asia/Ho_Chi_Minh; `makeSetTimezoneHandler` validates via Intl and
   confirms with the resulting local time) — the tz drives reminders, calendar
   digests and time display, so it stays on in every mode; off for scheduled runs

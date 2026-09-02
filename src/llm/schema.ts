@@ -118,12 +118,32 @@ export type AddPoiInput = z.infer<typeof AddPoiZ>;
 export const ScheduleTaskZ = z.object({
   title: z.string().min(1),
   prompt: z.string().min(1),
-  cron: z.string().min(1),
+  // Absolute timing — a cron in the chat's LOCAL time. Null when the reminder is
+  // relative (then `inMinutes` carries the delay and the handler derives the cron).
+  cron: z.string().nullable(),
+  // Relative timing («через час 50») as a plain delay in minutes: the handler
+  // computes the fire instant from the server clock, so a delay can never be
+  // mis-converted between zones by the model. Absent/null => `cron` is used.
+  inMinutes: z.number().int().positive().nullable().optional(),
   timezone: z.string().min(1),
   once: z.boolean(),
   humor: z.boolean(),
 });
 export type ScheduleTaskInput = z.infer<typeof ScheduleTaskZ>;
+
+/**
+ * Move or cancel an EXISTING reminder by its id from "Active reminders" — the
+ * «перенеси на 19:30» / «отмени напоминание про сушилку» flow. Without it the
+ * model's only move was a fresh schedule_task that left the old one standing.
+ */
+export const ManageTaskZ = z.object({
+  action: z.enum(['reschedule', 'cancel']),
+  id: z.number().int().positive(),
+  cron: z.string().nullable().optional(),
+  inMinutes: z.number().int().positive().nullable().optional(),
+  timezone: z.string().nullable().optional(),
+});
+export type ManageTaskInput = z.infer<typeof ManageTaskZ>;
 
 export const WatchPageZ = z.object({
   title: z.string().min(1),
@@ -503,9 +523,14 @@ export const scheduleTaskJsonSchema = {
         'Self-contained instruction to run when the task fires (you will receive ONLY this text, no chat history). Include any web-search intent. E.g. "Найди прогноз по волнам для Эрисейры на сегодня и кратко напиши". For a plain reminder phrase it as what to DO when it fires — "Напомни, что пора оплатить подписку" — never the bare task name alone.',
     },
     cron: {
-      type: 'string',
+      type: ['string', 'null'],
       description:
-        'Standard 5-field cron expression (minute hour day-of-month month day-of-week) for when to run. "Каждый день в 9:00" => "0 9 * * *". A one-off "через 2 минуты" => the single minute it should fire.',
+        'ABSOLUTE timing only: a standard 5-field cron expression (minute hour day-of-month month day-of-week) in the chat\'s LOCAL time, read off "Current time (chat-local)" in the context block — never off the UTC line. "Каждый день в 9:00" => "0 9 * * *"; "завтра в 19:30" => "30 19 <tomorrow\'s day> <month> *". MUST be null when `inMinutes` is set.',
+    },
+    inMinutes: {
+      type: ['integer', 'null'],
+      description:
+        'RELATIVE timing only: the delay in whole minutes for «через N минут/часов», «через час 50», «на 1.50 от сейчас» (1 ч 50 мин => 110). The bot computes the exact fire time itself — NEVER convert a delay into a clock time and pass it as `cron`. null for an absolute time.',
     },
     timezone: {
       type: 'string',
@@ -514,7 +539,7 @@ export const scheduleTaskJsonSchema = {
     },
     once: {
       type: 'boolean',
-      description: 'true for a one-off reminder (disable after it fires); false for a recurring task.',
+      description: 'true for a one-off reminder (disable after it fires); false for a recurring task. A relative (`inMinutes`) reminder is always one-off.',
     },
     humor: {
       type: 'boolean',
@@ -525,7 +550,39 @@ export const scheduleTaskJsonSchema = {
         'Only affects plain-chat replies — factual tool answers always stay verbatim.',
     },
   },
-  required: ['title', 'prompt', 'cron', 'timezone', 'once', 'humor'],
+  required: ['title', 'prompt', 'cron', 'inMinutes', 'timezone', 'once', 'humor'],
+} as const;
+
+export const manageTaskJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['reschedule', 'cancel'],
+      description:
+        "'reschedule' moves an existing reminder/task to a new time (its title and prompt stay); 'cancel' deletes it.",
+    },
+    id: {
+      type: 'integer',
+      description: 'The reminder id from "Active reminders" in the context block (the number after #).',
+    },
+    cron: {
+      type: ['string', 'null'],
+      description:
+        'For reschedule with an ABSOLUTE new time: 5-field cron in the chat\'s LOCAL time (see schedule_task). null for cancel or when `inMinutes` is set.',
+    },
+    inMinutes: {
+      type: ['integer', 'null'],
+      description:
+        'For reschedule with a RELATIVE new time («на 1.50 от сейчас», «сдвинь на час»): the delay from NOW in whole minutes. The bot computes the moment itself. null otherwise.',
+    },
+    timezone: {
+      type: ['string', 'null'],
+      description: 'IANA zone for the new cron; null keeps the task\'s current zone (the chat timezone).',
+    },
+  },
+  required: ['action', 'id', 'cron', 'inMinutes', 'timezone'],
 } as const;
 
 export const watchPageJsonSchema = {

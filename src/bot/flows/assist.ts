@@ -69,6 +69,8 @@ import {
   createTask,
   listTasks,
   findDuplicate,
+  deleteTask,
+  rescheduleTask,
 } from '../../db/repos/scheduledTask.repo.js';
 import {
   createWatch,
@@ -87,9 +89,12 @@ import {
   isValidSchedule,
   isValidTimezone,
   formatInTimezone,
+  cronForInstant,
+  formatDelay,
 } from '../../util/schedule.js';
 import type {
   ScheduleTaskInput,
+  ManageTaskInput,
   WatchPageInput,
   WatchFlightInput,
   AddPoiInput,
@@ -347,9 +352,40 @@ function learnAliasFromCorrection(
 }
 
 /**
+ * Resolve a reminder's timing from the model's input: a RELATIVE delay
+ * (`inMinutes` — computed here from the server clock, so the model never turns
+ * «через час 50» into a clock time in the wrong zone) or an ABSOLUTE cron in the
+ * chat's timezone. Returns the fire instant + the cron to store (derived for the
+ * relative case, so /tasks and dedup keep working), or a human error line.
+ */
+function resolveTiming(
+  input: { cron?: string | null; inMinutes?: number | null },
+  tz: string,
+): { cron: string; nextRunAt: number; delayMinutes: number | null } | { error: string } {
+  if (input.inMinutes != null && input.inMinutes > 0) {
+    const minutes = Math.round(input.inMinutes);
+    const nextRunAt = Date.now() + minutes * 60_000;
+    const cron = cronForInstant(nextRunAt, tz);
+    if (!cron) return { error: 'Не понял часовой пояс — уточни, где ты.' };
+    return { cron, nextRunAt, delayMinutes: minutes };
+  }
+  const cron = input.cron?.trim();
+  if (!cron) {
+    return { error: 'Не понял время — скажи, через сколько или во сколько напомнить.' };
+  }
+  if (!isValidSchedule(cron, tz)) {
+    return { error: 'Не понял расписание — уточни время (напр. «каждый день в 9 утра»).' };
+  }
+  const next = nextRunMs(cron, tz);
+  if (next === null) return { error: 'Это расписание уже не сработает — уточни время.' };
+  return { cron, nextRunAt: next, delayMinutes: null };
+}
+
+/**
  * Build the `schedule_task` handler for a chat: validates the model's cron +
- * timezone, persists the task, remembers the chat timezone (so we only ask once),
- * and returns a human confirmation the assistant relays back.
+ * timezone (or computes a relative delay itself), persists the task, remembers
+ * the chat timezone (so we only ask once), and returns a human confirmation the
+ * assistant relays back.
  */
 export function makeScheduleTaskHandler(
   chatId: number,
@@ -358,35 +394,71 @@ export function makeScheduleTaskHandler(
 ): (input: ScheduleTaskInput) => string {
   return (input) => {
     const tz = isValidTimezone(input.timezone) ? input.timezone : defaultTz;
-    if (!isValidSchedule(input.cron, tz)) {
-      return 'Не понял расписание — уточни время (напр. «каждый день в 9 утра»).';
-    }
-    const next = nextRunMs(input.cron, tz);
-    if (next === null) {
-      return 'Это расписание уже не сработает — уточни время.';
-    }
+    const timing = resolveTiming(input, tz);
+    if ('error' in timing) return timing.error;
     setTimezone(chatId, tz);
     // Guard against re-creating a reminder that already exists (e.g. the original
     // request lingering in conversation history makes the model fire again).
-    const dup = findDuplicate(listTasks(chatId), { cron: input.cron, title: input.title });
+    const dup = findDuplicate(listTasks(chatId), { cron: timing.cron, title: input.title });
     if (dup) {
       return `Это уже стоит — #${dup.id} «${dup.title}» (следующий запуск ${formatInTimezone(dup.nextRunAt, dup.timezone)}).`;
     }
+    // A relative reminder is one-off by nature: «через час 50» names a moment,
+    // and its derived cron would otherwise re-fire on that date every year.
+    const once = timing.delayMinutes !== null ? true : input.once;
     const id = createTask({
       chatId,
       tgUserId,
       title: input.title,
       prompt: input.prompt,
-      cron: input.cron,
+      cron: timing.cron,
       timezone: tz,
-      once: input.once,
+      once,
       humor: input.humor,
-      nextRunAt: next,
+      nextRunAt: timing.nextRunAt,
     });
-    const when = formatInTimezone(next, tz);
-    const kind = input.once ? 'Напоминание' : 'Регулярная задача';
+    const when = formatInTimezone(timing.nextRunAt, tz);
+    const kind = once ? 'Напоминание' : 'Регулярная задача';
     const humorNote = input.humor ? ' 😂 с юмором' : '';
-    return `${kind} #${id} «${input.title}»${humorNote} создана. Первый запуск: ${when} (${tz}). Список: /tasks`;
+    const delay = timing.delayMinutes !== null ? `${formatDelay(timing.delayMinutes)} — ` : '';
+    return `${kind} #${id} «${input.title}»${humorNote} создана. Первый запуск: ${delay}${when} (${tz}). Список: /tasks`;
+  };
+}
+
+/**
+ * Build the `manage_task` handler for a chat — the «перенеси напоминание на
+ * 19:30» / «отмени напоминание про сушилку» flow. Moves or deletes an EXISTING
+ * task by id (chat-scoped), so a change never leaves a duplicate behind.
+ */
+export function makeManageTaskHandler(
+  chatId: number,
+  defaultTz: string,
+): (input: ManageTaskInput) => string {
+  return (input) => {
+    const task = listTasks(chatId).find((t) => t.id === input.id);
+    if (!task) {
+      return `Не нашёл активное напоминание #${input.id} в этом чате. Список: /tasks`;
+    }
+    if (input.action === 'cancel') {
+      deleteTask(task.id, chatId);
+      return `🗑 Напоминание #${task.id} «${task.title}» удалено.`;
+    }
+    const wanted = input.timezone?.trim();
+    const tz = wanted && isValidTimezone(wanted) ? wanted : task.timezone || defaultTz;
+    const timing = resolveTiming(input, tz);
+    if ('error' in timing) return timing.error;
+    if (
+      !rescheduleTask(task.id, chatId, {
+        cron: timing.cron,
+        timezone: tz,
+        nextRunAt: timing.nextRunAt,
+      })
+    ) {
+      return `Не нашёл активное напоминание #${input.id} в этом чате. Список: /tasks`;
+    }
+    const when = formatInTimezone(timing.nextRunAt, tz);
+    const delay = timing.delayMinutes !== null ? `${formatDelay(timing.delayMinutes)} — ` : '';
+    return `Перенёс #${task.id} «${task.title}»: следующий запуск ${delay}${when} (${tz}). Старое время снято, дубля нет.`;
   };
 }
 
@@ -1036,6 +1108,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         setRule: makeSetRuleHandler(chatId, tgUserId),
         setTimezone: makeSetTimezoneHandler(chatId),
         scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+        manageTask: makeManageTaskHandler(chatId, cfg.DEFAULT_TIMEZONE),
         watchPage: makeWatchPageHandler(chatId, tgUserId),
         flightStatus: makeFlightStatusHandler(chatId),
         watchFlight: makeWatchFlightHandler(chatId, tgUserId),
@@ -1269,6 +1342,7 @@ async function rewordPendingInner(
       setRule: makeSetRuleHandler(chatId, tgUserId),
       setTimezone: makeSetTimezoneHandler(chatId),
       scheduleTask: makeScheduleTaskHandler(chatId, tgUserId, cfg.DEFAULT_TIMEZONE),
+      manageTask: makeManageTaskHandler(chatId, cfg.DEFAULT_TIMEZONE),
       watchPage: makeWatchPageHandler(chatId, tgUserId),
       flightStatus: makeFlightStatusHandler(chatId),
       watchFlight: makeWatchFlightHandler(chatId, tgUserId),

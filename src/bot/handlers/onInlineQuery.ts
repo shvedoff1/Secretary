@@ -330,6 +330,7 @@ export async function runInlineAnswer(args: {
       setRule: () => 'noop',
       setTimezone: () => 'noop',
       scheduleTask: () => 'noop',
+      manageTask: () => 'noop',
       watchPage: () => 'noop',
       // Read-only, so it stays live inline — «@бот статус K6829» just answers.
       flightStatus: makeFlightStatusHandler(),

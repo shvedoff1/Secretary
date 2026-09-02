@@ -19,6 +19,7 @@ import {
   EDIT_PING_LIST_TOOL,
   SET_RULE_TOOL,
   SCHEDULE_TASK_TOOL,
+  MANAGE_TASK_TOOL,
   WATCH_PAGE_TOOL,
   FLIGHT_STATUS_TOOL,
   WATCH_FLIGHT_TOOL,
@@ -40,6 +41,7 @@ import {
   EditPingListZ,
   SetRuleZ,
   ScheduleTaskZ,
+  ManageTaskZ,
   WatchPageZ,
   FlightStatusZ,
   WatchFlightZ,
@@ -60,6 +62,7 @@ import {
   type EditPingListInput,
   type SetRuleInput,
   type ScheduleTaskInput,
+  type ManageTaskInput,
   type WatchPageInput,
   type FlightStatusInput,
   type WatchFlightInput,
@@ -204,6 +207,8 @@ export interface AssistantHandlers {
   setRule: (input: SetRuleInput) => string;
   /** Create a reminder / recurring task; return a short human confirmation. */
   scheduleTask: (input: ScheduleTaskInput) => string;
+  /** Move or cancel an existing reminder / task; return a short human confirmation. */
+  manageTask: (input: ManageTaskInput) => string;
   /** Arm a page watch (poll a URL for an event); return a short confirmation. */
   watchPage: (input: WatchPageInput) => string;
   /** Check a flight's live status; return a ready text card for the model to relay. */
@@ -644,6 +649,23 @@ export async function runAssistant(
           const confirmation = parsed.success
             ? handlers.scheduleTask(parsed.data)
             : 'Could not parse the task.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === MANAGE_TASK_TOOL) {
+          // Same history discipline as schedule_task: a lingering «перенеси на
+          // час» would re-fire on the next turn if the turn stayed in history.
+          scheduled = true;
+          const parsed = ManageTaskZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'manage_task input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.manageTask(parsed.data)
+            : 'Could not parse the task change.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,

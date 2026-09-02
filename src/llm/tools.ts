@@ -9,6 +9,7 @@ import {
   editPingListJsonSchema,
   setRuleJsonSchema,
   scheduleTaskJsonSchema,
+  manageTaskJsonSchema,
   watchPageJsonSchema,
   flightStatusJsonSchema,
   watchFlightJsonSchema,
@@ -30,6 +31,7 @@ export const EDIT_LEXICON_TOOL = 'edit_lexicon';
 export const EDIT_PING_LIST_TOOL = 'edit_ping_list';
 export const SET_RULE_TOOL = 'set_rule';
 export const SCHEDULE_TASK_TOOL = 'schedule_task';
+export const MANAGE_TASK_TOOL = 'manage_task';
 export const WATCH_PAGE_TOOL = 'watch_page';
 export const FLIGHT_STATUS_TOOL = 'flight_status';
 export const WATCH_FLIGHT_TOOL = 'watch_flight';
@@ -197,8 +199,19 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
     tools.push({
       name: SCHEDULE_TASK_TOOL,
       description:
-        'Create a TIME-BASED reminder or recurring task. Call this ONLY for a NEW request in the user\'s latest message (e.g. "напомни встать через 3 минуты", "каждое утро ищи прогноз волн и кидай сюда"). Convert the timing into a cron expression. The task `prompt` runs later WITHOUT chat history, so make it self-contained. Set `humor` to true when the user wants a funny/light tone for this task and false for a plain reminder. Never recreate a reminder that already appears in "Active reminders" in the context. Confirm timezone with the user once if it is unknown in the context. NOT for watching a web page until something appears on it («следи за <ссылка> и напиши, когда появятся сеансы/билеты/в наличии») — that is `watch_page` (its poller checks the page every few minutes, a cron task would check daily and miss the event); never model a page watch as a scheduled task.',
+        'Create a NEW TIME-BASED reminder or recurring task. Call this ONLY for a NEW request in the user\'s latest message (e.g. "напомни встать через 3 минуты", "каждое утро ищи прогноз волн и кидай сюда"). RELATIVE timing («через 3 минуты», «через час 50», «на 1.50 от сейчас») => pass the delay as `inMinutes` (1 ч 50 мин = 110) with `cron: null` — the bot computes the exact moment; never convert a delay into a clock time yourself. ABSOLUTE timing («завтра в 9», «в 19:30») => `cron` in the chat\'s LOCAL time, read off "Current time (chat-local)" in the context block (never the UTC line). To MOVE or CANCEL a reminder that already exists use `manage_task`, not this tool. The task `prompt` runs later WITHOUT chat history, so make it self-contained. Set `humor` to true when the user wants a funny/light tone for this task and false for a plain reminder. Never recreate a reminder that already appears in "Active reminders" in the context. Confirm timezone with the user once if it is unknown in the context. NOT for watching a web page until something appears on it («следи за <ссылка> и напиши, когда появятся сеансы/билеты/в наличии») — that is `watch_page` (its poller checks the page every few minutes, a cron task would check daily and miss the event); never model a page watch as a scheduled task.',
       input_schema: scheduleTaskJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  // Same flag as schedule_task: moving/cancelling a reminder writes state, so it
+  // is off exactly where creating one is (scheduled runs, inline, expense scan).
+  if (opts.enableReminders !== false) {
+    tools.push({
+      name: MANAGE_TASK_TOOL,
+      description:
+        'MOVE or CANCEL an EXISTING reminder/task from "Active reminders" in the context block — «перенеси напоминание на 19:30», «сдвинь на час», «поставь на 1.50 от сейчас», «отмени напоминание про сушилку», «удали #15». Pass the id shown there. Reschedule: RELATIVE new time => `inMinutes` (delay from now); ABSOLUTE => `cron` in the chat\'s LOCAL time (from "Current time (chat-local)"). The title and what it does stay as they were. ALWAYS use this instead of creating a second reminder with schedule_task — and never ask the user to delete the old one by hand. When the user names a reminder by topic, pick the matching id from the list; if none matches or several do, ask which one.',
+      input_schema: manageTaskJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

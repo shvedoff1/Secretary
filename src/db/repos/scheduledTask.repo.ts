@@ -168,3 +168,22 @@ export function setTaskHumor(id: number, chatId: number, humor: boolean): boolea
     .run(humor ? 1 : 0, id, chatId);
   return info.changes > 0;
 }
+
+/**
+ * Move an existing task to a new schedule (the «перенеси на 19:30» flow), scoped
+ * to its chat. Title/prompt/humor stay; only the timing changes. Returns false
+ * when there is no such ACTIVE task in the chat.
+ */
+export function rescheduleTask(
+  id: number,
+  chatId: number,
+  args: { cron: string; timezone: string; nextRunAt: number },
+): boolean {
+  const info = getDb()
+    .prepare(
+      `UPDATE scheduled_task SET cron = ?, timezone = ?, next_run_at = ?
+       WHERE id = ? AND chat_id = ? AND enabled = 1`,
+    )
+    .run(args.cron, args.timezone, args.nextRunAt, id, chatId);
+  return info.changes > 0;
+}

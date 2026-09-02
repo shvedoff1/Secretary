@@ -94,9 +94,11 @@ added without touching the core.
   `/rules add <текст>`; they are injected into every turn as orders and apply in every
   mode. List with `/rules`, drop with `/rules del <N>` / `/rules clear`.
 - **Reminders**: ask in natural language and the bot creates a scheduled task (the first
-  time it asks the chat for its timezone, then reuses it). Manage with `/tasks` and
-  `/canceltask <id>`. A background scheduler fires due tasks every minute and posts the
-  result back to the chat.
+  time it asks the chat for its timezone, then reuses it). «Через час 50» is computed by
+  the bot itself in the chat's timezone; «перенеси на 19:30» / «отмени напоминание про
+  сушилку» move or cancel the existing task instead of adding a second one. Manage with
+  `/tasks` and `/canceltask <id>`. A background scheduler fires due tasks every minute
+  and posts the result back to the chat.
 - **Google Calendar («что у меня завтра?») + smart reminders**: connect a calendar by its
   **secret iCal link** — Google Calendar → настройки календаря → «Интеграция календаря» →
   «Секретный адрес в формате iCal» — with `/calendar add <ссылка> [имя]` (no OAuth; the
@@ -254,7 +256,7 @@ Then just talk:
 
 ```
 bot/        grammY handlers, triggers, auth gate, preview/confirm flow
-llm/        Claude assistant (tool-use router): record_expense | remember | schedule_task | web_search
+llm/        Claude assistant (tool-use router): record_expense | remember | schedule_task | manage_task | web_search
 scheduler.ts  background runner: fires due reminders/tasks every minute
 core/       provider-agnostic types + ExpenseProvider interface + registry + resolver
 providers/  splid/  (the ONLY place splid-js is imported)

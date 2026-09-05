@@ -185,6 +185,17 @@ export interface AssistantContext {
    * nobody sent to the bot.
    */
   expenseOnly?: boolean;
+  /**
+   * MEMORY-FREE turn: an ADDRESSED message that is shaped like a spend (see
+   * `isExpenseShaped` in bot/triggers.ts). Unlike the expense-only scan it keeps
+   * the full toolset — the turn may still turn out to be a reminder or a question —
+   * but the context block carries no memory, profile cards or journal, and the
+   * tools that reach them on demand (recall_memory, summarize_chat) are off. An
+   * expense's title, amount and people must come from THIS message alone; a
+   * remembered or journaled past expense is neither an existing record nor a name
+   * source. Implied by `expenseOnly`.
+   */
+  memoryFree?: boolean;
   history: Turn[];
   /** Plain text message, or image content blocks for a receipt photo. */
   userContent: string | Anthropic.ContentBlockParam[];
@@ -312,6 +323,9 @@ export async function runAssistant(
   // Guarded on splidConnected so the cut can never produce an empty tool list
   // (without a Splid group record_expense isn't exposed either — such a chat runs as usual).
   const expenseOnly = ctx.expenseOnly === true && ctx.splidConnected && !tutor;
+  // Memory-free is the wider cut (see the field docs): every expense-only scan is
+  // memory-free, and so is an addressed turn the caller flagged as spend-shaped.
+  const memoryFree = expenseOnly || ctx.memoryFree === true;
 
   // Tutor mode keeps only what a study chat needs: memory (exam dates, weak
   // topics), reminders (study schedule) and web search. Everything money/surf/
@@ -324,7 +338,7 @@ export async function runAssistant(
     // Recall is READ-ONLY, so unlike remember/edit it stays on everywhere memory is:
     // scheduled runs and tutor chats need to look things up just as much. (An
     // expense-only scan is the one place it's off — that turn has no memory at all.)
-    enableRecall: !expenseOnly && cfg.ENABLE_MEMORY,
+    enableRecall: !memoryFree && cfg.ENABLE_MEMORY,
     enableExpenseLearning: !expenseOnly && !tutor && ctx.allowExpenseLearning !== false,
     enableLexiconEdit: !expenseOnly && !tutor && ctx.allowLexiconEdit !== false,
     enablePingEdit: !expenseOnly && !tutor && ctx.allowPingEdit !== false,
@@ -354,7 +368,7 @@ export async function runAssistant(
     // runs; a tutor room has no chatter to recap, and without the log there is
     // nothing to read.
     enableSummary:
-      !expenseOnly && !tutor && cfg.ENABLE_CHAT_LOG && ctx.allowSummary !== false,
+      !memoryFree && !tutor && cfg.ENABLE_CHAT_LOG && ctx.allowSummary !== false,
     // Calendar reads are gated on a calendar actually being connected (like
     // record_expense on splidConnected), so unconnected chats keep their cached
     // tool prefix. Read-only, hence live for scheduled runs; off for inline
@@ -396,23 +410,23 @@ export async function runAssistant(
         places: ctx.places ?? [],
         calendarConnected: ctx.calendarConnected ?? false,
         calendarLines: ctx.calendarLines ?? [],
-        memoryChat: expenseOnly ? [] : (ctx.memoryChat ?? []),
-        memoryUsers: expenseOnly ? [] : (ctx.memoryUsers ?? []),
-        memoryPersona: expenseOnly ? [] : (ctx.memoryPersona ?? []),
-        // Profile cards are memory too — same expense-only rule (and the same
+        memoryChat: memoryFree ? [] : (ctx.memoryChat ?? []),
+        memoryUsers: memoryFree ? [] : (ctx.memoryUsers ?? []),
+        memoryPersona: memoryFree ? [] : (ctx.memoryPersona ?? []),
+        // Profile cards are memory too — same memory-free rule (and the same
         // misfire risk: a card names people, and the payer must come from the
         // message, never from a portrait).
-        profiles: expenseOnly ? [] : (ctx.profiles ?? []),
+        profiles: memoryFree ? [] : (ctx.profiles ?? []),
         // Total held, so the block can tell the model how much memory it does NOT
         // see and that recall_memory reaches the rest (the hint is skipped when
         // nothing is hidden, and on an expense-only scan there is no memory at all).
-        memoryTotal: expenseOnly ? 0 : (ctx.memoryTotal ?? 0),
+        memoryTotal: memoryFree ? 0 : (ctx.memoryTotal ?? 0),
         // The journal is conversation-only context, so the expense-only scan
         // drops it for the same reason it drops memory (and the section renders
         // after the expense-only early return anyway).
-        episodes: expenseOnly ? [] : (ctx.episodes ?? []),
-        episodeTotal: expenseOnly ? 0 : (ctx.episodeTotal ?? 0),
-        memoryTopics: expenseOnly ? [] : (ctx.memoryTopics ?? []),
+        episodes: memoryFree ? [] : (ctx.episodes ?? []),
+        episodeTotal: memoryFree ? 0 : (ctx.episodeTotal ?? 0),
+        memoryTopics: memoryFree ? [] : (ctx.memoryTopics ?? []),
         rules: ctx.rules ?? [],
         botAdmins: ctx.botAdmins ?? [],
         expenseOnly,

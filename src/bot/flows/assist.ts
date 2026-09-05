@@ -17,7 +17,7 @@ import {
   classifySlangDecision,
   isSlangPassEnabled,
 } from '../../llm/slang.js';
-import { isMoneyContext } from '../triggers.js';
+import { isExpenseShaped, isMoneyContext } from '../triggers.js';
 import { toParsedExpense, type RecallMemoryInput } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
@@ -937,7 +937,21 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // from the sender. So skip the memory work entirely (also saves the queries and
   // the tokens) and tell runAssistant to run in expense-only shape.
   const expenseOnly = !args.addressed;
-  const memorySel = expenseOnly
+  // An ADDRESSED turn that is SHAPED like a spend (a typed «такси 500 на всех», a
+  // voice note «264, раздели-ка на нас», a receipt photo captioned «за меня и
+  // Колю») runs MEMORY-FREE too: no facts, no profile cards, no journal, and the
+  // recall/summarize tools off — but the full toolset otherwise, so a false
+  // positive («напомни заплатить 500 за аренду») still lands as a reminder. The
+  // journal is the worst offender: it summarises the bot's own «✅ Записал …»
+  // posts, so a past expense reads as an existing record and even lends its
+  // title to the new one («судя по журналу это новая покупка метро»).
+  const memoryFree =
+    expenseOnly ||
+    isExpenseShaped({ chatId, text: args.historyText, source: args.source });
+  if (memoryFree && !expenseOnly) {
+    logger.info({ chatId, source: args.source }, 'expense-shaped turn: memory-free');
+  }
+  const memorySel = memoryFree
     ? { chat: [], users: [], persona: [] }
     : getMemoryForContext(chatId, {
         senderTgUserId: tgUserId,
@@ -962,11 +976,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // tutor chats (the journal's verbatim-expansion path — summarize_chat — is not
   // exposed there, so a journal that advises calling it would dangle).
   const journalOn =
-    !expenseOnly && mode !== 'tutor' && cfg.ENABLE_EPISODES && cfg.ENABLE_CHAT_LOG;
+    !memoryFree && mode !== 'tutor' && cfg.ENABLE_EPISODES && cfg.ENABLE_CHAT_LOG;
   const journalTz = getTimezone(chatId) ?? cfg.DEFAULT_TIMEZONE;
   const journal = journalOn ? recentEpisodes(chatId, cfg.EPISODE_CONTEXT_COUNT) : [];
   const episodeTotal = journalOn ? episodeCount(chatId) : 0;
-  const memoryTopics = expenseOnly
+  const memoryTopics = memoryFree
     ? []
     : buildTopicIndex({
         subjects: memorySubjects(chatId),
@@ -1047,7 +1061,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         memoryPersona: memorySel.persona.map((i) => ({ content: i.content })),
         // Total held, so the context block can tell the model how much is NOT shown
         // and that recall_memory reaches the rest.
-        memoryTotal: expenseOnly ? 0 : memoryStats(chatId).total,
+        memoryTotal: memoryFree ? 0 : memoryStats(chatId).total,
         // The conversation journal (episodic memory) + what the deep tier covers.
         episodes: journal.map((e) => renderEpisodeLine(e, journalTz)),
         episodeTotal,
@@ -1055,12 +1069,13 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         // Profile cards: the maintained portrait (chat card first, freshest people
         // next — listProfiles orders that way). Memory-gated like the fact sections.
         profiles:
-          expenseOnly || mode === 'tutor' || !cfg.ENABLE_PROFILES || !cfg.ENABLE_MEMORY
+          memoryFree || mode === 'tutor' || !cfg.ENABLE_PROFILES || !cfg.ENABLE_MEMORY
             ? []
             : listProfiles(chatId)
                 .slice(0, cfg.PROFILE_CONTEXT_MAX)
                 .map((p) => ({ subject: p.subject, content: p.content })),
         expenseOnly,
+        memoryFree,
         senderName: senderName(ctx),
         senderUsername: ctx.from?.username ?? null,
         timezone: getTimezone(chatId),

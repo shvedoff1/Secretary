@@ -4,6 +4,7 @@ import { getProvider } from '../../core/registry.js';
 import { ProviderError } from '../../core/provider.js';
 import type { Member } from '../../core/types.js';
 import { normalizeName } from '../../util/ids.js';
+import { isValidCurrencyCode } from '../../util/money.js';
 import {
   canManageChat,
   chatLabel,
@@ -490,14 +491,54 @@ export async function cmdSetGroup(ctx: Context): Promise<void> {
   await ctx.reply(`✅ Чат ${id} подключён к Splid (${count} участников).`);
 }
 
-// --- /setcurrency <id> <CUR> ------------------------------------------------
+// --- /setcurrency [<id>] <CUR> ----------------------------------------------
 
+/**
+ * Set a chat's default Splid currency. Two entry points:
+ * - from the DM (admin console): `/setcurrency <chatId> <CUR>` — the usual
+ *   cross-chat form, gated like every other per-chat admin command;
+ * - from the chat ITSELF: `/setcurrency <CUR>` — the id is implied, so a chat's
+ *   admin can flip the currency right where the expenses happen instead of being
+ *   bounced to the DM. Still manager-only (it changes what every recorded expense
+ *   means), and another chat's id is refused there — cross-chat stays DM-only.
+ * The code must be a REAL ISO 4217 currency: a made-up code used to be stored as-is
+ * and every expense then reached Splid with a currency it doesn't know.
+ */
 export async function cmdSetCurrency(ctx: Context): Promise<void> {
-  const [idTok, cur] = headTail(args(ctx));
-  const id = parseChatId(idTok);
-  if (!(await ensureManagerDM(ctx, id))) return;
-  if (id === null || !/^[A-Za-z]{3}$/.test(cur)) {
-    await ctx.reply('Использование: /setcurrency <chatId> <ISO4217, напр. EUR>');
+  const [tok1, tok2] = headTail(args(ctx));
+  const inChat = ctx.chat != null && ctx.chat.type !== 'private';
+
+  let id: number | null;
+  let cur: string;
+  if (inChat) {
+    const explicit = parseChatId(tok1);
+    if (explicit !== null && explicit !== ctx.chat!.id) {
+      await ctx.reply('Другой чат настраивается только из лички со мной. Здесь: /setcurrency <CUR>');
+      return;
+    }
+    id = ctx.chat!.id;
+    cur = explicit !== null ? tok2 : tok1;
+    if (!canManageChat(ctx.from?.id ?? 0, id)) {
+      await ctx.reply('Валюту чата меняет только его админ.');
+      return;
+    }
+    if (!/^[A-Za-z]{3}$/.test(cur)) {
+      await ctx.reply('Использование: /setcurrency <ISO4217, напр. EUR>');
+      return;
+    }
+  } else {
+    id = parseChatId(tok1);
+    cur = tok2;
+    if (!(await ensureManagerDM(ctx, id))) return;
+    if (id === null || !/^[A-Za-z]{3}$/.test(cur)) {
+      await ctx.reply('Использование: /setcurrency <chatId> <ISO4217, напр. EUR>');
+      return;
+    }
+  }
+  if (!isValidCurrencyCode(cur)) {
+    await ctx.reply(
+      `«${cur.toUpperCase()}» — не существующая валюта (нужен код ISO 4217, напр. EUR, USD, RUB, VND, IDR). Ничего не менял.`,
+    );
     return;
   }
   if (!getChatConfig(id)) {

@@ -69,6 +69,15 @@ describe('SYSTEM_PROMPT identity vs memory', () => {
     expect(SYSTEM_PROMPT).toContain('MEMORY NEVER DECIDES WHO IS SPEAKING');
     expect(SYSTEM_PROMPT).toMatch(/"Message sender" wins/);
   });
+
+  // An expense line that leaked into memory («Иван купил билеты в метро за 300»)
+  // once made the bot refuse to record the same expense again — «у меня уже есть
+  // запись, это то же самое или новая покупка?». Memory is never a dedup source:
+  // the confirmable preview is the check.
+  it('forbids treating memory as an existing expense record', () => {
+    expect(SYSTEM_PROMPT).toContain('MEMORY IS NOT AN EXPENSE LEDGER');
+    expect(SYSTEM_PROMPT).toMatch(/preview the user confirms IS the duplicate check/);
+  });
 });
 
 // A voice transcript mangles names («Швец» вместо «Швед»). Repairing that from

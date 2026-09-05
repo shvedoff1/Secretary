@@ -28,7 +28,7 @@ export async function cmdHelp(ctx: Context): Promise<void> {
         '/chatlog <chatId> — лог сообщений чата; /chatlog <chatId> clear — очистить',
         '/episodes <chatId> — журнал бесед (эпизодическая память); /episodes <chatId> clear — очистить',
         '/profile <chatId> — карточки профилей чата и людей; /profile <chatId> clear — стереть (пересоберутся)',
-        '/setgroup <id> <код> · /setcurrency <id> <CUR> — Splid и валюта',
+        '/setgroup <id> <код> · /setcurrency <id> <CUR> — Splid и валюта (в самом чате можно /setcurrency <CUR>)',
         '/setmemory <id> <текст> · /addmemory <id> <текст> · /clearmemory <id> — память',
         '/setlink <id> <tgUserId> <имя> · /unlink <id> <tgUserId> — привязки к Splid',
       ]

@@ -18,6 +18,7 @@ import {
   isSlangPassEnabled,
 } from '../../llm/slang.js';
 import { isExpenseShaped, isMoneyContext } from '../triggers.js';
+import { classifyExpenseIntent } from '../../llm/expenseClassify.js';
 import { toParsedExpense, type RecallMemoryInput } from '../../llm/schema.js';
 import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
@@ -817,6 +818,12 @@ interface RunArgs {
    * asked yet.
    */
   includeForwardBatch?: boolean;
+  /**
+   * Run the expense gate (regex + classifier → `memoryFree`) on this turn.
+   * Defaults to true; the chime passes false — its synthetic «continue the
+   * conversation» prompt is never a spend, and a classifier call there is waste.
+   */
+  expenseGate?: boolean;
 }
 
 /**
@@ -945,12 +952,28 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // journal is the worst offender: it summarises the bot's own «✅ Записал …»
   // posts, so a past expense reads as an existing record and even lends its
   // title to the new one («судя по журналу это новая покупка метро»).
-  const memoryFree =
-    expenseOnly ||
-    isExpenseShaped({ chatId, text: args.historyText, source: args.source });
-  if (memoryFree && !expenseOnly) {
-    logger.info({ chatId, source: args.source }, 'expense-shaped turn: memory-free');
+  // TWO sources decide, cheapest first, and only where an expense can actually
+  // be recorded (no Splid => no record_expense => nothing to protect): the
+  // deterministic regex gate, then — when it stays quiet — the cheap
+  // classifier (`src/llm/expenseClassify.ts`, sees the message/roster/recent
+  // turns, never memory). Fail-open: an unknown verdict keeps memory on.
+  const splidConnected = !!chatCfg?.provider_group_id;
+  const gateOn = args.expenseGate !== false && args.addressed && splidConnected;
+  let gate: 'scan' | 'regex' | 'classifier' | 'off' = expenseOnly ? 'scan' : 'off';
+  if (gateOn && isExpenseShaped({ chatId, text: args.historyText, source: args.source })) {
+    gate = 'regex';
+  } else if (gateOn && cfg.ENABLE_EXPENSE_CLASSIFIER && getChatMode(chatId) !== 'tutor') {
+    const verdict = await classifyExpenseIntent({
+      text: args.historyText,
+      senderName: senderName(ctx),
+      source: args.source,
+      members: members.map((m) => m.name),
+      recent: history.slice(-3).map((t) => `${t.senderName ?? (t.role === 'assistant' ? 'бот' : '?')}: ${t.content}`),
+    });
+    if (verdict === 'expense') gate = 'classifier';
   }
+  const memoryFree = gate !== 'off';
+  if (args.addressed) logger.info({ chatId, source: args.source, gate }, 'expense gate');
   const memorySel = memoryFree
     ? { chat: [], users: [], persona: [] }
     : getMemoryForContext(chatId, {

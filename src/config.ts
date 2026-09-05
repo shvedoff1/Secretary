@@ -276,6 +276,15 @@ const ConfigSchema = z.object({
   // Cheap model that judges "did the event happen?" from a page excerpt each poll
   // (the keyword gate + unchanged-page hash keep most polls from reaching it).
   ANTHROPIC_WATCH_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Expense-intent CLASSIFIER for addressed turns the regex gate didn't catch
+  // (see `isExpenseShaped` / `memoryFree`): a cheap yes/no pass that sees only
+  // the message, the roster and the last few turns — never memory — and decides
+  // whether the turn runs memory-free. Off => the regex gate alone decides.
+  ENABLE_EXPENSE_CLASSIFIER: boolish.default(true),
+  ANTHROPIC_CLASSIFY_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Hard cap on the classifier's latency: it sits in front of every addressed
+  // reply, so a slow verdict is dropped (fail-open: memory stays on, as before).
+  EXPENSE_CLASSIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
   // Default poll interval when the user doesn't ask for a pace.
   WATCH_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
   // Default lifetime: a watch that never fires disarms (with a note) after this.

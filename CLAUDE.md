@@ -583,8 +583,18 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   or journal, and with `recall_memory`/`summarize_chat` off — but the FULL toolset
   otherwise, so a false positive («напомни заплатить 500 за аренду») still lands as
   a reminder. `expenseOnly` implies `memoryFree`; a plain addressed question keeps
-  every tier. Logged as `expense-shaped turn: memory-free`. An expense's title,
-  amount and people come from THIS message alone, structurally; memory is never a
+  every tier. TWO sources set the flag, cheapest first and only where Splid is
+  connected (no `record_expense` => nothing to protect): the regex above, then —
+  when it stays quiet — the CLASSIFIER (`src/llm/expenseClassify.ts`,
+  `ANTHROPIC_CLASSIFY_MODEL` Haiku at temperature 0, one JSON boolean, bounded by
+  `EXPENSE_CLASSIFY_TIMEOUT_MS` with no retries) which sees ONLY the message, the
+  roster and the last 3 turns — never memory, or the leak would just move one
+  call down — and catches the numberless spends («скинь Ване за ужин»). It FAILS
+  OPEN: an error/timeout/garbage verdict keeps memory on (today's behaviour), so
+  a Haiku outage can't break questions; `ENABLE_EXPENSE_CLASSIFIER=false` leaves
+  the regex alone; tutor chats and the chime (`expenseGate: false`) skip it.
+  Logged per addressed turn as `expense gate` (`scan|regex|classifier|off`). An
+  expense's title, amount and people come from THIS message alone, structurally; memory is never a
   dedup source either (`MEMORY IS NOT AN EXPENSE LEDGER` in the prompt, and
   `looksLikeExpense` in `util/money.ts` also filters «купил X за N»-shaped lines
   out of memory at insert).

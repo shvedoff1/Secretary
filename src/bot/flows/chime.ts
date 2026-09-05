@@ -180,6 +180,8 @@ async function fireChime(ctx: Context, chatId: number): Promise<void> {
     historyText: last.text,
     // Don't slap a 👀 on a now-stale message — the chime should feel unprompted.
     manageReaction: false,
+    // A revive prompt is never a spend: skip the expense gate (no classifier call).
+    expenseGate: false,
   });
 }
 

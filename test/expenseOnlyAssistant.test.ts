@@ -128,6 +128,44 @@ describe('runAssistant expense-only scan', () => {
     expect(names).toContain('remember');
   });
 
+  it('memory-free (addressed, spend-shaped): full toolset minus the memory readers, no memory sections', async () => {
+    responses = [textResponse('ок')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(
+      ctxFor({
+        memoryFree: true,
+        episodes: ['5 сентября: Иван записал трату на метро 300'],
+        episodeTotal: 3,
+        profiles: [{ subject: 'Иван', content: 'часто платит за транспорт' }],
+      }),
+      handlers,
+    );
+
+    // Not the expense-only cut: a spend-shaped message may still be a reminder
+    // or a question, so everything that acts on THIS message stays…
+    const names = lastCall().tools.map((t) => t.name);
+    expect(names).toContain('record_expense');
+    expect(names).toContain('schedule_task');
+    expect(names).toContain('remember');
+    // …but the tools that reach memory/journal on demand are off.
+    expect(names).not.toContain('recall_memory');
+    expect(names).not.toContain('summarize_chat');
+
+    const block = contextBlock();
+    expect(block).not.toContain('Chat memory');
+    expect(block).not.toContain('About Андрей Шведов');
+    expect(block).not.toContain('Швед — это я');
+    expect(block).not.toContain('Voice & style');
+    expect(block).not.toContain('Profile memory');
+    expect(block).not.toContain('Conversation journal');
+    expect(block).not.toContain('метро');
+    expect(block).not.toContain('Memory store');
+    // Conversation context that does not name people or past spends stays.
+    expect(block).toContain('Active reminders');
+    expect(block).toContain('Message sender: Андрей Шведов');
+    expect(block).toContain('Group members: Андрей Шведов, Иван');
+  });
+
   it('leaves a normal (addressed) turn untouched: full toolset and full memory', async () => {
     responses = [textResponse('ок')];
     const { runAssistant } = await import('../src/llm/assistant.js');

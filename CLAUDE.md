@@ -571,6 +571,33 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   collapses to «я». `notes` is DATA (itemised prices, real ambiguity), never the
   model's reasoning — «голосовое распознало X как Y, судя по памяти чата…» in a
   preview was the visible leak; the ban is in both the prompt and the tool schema.
+  MEMORY-FREE turns (`isExpenseShaped` in `triggers.ts` → `memoryFree` on
+  `AssistantContext`): the prompt fence above was still not enough — a voice note
+  «264, Замаг-Шнекнекс, раздели-ка на нас» came back as «судя по журналу это новая
+  покупка метро», the TITLE lifted from the conversation journal (which summarises
+  the bot's own «✅ Записал …» posts, so every past expense reads as an existing
+  record). So an ADDRESSED turn whose text is SHAPED like a spend (the auto-expense
+  trigger + learned terms, or the allocation phrasing «раздели на нас» / «за меня и
+  Колю» with a number — a photo caption needs none, the amount is in the picture)
+  is decided DETERMINISTICALLY before the call and runs with NO facts, profile cards
+  or journal, and with `recall_memory`/`summarize_chat` off — but the FULL toolset
+  otherwise, so a false positive («напомни заплатить 500 за аренду») still lands as
+  a reminder. `expenseOnly` implies `memoryFree`; a plain addressed question keeps
+  every tier. TWO sources set the flag, cheapest first and only where Splid is
+  connected (no `record_expense` => nothing to protect): the regex above, then —
+  when it stays quiet — the CLASSIFIER (`src/llm/expenseClassify.ts`,
+  `ANTHROPIC_CLASSIFY_MODEL` Haiku at temperature 0, one JSON boolean, bounded by
+  `EXPENSE_CLASSIFY_TIMEOUT_MS` with no retries) which sees ONLY the message, the
+  roster and the last 3 turns — never memory, or the leak would just move one
+  call down — and catches the numberless spends («скинь Ване за ужин»). It FAILS
+  OPEN: an error/timeout/garbage verdict keeps memory on (today's behaviour), so
+  a Haiku outage can't break questions; `ENABLE_EXPENSE_CLASSIFIER=false` leaves
+  the regex alone; tutor chats and the chime (`expenseGate: false`) skip it.
+  Logged per addressed turn as `expense gate` (`scan|regex|classifier|off`). An
+  expense's title, amount and people come from THIS message alone, structurally; memory is never a
+  dedup source either (`MEMORY IS NOT AN EXPENSE LEDGER` in the prompt, and
+  `looksLikeExpense` in `util/money.ts` also filters «купил X за N»-shaped lines
+  out of memory at insert).
 - Concurrency: `index.ts` polls via `@grammyjs/runner` (`run(bot)`), so updates are
   processed CONCURRENTLY — a slow LLM turn in one chat no longer blocks every other chat
   (the old `bot.start()` handled updates one-at-a-time). Per-chat ordering is kept by a

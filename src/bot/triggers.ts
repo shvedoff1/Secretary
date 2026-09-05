@@ -125,6 +125,35 @@ export function captionLooksLikeSharedExpense(text: string): boolean {
 }
 
 /**
+ * Is this ADDRESSED turn shaped like a spend, so it must run MEMORY-FREE?
+ *
+ * The addressed path (a ping, a DM, every voice note, a captioned photo) runs one
+ * assistant call with the full context — memory, profile cards, the conversation
+ * journal — because the same call may have to answer a question or set a
+ * reminder. But when the message is an expense, that context is not just useless,
+ * it is where the model goes wrong: a voice note «264, раздели-ка на нас» came back
+ * as «судя по журналу это новая покупка метро» — the TITLE was taken from the
+ * journal, and the dedup reasoning narrated out loud. A prompt rule is a fence; this
+ * is the wall: the deterministic spend trigger decides BEFORE the call, and a
+ * matching turn gets no memory/journal/profiles at all (see `memoryFree`), while
+ * keeping the full toolset so a reminder-shaped false positive still works.
+ *
+ * Matches the auto-expense trigger (amount + spend word, plus the chat's learned
+ * terms) and the allocation phrasing («раздели на нас», «за меня и Колю») — for a
+ * photo the amount lives in the picture, so the phrasing alone counts there; for
+ * text/voice it needs a number too, so «он на нас наорал» keeps its memory.
+ */
+export function isExpenseShaped(args: {
+  chatId: number;
+  text: string;
+  source: string;
+}): boolean {
+  if (looksLikeExpenseForChat(args.chatId, args.text)) return true;
+  if (args.source !== 'photo' && !/\d/.test(args.text)) return false;
+  return captionLooksLikeSharedExpense(args.text);
+}
+
+/**
  * Does the message explicitly @mention the bot (a `mention` or `text_mention`
  * entity pointing at us)? This is a DELIBERATE ping — distinct from merely
  * replying to one of the bot's messages — so it can tell "@bot обнови прогноз"

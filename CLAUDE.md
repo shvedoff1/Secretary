@@ -428,6 +428,17 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   plus the current chat-local time for «выезжай к 8:30» math; its prompt allows
   the model's own knowledge of famous PLACES (airports, cities, visa rules) but
   bans invented BOOKING data (a terminal/gate/time not present in the event).
+  TERMINALS, GATES and AIRLINES are banned from memory outright (it once sent
+  an Etihad passenger at BKK to «T1 или T3 для Emirates» — neither exists
+  there): they reach the model only via the details block — the booking
+  description, or the live flight-feed line `flightFacts.ts` adds when a
+  flight feed is configured (flight numbers parsed from the title/location,
+  one metered request per flight on its departure-local date; an unknown
+  terminal is SAID to be unknown, a feed miss/failure becomes an explicit
+  «не называй» line, never a gap). Events are DEDUPED on read (`dedupe.ts`,
+  applied in `listEvents`): the same title at the same instant cached from two
+  connected calendars is one event to the reader — the digest used to list a
+  flight twice and ping it twice.
   `reminders.ts` sends (notify first, mark slot after — a failed send retries
   next tick) and records the post as an assistant turn + chat-log line, like the
   watch/scheduler posts. The `calendar_events` tool (`handler.ts`) answers «что

@@ -1,4 +1,5 @@
 import { getDb } from '../client.js';
+import { dedupeEvents } from '../../calendar/dedupe.js';
 
 // Google-Calendar connection storage («календарь»). SECURITY INVARIANT: every
 // read here is keyed by chat_id (events are denormalised with it), so a
@@ -252,7 +253,10 @@ export function listEvents(chatId: number, fromMs: number, toMs: number): Calend
        ORDER BY starts_at, id`,
     )
     .all(chatId, fromMs, toMs) as EventRow[];
-  return rows.map(toEvent);
+  // One event that lives in two of the chat's calendars is ONE event to the
+  // reader — collapsed here so every consumer (digests, soon-pings, the tool,
+  // the context peek) sees it once. See calendar/dedupe.ts.
+  return dedupeEvents(rows.map(toEvent));
 }
 
 /** Chats that have at least one enabled calendar (the reminder tick iterates these). */

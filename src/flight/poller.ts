@@ -25,6 +25,38 @@ import {
 // watch keeps trying until it expires) — same discipline as page watches.
 const FAIL_NOTIFY_COUNT = 10;
 
+// How much of the feed's error reaches the chat and the /flight list. The
+// message is the diagnosis («AeroDataBox HTTP 400: date out of range», a
+// timeout, a spent quota) — without it the warning could only say «не могу»,
+// and the cause lived in the process log alone.
+const ERROR_MAX_CHARS = 200;
+
+/** One-line, bounded description of a feed failure (pure; exported for tests). */
+export function describeFeedError(err: unknown): string {
+  const raw =
+    err instanceof Error
+      ? err.name === 'TimeoutError' || err.name === 'AbortError'
+        ? `таймаут запроса (${err.message || err.name})`
+        : err.message || err.name
+      : String(err);
+  const line = raw.replace(/\s+/g, ' ').trim() || 'unknown error';
+  return line.length > ERROR_MAX_CHARS ? `${line.slice(0, ERROR_MAX_CHARS - 1)}…` : line;
+}
+
+/**
+ * Failures that will NOT go away on their own, so the chat is told on the
+ * FIRST hit rather than after the usual streak: auth (bad key / dead
+ * subscription — 401/403) and quota (402 payment required / 429 too many
+ * requests — a monthly allowance spent means every poll until the reset
+ * fails the same way). Pure; exported for tests.
+ */
+export function permanentFailureKind(err: unknown): 'auth' | 'quota' | null {
+  if (!(err instanceof Error)) return null;
+  if (/HTTP 40[13]\b/.test(err.message)) return 'auth';
+  if (/HTTP (402|429)\b/.test(err.message)) return 'quota';
+  return null;
+}
+
 async function notify(bot: Bot, chatId: number, text: string): Promise<void> {
   await bot.api.sendMessage(chatId, text, { link_preview_options: { is_disabled: true } });
 }
@@ -65,22 +97,32 @@ async function checkFlightWatch(bot: Bot, watch: FlightWatch): Promise<void> {
     snapshots = await fetchFlightStatuses(watch.flight, watch.flightDate);
   } catch (err) {
     const failCount = watch.failCount + 1;
-    logger.warn({ err, watchId: watch.id, failCount }, 'flight watch fetch failed');
+    const lastError = describeFeedError(err);
+    logger.warn(
+      { err, watchId: watch.id, flight: watch.flight, date: watch.flightDate, failCount },
+      'flight watch fetch failed',
+    );
     setFlightCheckResult(watch.id, {
       nextCheckAt: nextCheckAfter(watch.lastSnapshot),
       lastCheckedAt: now,
       lastSnapshot: watch.lastSnapshot,
       failCount,
+      lastError,
     });
-    // An auth/permission failure (bad key, dead subscription) is PERMANENT —
-    // waiting out the usual 10-failure streak would let a short watch (armed a
-    // few hours before a flight) die in silence, so it warns on the FIRST hit.
-    // Transient errors keep the once-at-the-threshold discipline.
-    const authish = err instanceof Error && /HTTP 40[13]/.test(err.message);
-    if (authish ? failCount === 1 : failCount === FAIL_NOTIFY_COUNT) {
-      const reason = authish
-        ? `источник данных не пускает (похоже, проблема с API-ключом/подпиской): ${err.message}`
-        : `не могу получить данные по рейсу ${watch.flight} (уже ${failCount} попыток подряд)`;
+    // An auth/quota failure (bad key, dead subscription, spent allowance) is
+    // PERMANENT — waiting out the usual 10-failure streak would let a short
+    // watch (armed a few hours before a flight) die in silence, so it warns on
+    // the FIRST hit. Transient errors keep the once-at-the-threshold
+    // discipline. Either way the warning carries the feed's own answer: that
+    // is the diagnosis, and it must not live in the process log alone.
+    const permanent = permanentFailureKind(err);
+    if (permanent ? failCount === 1 : failCount === FAIL_NOTIFY_COUNT) {
+      const reason =
+        permanent === 'auth'
+          ? `источник данных не пускает (похоже, проблема с API-ключом/подпиской): ${lastError}`
+          : permanent === 'quota'
+            ? `источник данных отвечает, что лимит запросов исчерпан (тариф/квота): ${lastError}`
+            : `не могу получить данные по рейсу ${watch.flight}${watch.flightDate ? ` на ${watch.flightDate}` : ''} (уже ${failCount} попыток подряд; последний ответ: ${lastError})`;
       await notify(
         bot,
         watch.chatId,
@@ -188,6 +230,7 @@ export async function runDueFlightWatches(bot: Bot): Promise<void> {
           lastCheckedAt: Date.now(),
           lastSnapshot: watch.lastSnapshot,
           failCount: watch.failCount + 1,
+          lastError: describeFeedError(err),
         });
       } catch {
         /* nothing more we can do */

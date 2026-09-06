@@ -274,6 +274,22 @@ describe('runDueFlightWatches', () => {
     expect(w!.lastError).toBeNull();
   });
 
+  it('warns on the FIRST hit of a lapsed subscription even when the gateway says HTTP 400', async () => {
+    const { poller, repo } = await freshModules();
+    const id = armWatch(repo);
+    fetchMock.mockRejectedValue(new Error('AeroDataBox HTTP 400: No active Subscription found.'));
+
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const text = String(sendMessage.mock.calls[0]![1]);
+    expect(text).toContain('API-ключом');
+    expect(text).toContain('No active Subscription found');
+
+    repo.forceFlightCheck(id, 100);
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('warns on the FIRST quota failure (a spent allowance fails every poll until the reset)', async () => {
     const { poller, repo } = await freshModules();
     const id = armWatch(repo);
@@ -415,6 +431,11 @@ describe('describeFeedError / permanentFailureKind', () => {
     expect(poller.permanentFailureKind(new Error('AeroDataBox HTTP 429: quota'))).toBe('quota');
     expect(poller.permanentFailureKind(new Error('AeroDataBox HTTP 402: payment'))).toBe('quota');
     expect(poller.permanentFailureKind(new Error('AeroDataBox HTTP 400: date'))).toBeNull();
+    // A lapsed plan reported with the wrong status is still an auth failure.
+    expect(
+      poller.permanentFailureKind(new Error('AeroDataBox HTTP 400: No active Subscription found.')),
+    ).toBe('auth');
+    expect(poller.permanentFailureKind(new Error('aviationstack error: 101 invalid api key'))).toBe('auth');
     expect(poller.permanentFailureKind(new Error('HTTP 4013 weird'))).toBeNull();
     expect(poller.permanentFailureKind('HTTP 401')).toBeNull();
   });

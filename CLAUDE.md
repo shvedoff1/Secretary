@@ -510,8 +510,10 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (`flight_watch.last_error`, migration 033, `describeFeedError` — one bounded
   line, timeouts named) next to `fail_count`, and both the 10-streak warning and
   the `/flight` list quote it: «HTTP 400: date out of range» vs a timeout is the
-  whole diagnosis, and it must not live only in the process log. Auth (401/403)
-  AND quota (402/429 — `permanentFailureKind`) failures warn on the FIRST hit,
+  whole diagnosis, and it must not live only in the process log. Auth (401/403,
+  or a subscription/api-key message under any status — API.market reports a
+  lapsed AeroDataBox plan as «HTTP 400: No active Subscription found») AND
+  quota (402/429) failures — `permanentFailureKind` — warn on the FIRST hit,
   since neither clears on its own; a clean poll clears the stored error. Every poll is one metered feed request, so pacing is
   ADAPTIVE (`adaptivePollMinutes` in `status.ts`, fixed tiers not knobs), tiered
   by when news can actually happen: 6h/3h/1h/30m/15m as departure nears

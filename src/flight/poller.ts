@@ -54,6 +54,12 @@ export function permanentFailureKind(err: unknown): 'auth' | 'quota' | null {
   if (!(err instanceof Error)) return null;
   if (/HTTP 40[13]\b/.test(err.message)) return 'auth';
   if (/HTTP (402|429)\b/.test(err.message)) return 'quota';
+  // Gateways don't always use the honest status: API.market answers a lapsed
+  // AeroDataBox plan with «HTTP 400: No active Subscription found.» — that is
+  // an auth failure wearing a 400, and it ate ten polls in silence once.
+  if (/subscription|api[ -]?key|unauthori[sz]ed|forbidden|not subscribed/i.test(err.message)) {
+    return 'auth';
+  }
   return null;
 }
 

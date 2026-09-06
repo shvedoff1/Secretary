@@ -12,6 +12,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   that's the signal to add a test rather than skip it. Prefer fast, dependency-free
   unit tests (vitest) over none.
 - Run `npm run build` and `npm test` before committing; both must be green.
+- **Text the user reads is written by the MAIN model** (`ANTHROPIC_MODEL`). The cheap
+  tier (Haiku) is for HIDDEN passes only — classifiers, extractors, condensing notes,
+  watch verdicts — whose output the main model or deterministic code consumes. A
+  reply, digest advice, quip or any prose posted to the chat never comes from Haiku:
+  the calendar advice ran on it once and invented airport terminals.
 - Keep providers behind `ExpenseProvider` (`src/core/provider.ts`); `splid-js` is only
   imported under `src/providers/splid/`.
 
@@ -419,7 +424,8 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   stored as 18:25 Asia/Saigon as «11:25» (UTC) made the bot "find" a phantom
   mismatch against the flight feed; the set_timezone confirmation also warns the
   model that THIS turn's context was rendered pre-switch. `src/llm/calendarAdvice.ts`
-  (Haiku, best-effort) then writes a short advice/quip block appended UNDER that
+  (the MAIN model — `ANTHROPIC_CALENDAR_MODEL` only overrides — best-effort)
+  then writes a short advice/quip block appended UNDER that
   list — funny when the chat's humor allows (`modeAllowsHumor` +
   `isChatHumorEnabled`; tutor stays sober), practical otherwise — and can't
   touch the facts above it. The advice is fed MORE than the digest shows so it

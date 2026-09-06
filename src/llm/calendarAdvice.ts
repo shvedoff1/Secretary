@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { loadConfig } from '../config.js';
+import { loadConfig, type Config } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
 
@@ -82,6 +82,11 @@ export const ADVICE_SYSTEM = `Ты пишешь короткую приписк�
 Тон задаётся в запросе: «шутливо» — дружеский стёб, разговорный русский, можно
 дерзко, но по-доброму (и совет всё равно конкретный); «спокойно» — по делу.`;
 
+/** Which model writes the advice: the override knob, else the main model. */
+export function adviceModel(cfg: Pick<Config, 'ANTHROPIC_MODEL' | 'ANTHROPIC_CALENDAR_MODEL'>): string {
+  return cfg.ANTHROPIC_CALENDAR_MODEL ?? cfg.ANTHROPIC_MODEL;
+}
+
 export interface CalendarAdviceArgs {
   /** The already-rendered digest text (what the user will see above the line). */
   noticeText: string;
@@ -127,7 +132,10 @@ export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<stri
       : '';
   try {
     const res = await getAnthropic().messages.create({
-      model: cfg.ANTHROPIC_CALENDAR_MODEL,
+      // The MAIN model, not the cheap tier: this is prose the user reads and
+      // acts on (the same rule as every other user-facing reply) — Haiku here
+      // produced the invented-terminal advice. The knob only overrides.
+      model: adviceModel(cfg),
       max_tokens: 600,
       system: ADVICE_SYSTEM,
       messages: [

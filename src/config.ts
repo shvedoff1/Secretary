@@ -399,10 +399,12 @@ const ConfigSchema = z.object({
   CALENDAR_SOON_TRAVEL_MINUTES: z.coerce.number().int().positive().default(180),
   // Cap on connected calendars per chat.
   CALENDAR_MAX_PER_CHAT: z.coerce.number().int().positive().default(4),
-  // Cheap model that writes the one advice/quip line on top of a reminder digest
-  // (the event list itself is rendered deterministically — the model can't touch
-  // the times/titles).
-  ANTHROPIC_CALENDAR_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Model that writes the advice/quip block under a reminder digest (the event
+  // list itself is rendered deterministically — the model can't touch the
+  // times/titles). Unset = the MAIN model (ANTHROPIC_MODEL): the block is text
+  // the user READS, and the cheap tier is for hidden passes only — on Haiku it
+  // invented airport terminals and airlines. Set to override.
+  ANTHROPIC_CALENDAR_MODEL: z.string().min(1).optional(),
   // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't
   // addressed in, continuing the conversation by context as if it had been pinged.
   // To avoid butting into an active back-and-forth (and lagging behind), it does NOT

@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { loadConfig } from '../config.js';
+import { loadConfig, type Config } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
 
@@ -7,6 +7,12 @@ import { getAnthropic } from './client.js';
 // the deterministically-rendered digest. The model never renders the event list
 // itself — titles and times reach the chat verbatim from the calendar; this
 // pass only adds preparation advice. Best-effort: any failure → no line.
+//
+// Terminals, gates and airlines are BANNED from the model's own memory: asked
+// for concrete advice it once sent a user flying Etihad out of Bangkok to
+// «T1 или T3 для Emirates» — neither exists at BKK. Those facts reach the
+// model only through the details block (booking description, or the live
+// flight-feed line that calendar/flightFacts.ts adds when a feed is set).
 //
 // Concreteness is the whole point (feedback: «убедись, что паспорт под рукой» is
 // useless). The model gets more than the digest shows — event DESCRIPTIONS
@@ -22,8 +28,9 @@ export const ADVICE_SYSTEM = `Ты пишешь короткую приписк�
 Плохо (слишком общо, так НЕ писать): «Убедись, что паспорт под рукой, главное не
 опаздывай». Хорошо — привязка к конкретным местам, временам и данным:
 «Вылет в 11:25 из SGN (Таншоннят) — до аэропорта из центра Хошимина 30-50 минут
-по пробкам, международный терминал — T2. Выезжай к 8:30, посадочный в телефон,
-для Камбоджи можно e-visa или виза по прилёте (30$, фото)».
+по пробкам; в брони указан терминал 2. Выезжай к 8:30, посадочный в телефон,
+для Камбоджи можно e-visa или виза по прилёте (30$, фото)». (Терминал здесь
+взят из ДЕТАЛЕЙ брони, не из памяти — см. правило ниже.)
 
 Как этого добиться:
 - СЧИТАЙ время сам: от времени события отними дорогу и запас и назови конкретное
@@ -35,8 +42,17 @@ export const ADVICE_SYSTEM = `Ты пишешь короткую приписк�
 - В ДЕТАЛЯХ событий (ниже списка) часто лежат номер брони, терминал, место,
   адрес — используй их, они точные.
 - НИКОГДА не выдумывай данные КОНКРЕТНОЙ брони/рейса, которых нет в данных:
-  терминал, гейт, время, номер места. Общее знание («в SGN международные рейсы —
-  T2») — можно; «твой гейт B12» из воздуха — нельзя.
+  терминал, гейт, время, номер места, авиакомпанию. ТЕРМИНАЛЫ, ГЕЙТЫ и
+  АВИАКОМПАНИИ — только из деталей (бронь или строка «Рейс … данные …» из фида
+  статусов), НИКОГДА из памяти: память путает аэропорты и авиакомпании (у
+  Бангкока BKK нет деления на T1/T3, а рейс EY — это Etihad, не Emirates), и
+  один такой ляп обнуляет доверие ко всей приписке. Нет терминала в деталях
+  или фид пишет «не сообщает» — НЕ называй его вовсе или одной фразой отправь
+  к брони/табло. Не гадай авиакомпанию по коду рейса. «Твой гейт B12» из
+  воздуха — нельзя. Из общих знаний можно только то, в чём ты действительно
+  уверен: какой это аэропорт и город, сколько до него ехать, визовые правила.
+- Ошибка в деталях хуже пропуска: лучше короче и точно, чем длинно и с
+  выдуманной подробностью.
 - ПЕРЕЛЁТЫ — запас в аэропорту НЕ считай на глаз, это жёсткие минимумы:
   международный рейс — быть в аэропорту за 2-3 часа до вылета (никогда не
   советуй меньше 2; «за час до вылета» на международный — это опоздание, не
@@ -65,6 +81,22 @@ export const ADVICE_SYSTEM = `Ты пишешь короткую приписк�
 
 Тон задаётся в запросе: «шутливо» — дружеский стёб, разговорный русский, можно
 дерзко, но по-доброму (и совет всё равно конкретный); «спокойно» — по делу.`;
+
+/** Which model writes the advice: the override knob, else the PRECISE tier
+ *  (Opus by default — a digest is a handful of short calls a day and a wrong
+ *  «выезжай к…» costs a flight, so this is where the strongest model pays). */
+export function adviceModel(
+  cfg: Pick<Config, 'ANTHROPIC_PRECISE_MODEL' | 'ANTHROPIC_CALENDAR_MODEL'>,
+): string {
+  return cfg.ANTHROPIC_CALENDAR_MODEL ?? cfg.ANTHROPIC_PRECISE_MODEL;
+}
+
+// Room for the model to think before it writes: on Opus 5 adaptive thinking
+// is on when `thinking` is omitted (that's wanted here — the «выезжай к 8:30»
+// arithmetic and the "is there time left" honesty are exactly what it buys),
+// and thinking tokens count against max_tokens. The visible answer stays
+// short (the >900-char guard below); the budget is for the reasoning.
+export const ADVICE_MAX_TOKENS = 4096;
 
 export interface CalendarAdviceArgs {
   /** The already-rendered digest text (what the user will see above the line). */
@@ -111,8 +143,11 @@ export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<stri
       : '';
   try {
     const res = await getAnthropic().messages.create({
-      model: cfg.ANTHROPIC_CALENDAR_MODEL,
-      max_tokens: 600,
+      // The PRECISE tier, never the cheap one: this is prose the user reads
+      // and acts on before a flight — Haiku here produced the invented-terminal
+      // advice. The calendar knob only overrides.
+      model: adviceModel(cfg),
+      max_tokens: ADVICE_MAX_TOKENS,
       system: ADVICE_SYSTEM,
       messages: [
         {

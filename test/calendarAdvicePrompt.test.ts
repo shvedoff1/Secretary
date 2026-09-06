@@ -33,3 +33,25 @@ describe('calendar advice prompt — flight rules', () => {
     expect(badExample).not.toContain('за 2 часа');
   });
 });
+
+// The model sent a user flying Etihad (EY) out of Bangkok to «T1 или T3 для
+// Emirates» — the old prompt INVITED it («общее знание "в SGN — T2" — можно»).
+// Terminals, gates and airlines now come only from the details block.
+describe('calendar advice prompt — no terminals/airlines from memory', () => {
+  it('bans terminals, gates and airlines that are not in the data', () => {
+    expect(ADVICE_SYSTEM).toContain('ТЕРМИНАЛЫ, ГЕЙТЫ и');
+    expect(ADVICE_SYSTEM).toContain('АВИАКОМПАНИИ — только из деталей');
+    expect(ADVICE_SYSTEM).toContain('НИКОГДА из памяти');
+    expect(ADVICE_SYSTEM).toContain('Не гадай авиакомпанию по коду рейса');
+    // The concrete failure is named so the model can't repeat it.
+    expect(ADVICE_SYSTEM).toContain('Бангкока BKK нет деления на T1/T3');
+    expect(ADVICE_SYSTEM).toContain('Etihad, не Emirates');
+  });
+
+  it('no longer blesses "general knowledge" terminals', () => {
+    expect(ADVICE_SYSTEM).not.toContain('T2») — можно');
+    expect(ADVICE_SYSTEM).not.toContain('международный терминал — T2');
+    // The good example still shows a terminal — sourced from the booking.
+    expect(ADVICE_SYSTEM).toContain('в брони указан терминал 2');
+  });
+});

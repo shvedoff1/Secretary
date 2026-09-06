@@ -12,6 +12,15 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   that's the signal to add a test rather than skip it. Prefer fast, dependency-free
   unit tests (vitest) over none.
 - Run `npm run build` and `npm test` before committing; both must be green.
+- **Text the user reads is written by the MAIN model** (`ANTHROPIC_MODEL`). The cheap
+  tier (Haiku) is for HIDDEN passes only — classifiers, extractors, condensing notes,
+  watch verdicts — whose output the main model or deterministic code consumes. A
+  reply, digest advice, quip or any prose posted to the chat never comes from Haiku:
+  the calendar advice ran on it once and invented airport terminals. Above the main
+  model sits the PRECISE tier (`ANTHROPIC_PRECISE_MODEL`, default Opus): low-volume
+  user-facing text where a wrong detail costs more than the tokens — today the
+  calendar digest advice («выезжай к 17:30» before a flight). Adaptive thinking is
+  on there (omit `thinking`; give `max_tokens` room for it).
 - Keep providers behind `ExpenseProvider` (`src/core/provider.ts`); `splid-js` is only
   imported under `src/providers/splid/`.
 
@@ -419,7 +428,9 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   stored as 18:25 Asia/Saigon as «11:25» (UTC) made the bot "find" a phantom
   mismatch against the flight feed; the set_timezone confirmation also warns the
   model that THIS turn's context was rendered pre-switch. `src/llm/calendarAdvice.ts`
-  (Haiku, best-effort) then writes a short advice/quip block appended UNDER that
+  (the PRECISE tier — `ANTHROPIC_PRECISE_MODEL`, Opus by default, with adaptive
+  thinking; `ANTHROPIC_CALENDAR_MODEL` only overrides — best-effort)
+  then writes a short advice/quip block appended UNDER that
   list — funny when the chat's humor allows (`modeAllowsHumor` +
   `isChatHumorEnabled`; tutor stays sober), practical otherwise — and can't
   touch the facts above it. The advice is fed MORE than the digest shows so it
@@ -428,6 +439,17 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   plus the current chat-local time for «выезжай к 8:30» math; its prompt allows
   the model's own knowledge of famous PLACES (airports, cities, visa rules) but
   bans invented BOOKING data (a terminal/gate/time not present in the event).
+  TERMINALS, GATES and AIRLINES are banned from memory outright (it once sent
+  an Etihad passenger at BKK to «T1 или T3 для Emirates» — neither exists
+  there): they reach the model only via the details block — the booking
+  description, or the live flight-feed line `flightFacts.ts` adds when a
+  flight feed is configured (flight numbers parsed from the title/location,
+  one metered request per flight on its departure-local date; an unknown
+  terminal is SAID to be unknown, a feed miss/failure becomes an explicit
+  «не называй» line, never a gap). Events are DEDUPED on read (`dedupe.ts`,
+  applied in `listEvents`): the same title at the same instant cached from two
+  connected calendars is one event to the reader — the digest used to list a
+  flight twice and ping it twice.
   `reminders.ts` sends (notify first, mark slot after — a failed send retries
   next tick) and records the post as an assistant turn + chat-log line, like the
   watch/scheduler posts. The `calendar_events` tool (`handler.ts`) answers «что

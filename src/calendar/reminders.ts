@@ -16,6 +16,7 @@ import {
   type NoticeEvent,
 } from './notice.js';
 import { calendarAdviceLine } from '../llm/calendarAdvice.js';
+import { flightFactsFor } from './flightFacts.js';
 import { formatInTimezone } from '../util/schedule.js';
 import {
   getTimezone,
@@ -69,6 +70,12 @@ async function sendNotice(
   // all — a tutor room stays sober), plain practical advice otherwise. The
   // advice is Claude-side (no OpenAI dependency) and best-effort.
   const funny = modeAllowsHumor(getChatMode(chatId)) && isChatHumorEnabled(chatId);
+  const noticeEvents = notice.kind === 'soon' ? [notice.event] : notice.events;
+  // Flight facts come from the flight FEED, not the model's memory: the one
+  // time it "knew" Bangkok's terminals it invented a T1/T3 split and the
+  // wrong airline. With a feed configured the real terminal/gate/airline/times
+  // join the details; without one the prompt forbids naming them at all.
+  const flightFacts = await flightFactsFor(noticeEvents, tz, tzKnown);
   const advice = await calendarAdviceLine({
     noticeText: body,
     kind: notice.kind,
@@ -81,7 +88,7 @@ async function sendNotice(
     // turn the advice from «за 2 часа в аэропорт» into «выезжай к 8:30, T2».
     tz,
     nowLocal: formatInTimezone(Date.now(), tz),
-    details: noticeDetails(notice.kind === 'soon' ? [notice.event] : notice.events, tz, tzKnown),
+    details: [...noticeDetails(noticeEvents, tz, tzKnown), ...flightFacts],
   });
   const text = advice ? `${body}\n\n${advice}` : body;
 

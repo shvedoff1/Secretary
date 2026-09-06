@@ -13,6 +13,11 @@ const ConfigSchema = z.object({
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
 
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
+  // The PRECISE tier: user-facing text where a wrong detail costs more than the
+  // tokens do — a calendar digest's «выезжай к 17:30, терминал…» before a
+  // flight. Small volume (a few short calls a day per chat), so the strongest
+  // model is affordable there; the chat itself stays on ANTHROPIC_MODEL.
+  ANTHROPIC_PRECISE_MODEL: z.string().default('claude-opus-5'),
   // Speech-to-text for voice messages. Optional: without a key, voice notes are
   // ignored (we never transcribe). OpenAI's audio API is called over plain HTTP,
   // so no extra npm dependency is needed.
@@ -399,10 +404,13 @@ const ConfigSchema = z.object({
   CALENDAR_SOON_TRAVEL_MINUTES: z.coerce.number().int().positive().default(180),
   // Cap on connected calendars per chat.
   CALENDAR_MAX_PER_CHAT: z.coerce.number().int().positive().default(4),
-  // Cheap model that writes the one advice/quip line on top of a reminder digest
-  // (the event list itself is rendered deterministically — the model can't touch
-  // the times/titles).
-  ANTHROPIC_CALENDAR_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Model that writes the advice/quip block under a reminder digest (the event
+  // list itself is rendered deterministically — the model can't touch the
+  // times/titles). Unset = the PRECISE tier (ANTHROPIC_PRECISE_MODEL): the
+  // block is text the user READS and acts on before a flight, and the cheap
+  // tier is for hidden passes only — on Haiku it invented airport terminals
+  // and airlines. Set to override.
+  ANTHROPIC_CALENDAR_MODEL: z.string().min(1).optional(),
   // Spontaneous "chime-in": occasionally jump into group chatter the bot wasn't
   // addressed in, continuing the conversation by context as if it had been pinged.
   // To avoid butting into an active back-and-forth (and lagging behind), it does NOT

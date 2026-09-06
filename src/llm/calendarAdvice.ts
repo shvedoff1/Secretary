@@ -82,10 +82,21 @@ export const ADVICE_SYSTEM = `Ты пишешь короткую приписк�
 Тон задаётся в запросе: «шутливо» — дружеский стёб, разговорный русский, можно
 дерзко, но по-доброму (и совет всё равно конкретный); «спокойно» — по делу.`;
 
-/** Which model writes the advice: the override knob, else the main model. */
-export function adviceModel(cfg: Pick<Config, 'ANTHROPIC_MODEL' | 'ANTHROPIC_CALENDAR_MODEL'>): string {
-  return cfg.ANTHROPIC_CALENDAR_MODEL ?? cfg.ANTHROPIC_MODEL;
+/** Which model writes the advice: the override knob, else the PRECISE tier
+ *  (Opus by default — a digest is a handful of short calls a day and a wrong
+ *  «выезжай к…» costs a flight, so this is where the strongest model pays). */
+export function adviceModel(
+  cfg: Pick<Config, 'ANTHROPIC_PRECISE_MODEL' | 'ANTHROPIC_CALENDAR_MODEL'>,
+): string {
+  return cfg.ANTHROPIC_CALENDAR_MODEL ?? cfg.ANTHROPIC_PRECISE_MODEL;
 }
+
+// Room for the model to think before it writes: on Opus 5 adaptive thinking
+// is on when `thinking` is omitted (that's wanted here — the «выезжай к 8:30»
+// arithmetic and the "is there time left" honesty are exactly what it buys),
+// and thinking tokens count against max_tokens. The visible answer stays
+// short (the >900-char guard below); the budget is for the reasoning.
+export const ADVICE_MAX_TOKENS = 4096;
 
 export interface CalendarAdviceArgs {
   /** The already-rendered digest text (what the user will see above the line). */
@@ -132,11 +143,11 @@ export async function calendarAdviceLine(args: CalendarAdviceArgs): Promise<stri
       : '';
   try {
     const res = await getAnthropic().messages.create({
-      // The MAIN model, not the cheap tier: this is prose the user reads and
-      // acts on (the same rule as every other user-facing reply) — Haiku here
-      // produced the invented-terminal advice. The knob only overrides.
+      // The PRECISE tier, never the cheap one: this is prose the user reads
+      // and acts on before a flight — Haiku here produced the invented-terminal
+      // advice. The calendar knob only overrides.
       model: adviceModel(cfg),
-      max_tokens: 600,
+      max_tokens: ADVICE_MAX_TOKENS,
       system: ADVICE_SYSTEM,
       messages: [
         {

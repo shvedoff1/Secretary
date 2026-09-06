@@ -16,7 +16,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   tier (Haiku) is for HIDDEN passes only — classifiers, extractors, condensing notes,
   watch verdicts — whose output the main model or deterministic code consumes. A
   reply, digest advice, quip or any prose posted to the chat never comes from Haiku:
-  the calendar advice ran on it once and invented airport terminals.
+  the calendar advice ran on it once and invented airport terminals. Above the main
+  model sits the PRECISE tier (`ANTHROPIC_PRECISE_MODEL`, default Opus): low-volume
+  user-facing text where a wrong detail costs more than the tokens — today the
+  calendar digest advice («выезжай к 17:30» before a flight). Adaptive thinking is
+  on there (omit `thinking`; give `max_tokens` room for it).
 - Keep providers behind `ExpenseProvider` (`src/core/provider.ts`); `splid-js` is only
   imported under `src/providers/splid/`.
 
@@ -424,7 +428,8 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   stored as 18:25 Asia/Saigon as «11:25» (UTC) made the bot "find" a phantom
   mismatch against the flight feed; the set_timezone confirmation also warns the
   model that THIS turn's context was rendered pre-switch. `src/llm/calendarAdvice.ts`
-  (the MAIN model — `ANTHROPIC_CALENDAR_MODEL` only overrides — best-effort)
+  (the PRECISE tier — `ANTHROPIC_PRECISE_MODEL`, Opus by default, with adaptive
+  thinking; `ANTHROPIC_CALENDAR_MODEL` only overrides — best-effort)
   then writes a short advice/quip block appended UNDER that
   list — funny when the chat's humor allows (`modeAllowsHumor` +
   `isChatHumorEnabled`; tutor stays sober), practical otherwise — and can't

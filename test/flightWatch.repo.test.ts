@@ -100,6 +100,32 @@ describe('flightWatch repo', () => {
     expect(w!.failCount).toBe(0);
   });
 
+  it('keeps the last feed error with the failure count and clears it on a clean poll', async () => {
+    const repo = await freshRepo();
+    const id = repo.createFlightWatch(args());
+    expect(repo.listFlightWatches(100)[0]!.lastError).toBeNull();
+
+    repo.setFlightCheckResult(id, {
+      nextCheckAt: 1,
+      lastCheckedAt: 1,
+      lastSnapshot: null,
+      failCount: 3,
+      lastError: 'AeroDataBox HTTP 400: date out of range',
+    });
+    expect(repo.listFlightWatches(100)[0]!.lastError).toBe(
+      'AeroDataBox HTTP 400: date out of range',
+    );
+
+    // A successful poll omits the field — the stale cause must not linger.
+    repo.setFlightCheckResult(id, {
+      nextCheckAt: 2,
+      lastCheckedAt: 2,
+      lastSnapshot: snapshot,
+      failCount: 0,
+    });
+    expect(repo.listFlightWatches(100)[0]!.lastError).toBeNull();
+  });
+
   it('delete and forceCheck are scoped to the chat', async () => {
     const repo = await freshRepo();
     const id = repo.createFlightWatch(args());

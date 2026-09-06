@@ -247,6 +247,65 @@ describe('runDueFlightWatches', () => {
     expect(warnings.length).toBe(1);
   });
 
+  it('the streak warning names the feed\'s answer, and /flight can read it back', async () => {
+    const { poller, repo } = await freshModules();
+    const id = armWatch(repo, { flightDate: '2026-09-20' });
+    fetchMock.mockRejectedValue(new Error('AeroDataBox HTTP 400: Flight date is out of range'));
+
+    for (let i = 0; i < 10; i++) {
+      repo.forceFlightCheck(id, 100);
+      await poller.runDueFlightWatches(bot);
+    }
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const text = String(sendMessage.mock.calls[0]![1]);
+    expect(text).toContain('K6829 на 2026-09-20');
+    expect(text).toContain('AeroDataBox HTTP 400: Flight date is out of range');
+    expect(repo.listFlightWatches(100)[0]!.lastError).toBe(
+      'AeroDataBox HTTP 400: Flight date is out of range',
+    );
+
+    // The next good poll clears the cause along with the count.
+    fetchMock.mockResolvedValue([snap({ flightDate: '2026-09-20' })]);
+    repo.forceFlightCheck(id, 100);
+    await poller.runDueFlightWatches(bot);
+    const [w] = repo.listFlightWatches(100);
+    expect(w!.failCount).toBe(0);
+    expect(w!.lastError).toBeNull();
+  });
+
+  it('warns on the FIRST hit of a lapsed subscription even when the gateway says HTTP 400', async () => {
+    const { poller, repo } = await freshModules();
+    const id = armWatch(repo);
+    fetchMock.mockRejectedValue(new Error('AeroDataBox HTTP 400: No active Subscription found.'));
+
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const text = String(sendMessage.mock.calls[0]![1]);
+    expect(text).toContain('API-ключом');
+    expect(text).toContain('No active Subscription found');
+
+    repo.forceFlightCheck(id, 100);
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns on the FIRST quota failure (a spent allowance fails every poll until the reset)', async () => {
+    const { poller, repo } = await freshModules();
+    const id = armWatch(repo);
+    fetchMock.mockRejectedValue(new Error('AeroDataBox HTTP 429: quota exceeded'));
+
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const text = String(sendMessage.mock.calls[0]![1]);
+    expect(text).toContain('лимит запросов');
+    expect(text).toContain('HTTP 429');
+
+    repo.forceFlightCheck(id, 100);
+    await poller.runDueFlightWatches(bot);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('disarms an expired watch with a farewell note instead of polling it', async () => {
     const { poller, repo } = await freshModules();
     armWatch(repo, { expiresAt: Date.now() - 1 });
@@ -349,5 +408,35 @@ describe('runDueFlightWatches', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('describeFeedError / permanentFailureKind', () => {
+  it('renders errors as one bounded line and names timeouts', async () => {
+    const { poller } = await freshModules();
+    expect(poller.describeFeedError(new Error('  multi\nline   message '))).toBe('multi line message');
+    expect(poller.describeFeedError('plain string')).toBe('plain string');
+    expect(poller.describeFeedError(new Error(''))).toBe('Error');
+    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    expect(poller.describeFeedError(timeout)).toContain('таймаут');
+    const long = poller.describeFeedError(new Error('x'.repeat(500)));
+    expect(long.length).toBeLessThanOrEqual(200);
+    expect(long.endsWith('…')).toBe(true);
+  });
+
+  it('classifies only auth and quota statuses as permanent', async () => {
+    const { poller } = await freshModules();
+    expect(poller.permanentFailureKind(new Error('AeroDataBox HTTP 401: bad key'))).toBe('auth');
+    expect(poller.permanentFailureKind(new Error('AeroAPI HTTP 403'))).toBe('auth');
+    expect(poller.permanentFailureKind(new Error('AeroDataBox HTTP 429: quota'))).toBe('quota');
+    expect(poller.permanentFailureKind(new Error('AeroDataBox HTTP 402: payment'))).toBe('quota');
+    expect(poller.permanentFailureKind(new Error('AeroDataBox HTTP 400: date'))).toBeNull();
+    // A lapsed plan reported with the wrong status is still an auth failure.
+    expect(
+      poller.permanentFailureKind(new Error('AeroDataBox HTTP 400: No active Subscription found.')),
+    ).toBe('auth');
+    expect(poller.permanentFailureKind(new Error('aviationstack error: 101 invalid api key'))).toBe('auth');
+    expect(poller.permanentFailureKind(new Error('HTTP 4013 weird'))).toBeNull();
+    expect(poller.permanentFailureKind('HTTP 401')).toBeNull();
   });
 });

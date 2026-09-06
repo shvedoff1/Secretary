@@ -55,7 +55,12 @@ export async function cmdFlight(ctx: Context): Promise<void> {
     const next = formatInTimezone(Math.max(w.nextCheckAt, Date.now()), tz);
     const until = formatInTimezone(w.expiresAt, tz);
     const date = w.flightDate ? ` на ${w.flightDate}` : '';
-    const fails = w.failCount > 0 ? ` ⚠️ ${w.failCount} неудачных попыток подряд` : '';
+    // The stored cause is the diagnosis («HTTP 400: date out of range», a
+    // timeout) — the one thing a user can act on without reading server logs.
+    const fails =
+      w.failCount > 0
+        ? ` ⚠️ ${w.failCount} неудачных попыток подряд${w.lastError ? ` (последний ответ источника: ${w.lastError})` : ''}`
+        : '';
     return `🛩 #${w.id} «${w.title}» — рейс ${w.flight}${date}, следующая проверка ${next} (чаще ближе к вылету), слежу до ${until}${fails}`;
   });
   await ctx.reply(

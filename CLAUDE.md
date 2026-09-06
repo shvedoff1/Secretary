@@ -483,7 +483,16 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   API.market, `x-api-market-key`). Then FlightAware AeroAPI (`AEROAPI_KEY`,
   `aeroapi.ts`) — pay-per-query, no monthly minimum, $5/mo free allowance on the
   Personal tier — and aviationstack (`AVIATIONSTACK_API_KEY`) as the last
-  fallback. Snapshot ISO times are airport-LOCAL wall time by contract: for
+  fallback. The configured keys are a CHAIN, not just a pick
+  (`flightFeedProviders`): one request walks them top-down and a provider that
+  THROWS (HTTP failure, timeout, a lapsed plan answered as «HTTP 400: No active
+  Subscription found» — watch #2 for EY407 sat blind on a dead AeroDataBox key
+  with other feeds configured) hands the same request to the next one; an
+  EMPTY answer does NOT fall through («no data yet» for a far-future date is
+  normal and re-asking every feed would double the metered calls per poll).
+  The answering feed is the one stamped as `source`; all-failed throws one
+  message naming each feed's answer (a lone provider's message stays
+  verbatim). Snapshot ISO times are airport-LOCAL wall time by contract: for
   aviationstack that is what the feed already sends (its UTC offsets are
   unreliable, so rendering reads the strings' own wall clock), AeroAPI
   reports UTC + each airport's IANA zone, so `aeroapi.ts` converts to local ISO
@@ -506,7 +515,15 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   discipline (off for scheduled/inline/tutor, off on the expense-only scan).
   Active watches render in the context block ("Active flight watches") so the
   model never re-arms one; managed with `/flight` (`/flight del <id>`,
-  `/flight check <id>`). Every poll is one metered feed request, so pacing is
+  `/flight check <id>`). A FAILED poll stores the feed's answer on the row
+  (`flight_watch.last_error`, migration 033, `describeFeedError` — one bounded
+  line, timeouts named) next to `fail_count`, and both the 10-streak warning and
+  the `/flight` list quote it: «HTTP 400: date out of range» vs a timeout is the
+  whole diagnosis, and it must not live only in the process log. Auth (401/403,
+  or a subscription/api-key message under any status — API.market reports a
+  lapsed AeroDataBox plan as «HTTP 400: No active Subscription found») AND
+  quota (402/429) failures — `permanentFailureKind` — warn on the FIRST hit,
+  since neither clears on its own; a clean poll clears the stored error. Every poll is one metered feed request, so pacing is
   ADAPTIVE (`adaptivePollMinutes` in `status.ts`, fixed tiers not knobs), tiered
   by when news can actually happen: 6h/3h/1h/30m/15m as departure nears
   (>24h / 12-24h / 3-12h / 1-3h / final hour), measured against the freshest

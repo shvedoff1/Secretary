@@ -18,6 +18,8 @@ export interface FlightWatch {
   /** Baseline snapshot the next poll is diffed against (null before the first data). */
   lastSnapshot: FlightSnapshot | null;
   failCount: number;
+  /** What the feed answered on the latest failed poll (null once a poll succeeds). */
+  lastError: string | null;
   firedAt: number | null;
   createdAt: number;
 }
@@ -36,6 +38,7 @@ interface FlightWatchRow {
   last_checked_at: number | null;
   last_snapshot: string | null;
   fail_count: number;
+  last_error: string | null;
   fired_at: number | null;
   created_at: number;
 }
@@ -66,6 +69,7 @@ function toWatch(r: FlightWatchRow): FlightWatch {
     lastCheckedAt: r.last_checked_at,
     lastSnapshot: parseSnapshot(r.last_snapshot),
     failCount: r.fail_count,
+    lastError: r.last_error,
     firedAt: r.fired_at,
     createdAt: r.created_at,
   };
@@ -147,7 +151,11 @@ export function dueFlightWatches(nowMs: number): FlightWatch[] {
   return rows.map(toWatch);
 }
 
-/** Record the outcome of one poll and schedule the next. */
+/**
+ * Record the outcome of one poll and schedule the next. `lastError` is the
+ * feed's answer on a FAILED poll; omitting it (a successful poll) clears the
+ * stored one, so /flight never shows a stale cause next to a healthy watch.
+ */
 export function setFlightCheckResult(
   id: number,
   args: {
@@ -155,12 +163,14 @@ export function setFlightCheckResult(
     lastCheckedAt: number;
     lastSnapshot: FlightSnapshot | null;
     failCount: number;
+    lastError?: string | null;
   },
 ): void {
   getDb()
     .prepare(
       `UPDATE flight_watch
-       SET next_check_at = ?, last_checked_at = ?, last_snapshot = ?, fail_count = ?
+       SET next_check_at = ?, last_checked_at = ?, last_snapshot = ?, fail_count = ?,
+           last_error = ?
        WHERE id = ?`,
     )
     .run(
@@ -168,6 +178,7 @@ export function setFlightCheckResult(
       args.lastCheckedAt,
       args.lastSnapshot ? JSON.stringify(args.lastSnapshot) : null,
       args.failCount,
+      args.lastError ?? null,
       id,
     );
 }

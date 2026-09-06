@@ -483,7 +483,16 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   API.market, `x-api-market-key`). Then FlightAware AeroAPI (`AEROAPI_KEY`,
   `aeroapi.ts`) — pay-per-query, no monthly minimum, $5/mo free allowance on the
   Personal tier — and aviationstack (`AVIATIONSTACK_API_KEY`) as the last
-  fallback. Snapshot ISO times are airport-LOCAL wall time by contract: for
+  fallback. The configured keys are a CHAIN, not just a pick
+  (`flightFeedProviders`): one request walks them top-down and a provider that
+  THROWS (HTTP failure, timeout, a lapsed plan answered as «HTTP 400: No active
+  Subscription found» — watch #2 for EY407 sat blind on a dead AeroDataBox key
+  with other feeds configured) hands the same request to the next one; an
+  EMPTY answer does NOT fall through («no data yet» for a far-future date is
+  normal and re-asking every feed would double the metered calls per poll).
+  The answering feed is the one stamped as `source`; all-failed throws one
+  message naming each feed's answer (a lone provider's message stays
+  verbatim). Snapshot ISO times are airport-LOCAL wall time by contract: for
   aviationstack that is what the feed already sends (its UTC offsets are
   unreliable, so rendering reads the strings' own wall clock), AeroAPI
   reports UTC + each airport's IANA zone, so `aeroapi.ts` converts to local ISO

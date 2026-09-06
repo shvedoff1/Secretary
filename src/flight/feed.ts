@@ -4,11 +4,16 @@ import type { FlightPoint, FlightSnapshot } from './status.js';
 import { fetchAeroApiStatuses } from './aeroapi.js';
 import { fetchAeroDataBoxStatuses } from './aerodatabox.js';
 
-// The flight feed: a per-request dispatcher over two providers (flight HTTP
-// lives only here and in aeroapi.ts — the splid-js / Open-Meteo rule). Which
-// provider runs is decided by which key is configured; AeroAPI wins when both
-// are set (pay-per-query with a free monthly allowance suits bursty use far
-// better than aviationstack's monthly quota, and its data is fresher).
+// The flight feed: a per-request dispatcher over three providers (flight HTTP
+// lives only here, in aeroapi.ts and in aerodatabox.ts — the splid-js /
+// Open-Meteo rule). The configured keys form an ORDERED CHAIN (AeroDataBox →
+// AeroAPI → aviationstack) and one request walks it top-down: a provider that
+// THROWS (HTTP failure, timeout, a lapsed subscription answered as «HTTP 400:
+// No active Subscription found») hands the same request to the next configured
+// one, so one dead key never blinds a watch that has a working feed behind it.
+// An EMPTY answer does not fall through: «no data yet» for a far-future date is
+// the normal case and re-asking every feed would double the metered calls on
+// every poll. When every feed fails the error names each feed's answer.
 //
 // The aviationstack client below keeps its original design, driven by that
 // feed's free-plan quirks: no `flight_date` filter and no HTTPS, so we always
@@ -27,11 +32,20 @@ export type FlightFeedProvider = 'aerodatabox' | 'aeroapi' | 'aviationstack';
  * steers this simply by which keys are set.
  */
 export function flightFeedProvider(cfg: Config = loadConfig()): FlightFeedProvider | null {
-  if (!cfg.ENABLE_FLIGHTS) return null;
-  if (cfg.AERODATABOX_API_KEY) return 'aerodatabox';
-  if (cfg.AEROAPI_KEY) return 'aeroapi';
-  if (cfg.AVIATIONSTACK_API_KEY) return 'aviationstack';
-  return null;
+  return flightFeedProviders(cfg)[0] ?? null;
+}
+
+/**
+ * Every configured provider, in the order a request tries them (the fallback
+ * chain). Empty when the feature is off or no key is set.
+ */
+export function flightFeedProviders(cfg: Config = loadConfig()): FlightFeedProvider[] {
+  if (!cfg.ENABLE_FLIGHTS) return [];
+  const chain: FlightFeedProvider[] = [];
+  if (cfg.AERODATABOX_API_KEY) chain.push('aerodatabox');
+  if (cfg.AEROAPI_KEY) chain.push('aeroapi');
+  if (cfg.AVIATIONSTACK_API_KEY) chain.push('aviationstack');
+  return chain;
 }
 
 /** Whether the flight tools can work at all (switch on + some API key present). */
@@ -39,13 +53,6 @@ export function flightFeedConfigured(cfg: Config = loadConfig()): boolean {
   return flightFeedProvider(cfg) !== null;
 }
 
-/**
- * All statuses the configured feed currently has for one IATA flight number.
- * `dateLocal` is a hint: AeroDataBox has a dated endpoint (its schedule data
- * reaches into the future), the other two return nearby days and the date is
- * picked client-side as before. Throws on transport/API errors and when no
- * provider is configured.
- */
 /** Card-visible labels per provider; also what the request log line carries. */
 export const PROVIDER_LABELS: Record<FlightFeedProvider, string> = {
   aerodatabox: 'AeroDataBox',
@@ -61,27 +68,74 @@ export function tagSource(
   return snapshots.map((s) => ({ ...s, source: PROVIDER_LABELS[provider] }));
 }
 
+/** One provider's fetch; the map is injectable so the chain can be unit-tested. */
+export type FlightFeedAdapter = (
+  flightIata: string,
+  dateLocal?: string | null,
+) => Promise<FlightSnapshot[]>;
+
+const DEFAULT_ADAPTERS: Record<FlightFeedProvider, FlightFeedAdapter> = {
+  aerodatabox: (flight, date) => fetchAeroDataBoxStatuses(flight, date),
+  aeroapi: (flight) => fetchAeroApiStatuses(flight),
+  aviationstack: (flight) => fetchAviationstackStatuses(flight),
+};
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message || err.name : String(err);
+}
+
+/**
+ * All statuses the configured feeds currently have for one IATA flight number,
+ * walking the provider chain until one ANSWERS (see the header comment: a
+ * throw falls through to the next provider, an empty list does not). Each
+ * snapshot is stamped with the feed that answered. Throws when no provider is
+ * configured, or when every one failed — with a message naming each feed's
+ * answer, so the poller's warning and /flight can show the whole picture.
+ */
 export async function fetchFlightStatuses(
   flightIata: string,
   dateLocal?: string | null,
+  opts: { cfg?: Config; adapters?: Partial<Record<FlightFeedProvider, FlightFeedAdapter>> } = {},
 ): Promise<FlightSnapshot[]> {
-  const provider = flightFeedProvider();
-  if (provider === null) throw new Error('flight feed is not configured');
-  let snapshots: FlightSnapshot[];
-  if (provider === 'aerodatabox') {
-    snapshots = await fetchAeroDataBoxStatuses(flightIata, dateLocal);
-  } else if (provider === 'aeroapi') {
-    snapshots = await fetchAeroApiStatuses(flightIata);
-  } else {
-    snapshots = await fetchAviationstackStatuses(flightIata);
+  const chain = flightFeedProviders(opts.cfg);
+  if (chain.length === 0) throw new Error('flight feed is not configured');
+  const adapters = { ...DEFAULT_ADAPTERS, ...opts.adapters };
+  const failures: { provider: FlightFeedProvider; message: string }[] = [];
+  for (const provider of chain) {
+    let snapshots: FlightSnapshot[];
+    try {
+      snapshots = await adapters[provider](flightIata, dateLocal);
+    } catch (err) {
+      const message = errorText(err);
+      failures.push({ provider, message });
+      const next = chain[chain.indexOf(provider) + 1] ?? null;
+      logger.warn(
+        { provider, flight: flightIata, date: dateLocal ?? null, err, fallbackTo: next },
+        next ? 'flight feed provider failed, trying the next one' : 'flight feed provider failed',
+      );
+      continue;
+    }
+    // One INFO line per metered request: which feed, for what, and how much it
+    // saw — the first thing to read when an answer looks thin or stale. When a
+    // feed before it failed, that is named too.
+    logger.info(
+      {
+        provider,
+        flight: flightIata,
+        date: dateLocal ?? null,
+        results: snapshots.length,
+        fallbackFrom: failures.length > 0 ? failures.map((f) => f.provider) : undefined,
+      },
+      'flight feed request',
+    );
+    return tagSource(snapshots, provider);
   }
-  // One INFO line per metered request: which feed, for what, and how much it
-  // saw — the first thing to read when an answer looks thin or stale.
-  logger.info(
-    { provider, flight: flightIata, date: dateLocal ?? null, results: snapshots.length },
-    'flight feed request',
+  // A lone provider keeps its own message verbatim (the poller's status
+  // classifier reads it); a chain names each feed's answer in order.
+  if (failures.length === 1) throw new Error(failures[0]!.message);
+  throw new Error(
+    failures.map((f) => `${PROVIDER_LABELS[f.provider]}: ${f.message}`).join(' → '),
   );
-  return tagSource(snapshots, provider);
 }
 
 // --- aviationstack ---

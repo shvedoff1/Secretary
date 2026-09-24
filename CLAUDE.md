@@ -149,7 +149,13 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   every reply the humorizer skips (see the slang notes under `src/bot/`): same transport
   and knobs (`OPENAI_HUMOR_MODEL`, reasoning effort, timeout), but a vocabulary-only
   prompt plus the deterministic `factsPreserved` guard, so it can run on exact answers.
-  Both live and scheduled replies run humorizer-then-slang as an either/or. Timer tasks opt into this pass
+  Both live and scheduled replies run humorizer-then-slang as an either/or.
+  ADULT CONTENT: chats are adults' groups, so `SYSTEM_PROMPT` has an «Adult humour
+  and folklore» section (crude jokes/мат/dirty anecdotes are told, not refused;
+  hard limits: minors, harassing a real person, real harm) — the tutor prompt is
+  separate and never gets it. Both tone passes carry `HUMOR_ADULT_CONTENT_NOTE`
+  and are guarded by `rewriteRefused` (`src/llm/refusal.ts`): a rewrite that reads
+  as a refusal when the original didn't is discarded and the original ships. Timer tasks opt into this pass
   per-task: `schedule_task` takes a `humor` flag (stored on `scheduled_task.humor`,
   toggled later with `/taskhumor <id> on|off`), and the scheduler humorizes a firing
   task's plain-chat output only when that flag is set (still subject to the same

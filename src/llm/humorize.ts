@@ -2,6 +2,7 @@ import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { reasoningField, humorTimeoutSignal } from './openaiOptions.js';
 import type { ChatMode } from '../db/repos/chatSettings.repo.js';
+import { rewriteRefused } from './refusal.js';
 
 /**
  * Is the humorizer pass configured? It needs both the feature flag and an
@@ -136,13 +137,22 @@ Length: keep it punchy. You can stretch a little for the bit, but don't turn a o
  */
 export type HumorPersona = 'surfer' | 'dota' | 'funny' | { custom: string };
 
+/**
+ * Appended to every persona: the chat is an adults' group, and the reply being
+ * rewritten may be a crude joke or an anecdote full of мат. The tone pass must
+ * keep it as crude as it came — sanitising the punchline or answering with a
+ * refusal swaps the answer out (and `rewriteRefused` discards a refusal anyway).
+ */
+export const HUMOR_ADULT_CONTENT_NOTE = `Adult chat: this is a private chat of adults. The reply may be a crude or dirty joke, an anecdote with sexual or prison themes, or full of мат — that is normal here. Rewrite it just as crude: keep the swearing and the punchline intact, never soften, censor, moralise or add disclaimers, and never answer with a refusal instead of the rewrite.`;
+
 function personaPrompt(persona?: HumorPersona): string {
+  let base: string;
   if (persona && typeof persona === 'object') {
-    return buildCustomHumorSystemPrompt(persona.custom);
-  }
-  if (persona === 'dota') return DOTA_HUMOR_SYSTEM_PROMPT;
-  if (persona === 'funny') return FUNNY_HUMOR_SYSTEM_PROMPT;
-  return HUMOR_SYSTEM_PROMPT;
+    base = buildCustomHumorSystemPrompt(persona.custom);
+  } else if (persona === 'dota') base = DOTA_HUMOR_SYSTEM_PROMPT;
+  else if (persona === 'funny') base = FUNNY_HUMOR_SYSTEM_PROMPT;
+  else base = HUMOR_SYSTEM_PROMPT;
+  return `${base}\n\n${HUMOR_ADULT_CONTENT_NOTE}`;
 }
 
 /**
@@ -288,6 +298,9 @@ export async function humorize(
   const out = data.choices?.[0]?.message?.content?.trim();
   if (!out) {
     throw new Error('humorize returned empty content');
+  }
+  if (rewriteRefused(text, out)) {
+    throw new Error('humorize returned a refusal instead of a rewrite');
   }
   return out;
 }

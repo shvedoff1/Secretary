@@ -1,4 +1,5 @@
 import { loadConfig } from '../config.js';
+import { rewriteRefused } from './refusal.js';
 import { logger } from '../logger.js';
 import { reasoningField, humorTimeoutSignal } from './openaiOptions.js';
 import type { HumorLexiconTerm } from './humorize.js';
@@ -208,6 +209,10 @@ export async function applySlangOrOriginal(
   if (lexicon.filter((t) => t.term.trim()).length === 0) return text;
   try {
     const out = await applySlang(text, lexicon);
+    if (rewriteRefused(text, out)) {
+      logger.warn({ original: text, rewritten: out }, 'slang pass refused, keeping original');
+      return text;
+    }
     if (!factsPreserved(text, out)) {
       logger.warn(
         { original: text, rewritten: out },

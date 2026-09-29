@@ -1,3 +1,4 @@
+import { makeFoodReportHandler } from './food/handler.js';
 import type { Bot } from 'grammy';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
@@ -230,6 +231,8 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // Nor flight watches (flight_status, being read-only, stays live below).
         allowFlightWatch: false,
         allowPoi: false,
+        // A firing task must not write anyone's calorie diary (the report stays live).
+        allowFoodLog: false,
         history: [],
         userContent,
       },
@@ -258,6 +261,13 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // forecast and the bot posts the recommendation to the chat.
         surfForecast,
         addPoi: () => 'noop',
+        logFood: () => 'noop',
+        // «каждый вечер присылай итог по калориям»: the report only reads, so it
+        // stays live — for the person who created the task (a diary is personal).
+        foodReport:
+          task.tgUserId !== null
+            ? makeFoodReportHandler(task.chatId, task.tgUserId)
+            : () => 'Не знаю, чей дневник — у задачи нет автора.',
         // Spending report stays live too: a recurring task can post the daily
         // spending digest (it short-circuits to ready, humorized text).
         spendingReport: makeSpendingReportHandler(task.chatId),

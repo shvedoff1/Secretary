@@ -230,6 +230,43 @@ export const SummarizeChatZ = z.object({
 });
 export type SummarizeChatInput = z.infer<typeof SummarizeChatZ>;
 
+// Calorie diary («дневник еды»): log what the SENDER ate — one call per meal,
+// one item per dish/product, each with the model's own estimate. Totals are
+// computed by the handler, never by the model.
+export const FoodItemZ = z.object({
+  name: z.string().min(1).max(120),
+  grams: z.number().positive().max(5000).nullable(),
+  kcal: z.number().min(0).max(5000),
+  protein: z.number().min(0).max(500).nullable(),
+  fat: z.number().min(0).max(500).nullable(),
+  carbs: z.number().min(0).max(1000).nullable(),
+});
+export type FoodItemInput = z.infer<typeof FoodItemZ>;
+
+export const LogFoodZ = z.object({
+  action: z.enum(['add', 'remove', 'set_goal']),
+  items: z.array(FoodItemZ).max(30).nullable(),
+  meal: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).nullable(),
+  date: z.string().regex(DATE_RE).nullable(),
+  entryIds: z.array(z.number().int().positive()).max(50).nullable(),
+  goal: z
+    .object({
+      kcal: z.number().min(0).max(10000),
+      protein: z.number().min(0).max(1000).nullable(),
+      fat: z.number().min(0).max(1000).nullable(),
+      carbs: z.number().min(0).max(2000).nullable(),
+    })
+    .nullable(),
+});
+export type LogFoodInput = z.infer<typeof LogFoodZ>;
+
+// Read the sender's diary back: one day in full, or a period as statistics.
+export const FoodReportZ = z.object({
+  fromDate: z.string().regex(DATE_RE).nullable(),
+  toDate: z.string().regex(DATE_RE).nullable(),
+});
+export type FoodReportInput = z.infer<typeof FoodReportZ>;
+
 // --- JSON Schemas for the Anthropic tool definitions (strict tool use) ---
 
 export const recordExpenseJsonSchema = {
@@ -835,4 +872,90 @@ export const summarizeChatJsonSchema = {
     },
   },
   required: ['limit', 'fromDate', 'toDate', 'timezone'],
+} as const;
+
+const foodItemJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: {
+      type: 'string',
+      description:
+        'Short dish/product name in the user\'s language, with the key detail that drove the estimate («Гречка с маслом», «Капучино 300 мл на овсяном», «Шаурма с курицей»).',
+    },
+    grams: {
+      type: ['number', 'null'],
+      description: 'Portion weight (or ml for drinks) you assumed or were told. null only when a weight makes no sense (e.g. «2 яйца» can still be ~110).',
+    },
+    kcal: {
+      type: 'number',
+      description: 'Your best ESTIMATE of this portion\'s calories. If a nutrition label is visible, compute from its per-100g values × portion.',
+    },
+    protein: { type: ['number', 'null'], description: 'Protein, grams, estimated. null if you truly cannot estimate.' },
+    fat: { type: ['number', 'null'], description: 'Fat, grams, estimated.' },
+    carbs: { type: ['number', 'null'], description: 'Carbohydrates, grams, estimated.' },
+  },
+  required: ['name', 'grams', 'kcal', 'protein', 'fat', 'carbs'],
+} as const;
+
+export const logFoodJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['add', 'remove', 'set_goal'],
+      description:
+        '"add" — log what the sender ate (items). "remove" — delete logged entries by id (entryIds; «убери последнее» = the last id in "Food diary" of the context block). To CORRECT an entry, remove it and add the fixed one in the same turn. "set_goal" — set the sender\'s daily targets (goal).',
+    },
+    items: {
+      type: ['array', 'null'],
+      items: foodItemJsonSchema,
+      description: 'For add: one item per dish/product of this meal. null for other actions.',
+    },
+    meal: {
+      type: ['string', 'null'],
+      enum: ['breakfast', 'lunch', 'dinner', 'snack', null],
+      description: 'Which meal, from the words («на завтрак», «перекусил») or else from the chat-local time. null if unclear.',
+    },
+    date: {
+      type: ['string', 'null'],
+      description: 'Chat-LOCAL date YYYY-MM-DD the food belongs to, only when it is NOT today («вчера на ужин»). null => today.',
+    },
+    entryIds: {
+      type: ['array', 'null'],
+      items: { type: 'integer' },
+      description: 'For remove: entry ids (#N) from the context block or an earlier confirmation. null otherwise.',
+    },
+    goal: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        kcal: { type: 'number', description: 'Daily calorie target. 0 clears the goal.' },
+        protein: { type: ['number', 'null'] },
+        fat: { type: ['number', 'null'] },
+        carbs: { type: ['number', 'null'] },
+      },
+      required: ['kcal', 'protein', 'fat', 'carbs'],
+      description: 'For set_goal only; null otherwise.',
+    },
+  },
+  required: ['action', 'items', 'meal', 'date', 'entryIds', 'goal'],
+} as const;
+
+export const foodReportJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    fromDate: {
+      type: ['string', 'null'],
+      description:
+        'Start of the period, chat-LOCAL YYYY-MM-DD (inclusive), computed from "Current time (chat-local)". «за неделю» => 6 days before today. null/null => today.',
+    },
+    toDate: {
+      type: ['string', 'null'],
+      description: 'End of the period, chat-LOCAL YYYY-MM-DD (inclusive). Equal to fromDate for one day (full diary of that day); a range gives per-day statistics.',
+    },
+  },
+  required: ['fromDate', 'toDate'],
 } as const;

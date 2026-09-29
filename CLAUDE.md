@@ -81,7 +81,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   edit_memory | learn_expense_pattern | edit_lexicon | set_rule | set_timezone |
   schedule_task | manage_task | surf_forecast | add_poi | spending_report |
-  summarize_chat | web_search`. REMINDER TIMING is split by shape so the model never
+  summarize_chat | log_food | food_report | web_search`. REMINDER TIMING is split by shape so the model never
   does timezone arithmetic: a RELATIVE delay («через час 50», «на 1.50 от сейчас»)
   is passed as `schedule_task.inMinutes` and the handler (`resolveTiming` in
   `flows/assist.ts`) computes the fire instant from the server clock, storing a
@@ -787,6 +787,31 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   lexicon learning + chime, bot.ts skips auto-react). A photo in a tutor chat is a problem
   to solve, not a receipt (`handleReceiptPhoto` skips the Splid gate). The scheduler passes
   the mode too, so scheduled tasks in a tutor chat keep the persona.
+- `src/food/` — CALORIE DIARY («дневник еды»), the anti-calorie-app: no food-database
+  search, the user just says / voices / photographs what they ate and the MAIN model
+  estimates grams + kcal + БЖУ per item from its own knowledge (a visible nutrition
+  label => per-100g × portion). `log_food` (action add/remove/set_goal) writes one
+  `food_entry` row per item (migration 034, `food.repo.ts`); `food_report` reads a day
+  in full or a range as per-day stats. THE MODEL ESTIMATES, THE CODE COUNTS: every
+  total, average and goal % the user reads is computed in `nutrition.ts` (pure,
+  unit-tested) and handed back in the tool result — the prompt forbids adding numbers
+  up. Clarifying questions are prompt-driven (job 16 in `SYSTEM_PROMPT`): log clear
+  meals at once with a stated assumption; ask ONE question (with the default inside
+  it) only when a hidden detail swings the total by ~a third; never a second round.
+  Diaries are PERSONAL — keyed (chat_id, tg_user_id), every read scoped to both; the
+  day is the CHAT-LOCAL date fixed at insert (`local_date`), a future `date` is
+  clamped to today, and period stats keep unlogged days OUT of the average (an
+  unlogged day is not a zero-calorie day). The context block carries the sender's
+  TODAY line with entry ids (`foodContextFor` → «Food diary …», only when there is a
+  diary/goal — no line for chats that never log) so «удали последнее» can name a row;
+  it is dropped on memory-free (spend-shaped) turns, where dish names would be one
+  more title source. A food PHOTO is handled by the model like any photo (no gate);
+  the prompt's photo section routes plates/labels to `log_food`. Gating: both tools
+  off in tutor chats and on the expense-only scan; `log_food` off for scheduled and
+  inline runs (state writes), `food_report` stays live there (a recurring «вечером
+  итог по калориям» reports the task creator's diary; inline reads the asker's DM
+  diary). `/food` (`вчера|week|month|<N>d`, `goal <kcal> [Б Ж У]|off`, `del <id>`) is
+  the zero-token view. Off via `ENABLE_FOOD=false`.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

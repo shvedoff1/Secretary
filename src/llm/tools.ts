@@ -20,6 +20,8 @@ import {
   summarizeChatJsonSchema,
   calendarEventsJsonSchema,
   setTimezoneJsonSchema,
+  logFoodJsonSchema,
+  foodReportJsonSchema,
 } from './schema.js';
 
 export const RECORD_EXPENSE_TOOL = 'record_expense';
@@ -42,6 +44,8 @@ export const SPENDING_REPORT_TOOL = 'spending_report';
 export const SUMMARIZE_CHAT_TOOL = 'summarize_chat';
 export const CALENDAR_EVENTS_TOOL = 'calendar_events';
 export const SET_TIMEZONE_TOOL = 'set_timezone';
+export const LOG_FOOD_TOOL = 'log_food';
+export const FOOD_REPORT_TOOL = 'food_report';
 
 export interface ToolOptions {
   enableWebSearch: boolean;
@@ -115,6 +119,13 @@ export interface ToolOptions {
    *  chat tz, so saying where you are must just work. Off for scheduled runs and
    *  inline (state writes). */
   enableTimezone?: boolean;
+  /** Expose the log_food tool (calorie diary: add / remove / set goal). Off when
+   *  ENABLE_FOOD is off, in tutor chats, on the expense-only scan, and for
+   *  scheduled/inline runs (state writes). */
+  enableFoodLog?: boolean;
+  /** Expose the food_report tool (read the diary back). Read-only, so it stays on
+   *  for scheduled runs — «каждый вечер присылай итог по калориям». */
+  enableFoodReport?: boolean;
 }
 
 export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
@@ -293,6 +304,24 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
       description:
         'Set THIS chat\'s timezone. Call it when the user states where they are or their timezone, or asks for local time — «я во Вьетнаме», «мы сейчас на Бали», «переехал в Лиссабон», «мой часовой пояс GMT+7», «ставь время по местному» — and the "Chat timezone" in the context block is different or unknown. Map the place to an IANA zone yourself (country => its main zone unless a city narrows it). This drives reminders, calendar digests and time display for the whole chat, so do NOT call it for a place merely mentioned in passing (a trip being planned, someone ELSE\'s location) — only when the SPEAKER says where they/this chat are now or names the zone to use. After setting, confirm in one line with the resulting local time.',
       input_schema: setTimezoneJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableFoodLog) {
+    tools.push({
+      name: LOG_FOOD_TOOL,
+      description:
+        "The SENDER's personal calorie diary. action 'add' — log what the sender ATE or is eating right now, told in words, by voice or shown as a PHOTO of a plate/package/nutrition label («съел две сосиски с пюре», «на обед борщ и хлеб», a food photo): one call per meal, one item per dish, each with YOUR estimate of grams, kcal and БЖУ (typical portion when unstated; a visible label's per-100g values × portion). Ask ONE short clarifying question first only when an unknown detail would move the total by roughly a third or more (portion of a calorie-dense dish, oil/mayo/sugar, an unfamiliar restaurant dish) — offer your default in the question so «да» is enough; otherwise log right away and state your assumption. 'remove' — delete entries by id (#N from \"Food diary\" in the context block); to fix an entry remove it and add the corrected one in the same turn. 'set_goal' — daily targets («моя норма 1800 ккал»). NOT for food someone merely wants, plans or talks about, not for another person's meal, and NOT for a purchase to split (that's record_expense). The result carries the day's total — relay it, never add numbers up yourself.",
+      input_schema: logFoodJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableFoodReport) {
+    tools.push({
+      name: FOOD_REPORT_TOOL,
+      description:
+        "Read the SENDER's calorie diary back: «сколько я сегодня съел», «что я ел вчера», «статистика калорий за неделю», «сколько осталось до нормы». One day => the full diary of that day; a range => per-day totals, averages and goal hits. Pass chat-LOCAL dates (null/null => today). It returns exact figures computed from the log — relay them as-is and add at most a short comment; never recompute.",
+      input_schema: foodReportJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

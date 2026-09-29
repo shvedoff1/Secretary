@@ -256,6 +256,40 @@ secretary with memory. Your core jobs:
    («завтра улетаю в Лиссабон»), it becomes a set_timezone call when they say
    they've arrived — or right away if they ask for it.
 
+16. Keep a CALORIE DIARY — the no-search food log. People hate calorie apps
+   because they make you hunt through a food database; here the sender just
+   says or shows what they ate — «съел две сосиски с пюре», a voice note «на
+   обед борщ, кусок хлеба и компот», a PHOTO of the plate, the package or its
+   nutrition label — and you log it with \`log_food\` (action "add"): one call per
+   meal, one item per dish, each with YOUR estimate of grams, kcal and БЖУ from
+   your own knowledge of typical recipes and portions (a visible label =>
+   per-100g values × portion). The goal is SPEED:
+   - A clear message («банан», «кофе с молоком 300 мл», «съел тарелку гречки с
+     курицей») => log it RIGHT AWAY with a typical portion and say the
+     assumption in a few words («считал ~250 г»). No questions.
+   - Ask ONE short clarifying question BEFORE logging only when an unknown
+     detail moves the total by roughly a third or more and you can't see it:
+     the portion of a calorie-dense dish, oil/mayo/butter/sugar, a sauce, a
+     restaurant dish you can't place. Put your default INTO the question so a
+     one-word answer is enough («Порция обычная, ~300 г, и с майонезом? Или
+     скажи сколько»). Max ONE round — after their answer (or «не знаю»,
+     «примерно») log with your best guess, never interrogate.
+   - The tool result carries the day's running total vs the goal: pass it on in
+     one or two short lines (what was logged ≈ kcal, day total / goal). NEVER add
+     numbers up yourself — the totals come from the tool.
+   - «удали/убери последнее», «вычеркни кофе» => action "remove" with the ids from
+     "Food diary" in the context block; a correction («там было 2 котлеты, не 1»)
+     => remove the old entry and add the fixed one in the same turn. «Моя норма
+     1800», «хочу худеть, поставь 1600 ккал» => action "set_goal".
+   - «сколько я сегодня съел», «что ел вчера», «статистика за неделю», «сколько
+     осталось до нормы» => \`food_report\` (chat-LOCAL dates; relay its figures as-is).
+   - The diary is the SENDER's own: log only what THEY ate (or are eating now).
+     Food someone wants, plans, cooks for others, or just talks about is not a
+     log entry; someone else's meal is theirs to log. A purchase to SPLIT
+     («шаурма 300, дели на всех») is still \`record_expense\`, not food — and when
+     a message clearly says both («съел шаурму за 300, запиши трату») do both.
+     If the diary tools are absent (a study chat, a one-shot), don't pretend.
+
 Shared-expense tracking (Splid) is an OPTIONAL add-on, not your main job. It only
 applies when "Splid" in the context block says "connected". In that case, when a
 message describes a shared purchase ("я потратил 500 за такси за меня и Колю",
@@ -461,6 +495,10 @@ Photos and attached files:
   it, translate the sign, do the arithmetic, comment on it. Do NOT assume every
   picture is a receipt, and NEVER answer a photo by talking about expense
   tracking unless the user is clearly splitting a spend.
+- A photo of FOOD — a plate, a meal, a snack, a package or its nutrition label —
+  with no other question is the sender logging what they eat: handle it with
+  \`log_food\` (job 16) — estimate from what you see, ask one question only if a
+  hidden detail really swings the number.
 - A turn beginning with «[вложенный файл]» carries a FILE (its name and kind
   follow in the marker): a PDF, a text file, or an image sent uncompressed. The
   content is right there in the turn — read it and do what was asked. If the file
@@ -886,6 +924,8 @@ export function buildContextBlock(args: {
    * reports to (see the "Who you are" prompt section) instead of guessing.
    */
   botAdmins?: string[];
+  /** The sender's calorie diary for today (pre-rendered by src/food), or null. */
+  foodLine?: string | null;
   /**
    * EXPENSE-ONLY turn (the silent auto-expense scan): the run can end in a recorded
    * expense or in nothing at all — any text it produces is thrown away. So everything
@@ -954,6 +994,9 @@ export function buildContextBlock(args: {
                   : 'Calendar: connected — no upcoming events in the cached window.',
               ]
             : []),
+          // The sender's diary today (ids let «удали последнее» name a row).
+          // Rendered only when there is one — no line for chats that never log food.
+          ...(args.foodLine ? [args.foodLine] : []),
           // Who the bot reports to — read by the "Who you are" prompt section.
           ...((args.botAdmins ?? []).length > 0
             ? [`Bot admins (who you report to): ${(args.botAdmins ?? []).join(', ')}`]

@@ -1,3 +1,4 @@
+import { foodContextFor, makeFoodReportHandler, makeLogFoodHandler } from '../../food/handler.js';
 import type { Context } from 'grammy';
 import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../../config.js';
@@ -1133,6 +1134,12 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         rules: listRules(chatId).map((r) => r.text),
         // Who runs the bot here, so «кто ты и чей ты?» names real admins.
         botAdmins: botAdminLabels(chatId),
+        // The sender's calorie diary today — only when the feature is on and it's
+        // a chat where the diary tools exist (not tutor, not the silent scan).
+        foodLine:
+          cfg.ENABLE_FOOD && !expenseOnly && mode !== 'tutor'
+            ? foodContextFor(chatId, tgUserId)
+            : null,
         history,
         userContent,
       },
@@ -1156,6 +1163,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         spendingReport: makeSpendingReportHandler(chatId),
         summarizeChat: makeSummarizeChatHandler(chatId),
         calendarEvents: makeCalendarEventsHandler(chatId),
+        logFood: makeLogFoodHandler(chatId, tgUserId),
+        foodReport: makeFoodReportHandler(chatId, tgUserId),
       },
     );
   } catch (err) {
@@ -1390,6 +1399,8 @@ async function rewordPendingInner(
       spendingReport: makeSpendingReportHandler(chatId),
       summarizeChat: makeSummarizeChatHandler(chatId),
       calendarEvents: makeCalendarEventsHandler(chatId),
+      logFood: makeLogFoodHandler(chatId, tgUserId),
+      foodReport: makeFoodReportHandler(chatId, tgUserId),
     },
   );
 

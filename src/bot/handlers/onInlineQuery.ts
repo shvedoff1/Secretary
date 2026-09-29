@@ -1,3 +1,4 @@
+import { makeFoodReportHandler } from '../../food/handler.js';
 import type { Context } from 'grammy';
 import type { InlineQueryResult } from 'grammy/types';
 import { loadConfig } from '../../config.js';
@@ -307,6 +308,8 @@ export async function runInlineAnswer(args: {
       allowWatch: false,
       allowFlightWatch: false,
       allowPoi: false,
+      // No diary writes from a one-shot posted into a foreign chat.
+      allowFoodLog: false,
       // The calendar stays OFF inline even though it is read-only: the answer is
       // posted into a chat the bot can't see, and the user's personal calendar
       // events must never land in a foreign chat via a quick inline ask.
@@ -342,6 +345,9 @@ export async function runInlineAnswer(args: {
       summarizeChat: makeSummarizeChatHandler(chatId),
       // Never exposed inline (allowCalendar: false above) — noop belt-and-braces.
       calendarEvents: () => 'noop',
+      logFood: () => 'noop',
+      // Read-only and the asker's own DM diary (chatId = their tg id here).
+      foodReport: makeFoodReportHandler(chatId, chatId),
     },
   );
 

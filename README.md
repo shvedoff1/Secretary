@@ -33,6 +33,13 @@ added without touching the core.
   missed with «запомни, это трата» and it extracts the distinctive word(s) into the
   chat's dictionary, so future messages with that word auto-route as expenses.
   View/add/reset with `/trata` (`/trata дошик, на бензин`, `/trata clear`).
+- **Calorie diary (no food-database search)**: just tell the bot what you ate — in
+  words, by voice, or with a photo of the plate / package / nutrition label. It
+  estimates calories and macros per item (asking at most one short question when a
+  hidden detail — portion, oil, sauce — would swing the number), logs it and replies
+  with the day's total vs your goal. «сколько я сегодня съел», «статистика за
+  неделю», «моя норма 1800» work in words too; `/food` (`вчера`, `week`, `month`,
+  `goal 2000`, `del <id>`) is the zero-token view. Diaries are personal per chat.
 - **Voice transcript to admin**: every transcribed voice note is also DM'd to the admin
   (with the chat + sender), so flaky transcriptions can be spotted at a glance.
 - **Expense quip**: after you **confirm** an expense, a cheap OpenAI model appends a short
@@ -224,6 +231,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `FLIGHT_WATCH_MAX_PER_CHAT` | no | `4` | Active flight watches per chat |
 | `FLIGHT_WATCH_EXPIRES_HOURS` | no | `48` | Lifetime of an undated flight watch (a dated one lives until its date + 2 days) |
 | `FLIGHT_DELAY_NOTIFY_MINUTES` | no | `10` | Departure/arrival moves smaller than this are jitter, not a notification (small moves accumulate until they cross it) |
+| `ENABLE_FOOD` | no | `true` | Calorie diary: the `log_food` / `food_report` tools (meals by voice/photo/words, estimated kcal + БЖУ, daily goal, stats) and `/food` |
 | `ENABLE_SLANG` | no | `true` | Speak the chat's learned slang in **every** reply — including the exact/tool answers the humorizer never touches (a vocabulary-only rewrite, discarded if any number/link/@handle changed). Independent of `ENABLE_HUMOR`; needs `OPENAI_API_KEY`, reuses `OPENAI_HUMOR_MODEL`. Per chat: `/slang on\|off` |
 
 ## In-chat setup
@@ -249,6 +257,7 @@ Then just talk:
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
 · reminders: `/tasks` `/canceltask <id>` · calendar: `/calendar` (`/calendar add <ics-url> [имя]`, `/calendar del <id>`, `/calendar check`)
+· calorie diary: `/food` (`/food вчера|week|month`, `/food goal 2000`, `/food del <id>`)
 · lexicon: `/slang` (`/slang clear`, `/slang on|off`)
 · expense dictionary: `/trata` (`/trata <word>`, `/trata clear`)
 · chat log: admin `/chatlog <chatId>` (`/chatlog <chatId> clear`)

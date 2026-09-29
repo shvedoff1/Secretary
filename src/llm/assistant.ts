@@ -30,6 +30,8 @@ import {
   SUMMARIZE_CHAT_TOOL,
   CALENDAR_EVENTS_TOOL,
   SET_TIMEZONE_TOOL,
+  LOG_FOOD_TOOL,
+  FOOD_REPORT_TOOL,
 } from './tools.js';
 import {
   RecordExpenseZ,
@@ -52,6 +54,8 @@ import {
   SummarizeChatZ,
   CalendarEventsZ,
   SetTimezoneZ,
+  LogFoodZ,
+  FoodReportZ,
   toParsedExpense,
   type RecordExpenseInput,
   type RememberInput,
@@ -73,6 +77,8 @@ import {
   type SummarizeChatInput,
   type CalendarEventsInput,
   type SetTimezoneInput,
+  type LogFoodInput,
+  type FoodReportInput,
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 import { flightFeedConfigured } from '../flight/feed.js';
@@ -148,6 +154,12 @@ export interface AssistantContext {
   /** Expose the set_timezone tool (default true; false for scheduled runs and
    *  inline — a one-shot must not change the chat's clock). */
   allowTimezone?: boolean;
+  /** Expose the log_food tool (default true; false for scheduled runs and inline —
+   *  a one-shot must not write someone's diary). food_report is read-only and
+   *  rides ENABLE_FOOD alone. */
+  allowFoodLog?: boolean;
+  /** The sender's calorie diary for today, pre-rendered (null/absent = nothing to show). */
+  foodLine?: string | null;
   /** Whether this chat has a connected calendar (gates the tool, like splidConnected). */
   calendarConnected?: boolean;
   /** Pre-rendered upcoming-event lines for the context block (chat-local time). */
@@ -243,6 +255,10 @@ export interface AssistantHandlers {
   calendarEvents: (input: CalendarEventsInput) => string;
   /** Set the chat's timezone («я во Вьетнаме»); return a short confirmation. */
   setTimezone: (input: SetTimezoneInput) => string;
+  /** Calorie diary write (add / remove / set_goal); returns the day's running total. */
+  logFood: (input: LogFoodInput) => string;
+  /** Calorie diary read-back: a day in full or a period as statistics. */
+  foodReport: (input: FoodReportInput) => string;
 }
 
 export type AssistantResult =
@@ -382,6 +398,12 @@ export async function runAssistant(
     // «я во Вьетнаме» must work in every mode — the chat clock drives reminders
     // and digests everywhere. Off only where state writes are off.
     enableTimezone: !expenseOnly && ctx.allowTimezone !== false,
+    // The calorie diary: every non-tutor mode (a study room isn't a food log),
+    // never on the expense-only scan. Logging writes state, so it follows the
+    // scheduled/inline discipline; the report only reads, so it stays live for a
+    // recurring «вечером присылай итог по калориям».
+    enableFoodLog: !expenseOnly && !tutor && cfg.ENABLE_FOOD && ctx.allowFoodLog !== false,
+    enableFoodReport: !expenseOnly && !tutor && cfg.ENABLE_FOOD,
   });
 
   const contextBlock = tutor
@@ -429,6 +451,9 @@ export async function runAssistant(
         memoryTopics: memoryFree ? [] : (ctx.memoryTopics ?? []),
         rules: ctx.rules ?? [],
         botAdmins: ctx.botAdmins ?? [],
+        // The diary lists dish names — on a spend-shaped turn they'd be one more
+        // title source besides the message, so it goes with memory there.
+        foodLine: cfg.ENABLE_FOOD && !memoryFree ? (ctx.foodLine ?? null) : null,
         expenseOnly,
       });
 
@@ -799,6 +824,34 @@ export async function runAssistant(
             type: 'tool_result',
             tool_use_id: block.id,
             content: found,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === LOG_FOOD_TOOL) {
+          const parsed = LogFoodZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'log_food input failed validation');
+          }
+          const confirmation = parsed.success
+            ? handlers.logFood(parsed.data)
+            : 'Could not parse the food entry.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: confirmation,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === FOOD_REPORT_TOOL) {
+          const parsed = FoodReportZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'food_report input failed validation');
+          }
+          const report = parsed.success
+            ? handlers.foodReport(parsed.data)
+            : 'Could not parse the food report period.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: report,
             is_error: !parsed.success,
           });
         } else if (block.name === ADD_POI_TOOL) {

@@ -22,6 +22,7 @@ import { cmdFlight } from './commands/flight.js';
 import { cmdPoi, cmdDelPoi } from './commands/poi.js';
 import { cmdSlang } from './commands/lexicon.js';
 import { cmdRules } from './commands/rules.js';
+import { cmdFood } from './commands/food.js';
 import { cmdTrata } from './commands/expenseTerm.js';
 import { cmdPing } from './commands/ping.js';
 import { cmdDota } from './commands/dota.js';
@@ -138,6 +139,7 @@ export function buildBot(token: string): Bot {
   bot.command('delpoi', cmdDelPoi);
   bot.command('slang', cmdSlang);
   bot.command('rules', cmdRules);
+  bot.command('food', cmdFood);
   bot.command('trata', cmdTrata);
   bot.command('ping', cmdPing);
 
@@ -225,6 +227,7 @@ export const BOT_COMMANDS = [
   { command: 'delpoi', description: 'Удалить место по id' },
   { command: 'slang', description: 'Словечки, которые я подхватил из чата' },
   { command: 'rules', description: 'Правила поведения в этом чате (/rules add <текст>)' },
+  { command: 'food', description: 'Дневник еды: калории за день/неделю, цель' },
   { command: 'trata', description: 'Слова, которые я считаю тратами' },
   { command: 'ping', description: 'Пингануть состав (/ping show — глянуть без пинга)' },
   { command: 'dota', description: 'База по доте: /dota, /dota sync, /dota <название>' },

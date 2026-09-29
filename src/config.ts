@@ -275,6 +275,10 @@ const ConfigSchema = z.object({
   // Hard cap on one card's length, enforced at parse time — a card is a portrait,
   // not an essay, and an unbounded card would quietly eat the context budget.
   PROFILE_CARD_MAX_CHARS: z.coerce.number().int().positive().default(500),
+  // Calorie diary («дневник еды»): log meals by voice/photo/words via the
+  // log_food tool, read stats back with food_report and /food. Off => neither
+  // tool is exposed and /food says the feature is disabled.
+  ENABLE_FOOD: boolish.default(true),
   // Page watches ("вотчеры"): poll a URL until an awaited event appears on it
   // («следи за страницей и напиши, когда появятся сеансы»), then notify the chat.
   ENABLE_WATCH: boolish.default(true),

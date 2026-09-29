@@ -23,7 +23,7 @@ const MONTH = new Set(['month', 'месяц', '30']);
 
 /**
  * Parse `/food` arguments. Pure, so the grammar is unit-tested:
- * (none)/today · yesterday/вчера · week · month · <N>d · goal <kcal> [Б Ж У] ·
+ * (none)/today · yesterday/вчера · week · month · <N>d · goal <kcal> [Б Ж У] (brackets optional) ·
  * goal off · del <id> [id…].
  */
 export function parseFoodArgs(raw: string): FoodCommand {
@@ -42,8 +42,13 @@ export function parseFoodArgs(raw: string): FoodCommand {
     if (rest[0] === 'off' || rest[0] === 'нет' || rest[0] === 'сброс' || rest[0] === '0') {
       return { kind: 'goal_off' };
     }
-    const nums = rest.map((x) => Number(x.replace(',', '.')));
-    if (nums.length === 0 || nums.some((x) => !Number.isFinite(x) || x < 0) || nums[0]! <= 0) {
+    // Read the NUMBERS, forgive the wrapping: people copy the help's shape
+    // literally («goal 2400 [150 65 300]») or label them («б150 ж65 у300»,
+    // «2400ккал»). Order is always kcal, then Б Ж У.
+    const nums = (rest.join(' ').match(/\d+(?:[.,]\d+)?/g) ?? []).map((x) =>
+      Number(x.replace(',', '.')),
+    );
+    if (nums.length === 0 || nums.length > 4 || nums[0]! <= 0) {
       return { kind: 'help' };
     }
     return {
@@ -65,7 +70,7 @@ const HELP =
   'Дневник еды — просто скажи или покажи, что съел: «съел гречку с курицей», ' +
   'голосовое или фото тарелки/этикетки. Я прикину калории и БЖУ, если надо — уточню одно.\n\n' +
   '/food — сегодня · /food вчера · /food week · /food month\n' +
-  '/food goal 2000 [Б Ж У] — дневная цель · /food goal off\n' +
+  '/food goal 2000 — дневная цель в ккал; можно сразу с БЖУ в граммах: /food goal 2400 150 65 300 · /food goal off\n' +
   '/food del <id> — удалить запись';
 
 /**

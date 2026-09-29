@@ -32,6 +32,12 @@ describe('/food argument grammar', () => {
       carbs: 180,
     });
     expect(parseFoodArgs('goal off')).toEqual({ kind: 'goal_off' });
+    // Regression: the help showed «[Б Ж У]» and it was typed literally.
+    const full = { kind: 'goal', kcal: 2400, protein: 150, fat: 65, carbs: 300 };
+    expect(parseFoodArgs('goal 2400 [150 65 300]')).toEqual(full);
+    expect(parseFoodArgs('goal 2400 б150 ж65 у300')).toEqual(full);
+    expect(parseFoodArgs('goal 2400ккал, 150/65/300')).toEqual(full);
+    expect(parseFoodArgs('goal 2400 150 65 300 99')).toEqual({ kind: 'help' });
     expect(parseFoodArgs('goal abc')).toEqual({ kind: 'help' });
   });
 

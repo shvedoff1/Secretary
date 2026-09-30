@@ -55,18 +55,23 @@ describe('log_food add', () => {
   it('stores each item for the sender today and quotes the deterministic total', async () => {
     const { food, repo } = await load();
     const log = food.makeLogFoodHandler(-100, 7, now);
-    const out = log(
+    const res = log(
       add([
         item('Борщ', 250.4, { grams: 350, protein: 10, fat: 12, carbs: 25 }),
         item('Хлеб', 80),
       ]),
     );
+    const out = res.text;
     const rows = repo.listFoodEntries(-100, 7, '2026-09-29', '2026-09-29');
     expect(rows.map((r) => [r.name, r.kcal, r.meal])).toEqual([
       ['Борщ', 250, 'lunch'],
       ['Хлеб', 80, 'lunch'],
     ]);
     expect(out).toContain(`#${rows[0]!.id} Борщ (350 г) — 250 ккал · Б 10 · Ж 12 · У 25`);
+    // The user gets the day TABLE (card); the model is told not to repeat it.
+    expect(res.card).toContain('| · Борщ 350г | 250 | 10 | 12 | 25 |');
+    expect(res.card).not.toMatch(/#\d/);
+    expect(out).toContain('НЕ повторяй цифры');
     // An item with no macro estimate says so instead of pretending zeros.
     expect(out).toContain(`#${rows[1]!.id} Хлеб — 80 ккал.`);
     // БЖУ for the meal and for the whole day, not just calories.
@@ -77,14 +82,14 @@ describe('log_food add', () => {
     expect(out).toContain('Цели по калориям нет');
 
     // A second meal adds to the same day's total.
-    const out2 = log(add([item('Яблоко', 70)], { meal: 'snack' }));
+    const out2 = log(add([item('Яблоко', 70)], { meal: 'snack' })).text;
     expect(out2).toContain('За сегодня всего: 400 ккал');
   });
 
   it('keeps diaries personal: another sender in the same group starts from zero', async () => {
     const { food } = await load();
     food.makeLogFoodHandler(-100, 7, now)(add([item('Пицца', 800)]));
-    const out = food.makeLogFoodHandler(-100, 8, now)(add([item('Салат', 150)]));
+    const out = food.makeLogFoodHandler(-100, 8, now)(add([item('Салат', 150)])).text;
     expect(out).toContain('всего: 150 ккал');
   });
 
@@ -116,9 +121,9 @@ describe('log_food add', () => {
       date: null,
       entryIds: null,
       goal: { kcal: 2000, protein: 120, fat: null, carbs: null },
-    });
+    }).text;
     expect(goalOut).toContain('Цель записана: 2 000 ккал');
-    const out = log(add([item('Гречка', 500)]));
+    const out = log(add([item('Гречка', 500)])).text;
     expect(out).toContain('500 / 2 000 ккал');
     // Macro goals show as progress too: protein has a target, fat/carbs don't.
     expect(out).toContain('Б 0/120 · Ж 0 · У 0 г');
@@ -136,12 +141,12 @@ describe('log_food remove / set_goal clear', () => {
     const [coffee] = repo.listFoodEntries(-100, 7, '2026-09-29', '2026-09-29');
     const [tea] = repo.listFoodEntries(-100, 8, '2026-09-29', '2026-09-29');
 
-    const out = mine({ ...add([]), action: 'remove', items: null, entryIds: [coffee!.id, tea!.id] });
+    const out = mine({ ...add([]), action: 'remove', items: null, entryIds: [coffee!.id, tea!.id] }).text;
     expect(out).toContain(`Удалил: #${coffee!.id} Кофе`);
     expect(out).toContain('300 ккал');
     expect(repo.listFoodEntries(-100, 8, '2026-09-29', '2026-09-29')).toHaveLength(1);
 
-    const miss = mine({ ...add([]), action: 'remove', items: null, entryIds: [tea!.id] });
+    const miss = mine({ ...add([]), action: 'remove', items: null, entryIds: [tea!.id] }).text;
     expect(miss).toContain('ничего не удалил');
   });
 
@@ -152,7 +157,7 @@ describe('log_food remove / set_goal clear', () => {
       log({ ...add([]), action: 'set_goal', items: null, goal: { kcal, protein: null, fat: null, carbs: null } });
     set(1800);
     expect(repo.getFoodGoal(-100, 7)?.kcal).toBe(1800);
-    expect(set(0)).toContain('снята');
+    expect(set(0).text).toContain('снята');
     expect(repo.getFoodGoal(-100, 7)).toBeNull();
   });
 });
@@ -165,20 +170,20 @@ describe('food_report', () => {
     log(add([item('Каша', 400)]));
     const report = food.makeFoodReportHandler(-100, 7, now);
 
-    const today = report({ fromDate: null, toDate: null });
+    const today = report({ fromDate: null, toDate: null }).card!;
     expect(today).toContain('Сегодня');
     expect(today).toContain('Каша');
     expect(today).not.toContain('Суп');
 
-    const week = report({ fromDate: '2026-09-23', toDate: '2026-09-29' });
-    expect(week).toContain('вс 27.09 — 300 ккал');
-    expect(week).toContain('В среднем за 2 дн. с записями: 350 ккал');
+    const week = report({ fromDate: '2026-09-23', toDate: '2026-09-29' }).card!;
+    expect(week).toContain('| вс 27.09 | 300 |');
+    expect(week).toContain('| **Среднее** | **350** |');
   });
 
   it('never reports into the future and fixes a reversed range', async () => {
     const { food } = await load();
     const report = food.makeFoodReportHandler(-100, 7, now);
-    const out = report({ fromDate: '2026-10-03', toDate: '2026-09-28' });
+    const out = report({ fromDate: '2026-10-03', toDate: '2026-09-28' }).card!;
     expect(out).toContain('28.09–29.09');
   });
 
@@ -187,5 +192,43 @@ describe('food_report', () => {
     expect(food.foodContextFor(-100, 7, NOON)).toBeNull();
     food.makeLogFoodHandler(-100, 7, now)(add([item('Банан', 105)]));
     expect(food.foodContextFor(-100, 7, NOON)).toContain('Банан 105');
+  });
+});
+
+describe('meal from the clock', () => {
+  it('maps chat-local hours to meals', async () => {
+    const { food } = await load();
+    expect([6, 10, 11, 15, 16, 17, 18, 22, 23, 2].map(food.mealForHour)).toEqual([
+      'breakfast', 'breakfast', 'lunch', 'lunch', 'snack', 'snack', 'dinner', 'dinner', 'snack', 'snack',
+    ]);
+  });
+
+  it('files an unnamed meal by the chat-local time, but the words win', async () => {
+    const { food, repo, settings } = await load();
+    settings.setTimezone(-100, 'Asia/Ho_Chi_Minh'); // UTC+7: 05:00 UTC is 12:00 local → lunch
+    const lunchtime = () => Date.UTC(2026, 8, 29, 5, 0);
+    const log = food.makeLogFoodHandler(-100, 7, lunchtime);
+    log(add([item('Фо', 450)], { meal: null }));
+    log(add([item('Блинчик', 200)], { meal: 'breakfast' }));
+    const rows = repo.listFoodEntries(-100, 7, '2026-09-29', '2026-09-29');
+    expect(rows.map((r) => [r.name, r.meal])).toEqual([
+      ['Фо', 'lunch'],
+      ['Блинчик', 'breakfast'],
+    ]);
+  });
+
+  it('leaves a PAST day\'s unnamed meal as «Другое» — now says nothing about yesterday', async () => {
+    const { food, repo } = await load();
+    food.makeLogFoodHandler(-100, 7, now)(add([item('Плов', 600)], { meal: null, date: '2026-09-28' }));
+    expect(repo.listFoodEntries(-100, 7, '2026-09-28', '2026-09-28')[0]!.meal).toBeNull();
+  });
+});
+
+describe('withFoodCard', () => {
+  it('puts the table under the words, or alone when there are none', async () => {
+    const { food } = await load();
+    expect(food.withFoodCard('Записал борщ.', '|t|')).toBe('Записал борщ.\n\n|t|');
+    expect(food.withFoodCard('  ', '|t|')).toBe('|t|');
+    expect(food.withFoodCard('Привет', null)).toBe('Привет');
   });
 });

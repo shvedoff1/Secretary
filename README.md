@@ -39,7 +39,9 @@ added without touching the core.
   hidden detail — portion, oil, sauce — would swing the number), logs it and replies
   with the day's total vs your goal. «сколько я сегодня съел», «статистика за
   неделю», «моя норма 1800» work in words too; `/food` (`вчера`, `week`, `month`,
-  `goal 2000`, `del <id>`) is the zero-token view. Diaries are personal per chat.
+  `goal 2000`) is the zero-token view: a table of meals with kcal + БЖУ, goal and
+  what is left. Meals are filed by the clock unless named; fix/delete in words.
+  Diaries are personal per chat.
 - **Voice transcript to admin**: every transcribed voice note is also DM'd to the admin
   (with the chat + sender), so flaky transcriptions can be spotted at a glance.
 - **Expense quip**: after you **confirm** an expense, a cheap OpenAI model appends a short
@@ -257,7 +259,7 @@ Then just talk:
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
 · reminders: `/tasks` `/canceltask <id>` · calendar: `/calendar` (`/calendar add <ics-url> [имя]`, `/calendar del <id>`, `/calendar check`)
-· calorie diary: `/food` (`/food вчера|week|month`, `/food goal 2000`, `/food del <id>`)
+· calorie diary: `/food` (`/food вчера|week|month`, `/food goal 2000`)
 · lexicon: `/slang` (`/slang clear`, `/slang on|off`)
 · expense dictionary: `/trata` (`/trata <word>`, `/trata clear`)
 · chat log: admin `/chatlog <chatId>` (`/chatlog <chatId> clear`)

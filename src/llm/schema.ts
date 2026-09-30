@@ -916,7 +916,7 @@ export const logFoodJsonSchema = {
     meal: {
       type: ['string', 'null'],
       enum: ['breakfast', 'lunch', 'dinner', 'snack', null],
-      description: 'Which meal, from the words («на завтрак», «перекусил») or else from the chat-local time. null if unclear.',
+      description: 'Which meal — ONLY when the words name it («на завтрак», «на ужин», «перекусил»). Otherwise null: the bot files it by the chat-local clock (завтрак/обед/перекус/ужин).',
     },
     date: {
       type: ['string', 'null'],

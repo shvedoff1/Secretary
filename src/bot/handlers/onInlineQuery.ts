@@ -1,4 +1,4 @@
-import { makeFoodReportHandler } from '../../food/handler.js';
+import { FOOD_NOOP, makeFoodReportHandler, withFoodCard } from '../../food/handler.js';
 import type { Context } from 'grammy';
 import type { InlineQueryResult } from 'grammy/types';
 import { loadConfig } from '../../config.js';
@@ -345,7 +345,7 @@ export async function runInlineAnswer(args: {
       summarizeChat: makeSummarizeChatHandler(chatId),
       // Never exposed inline (allowCalendar: false above) — noop belt-and-braces.
       calendarEvents: () => 'noop',
-      logFood: () => 'noop',
+      logFood: () => FOOD_NOOP,
       // Read-only and the asker's own DM diary (chatId = their tg id here).
       foodReport: makeFoodReportHandler(chatId, chatId),
     },
@@ -356,5 +356,5 @@ export async function runInlineAnswer(args: {
   if (result.kind !== 'text') {
     return 'Трату через инлайн не оформить — напиши мне в личку или в чат, где я подключён.';
   }
-  return result.text;
+  return withFoodCard(result.text, result.card);
 }

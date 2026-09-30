@@ -27,8 +27,11 @@ const tool = (name: string, input: Record<string, unknown>) => ({
   usage: { input_tokens: 1, output_tokens: 1 },
 });
 
-const logFood = vi.fn(() => 'Записал: #1 Банан — 105 ккал. За сегодня всего: 105 ккал.');
-const foodReport = vi.fn(() => 'report');
+const logFood = vi.fn(() => ({
+  text: 'Записал: #1 Банан — 105 ккал. За сегодня всего: 105 ккал.',
+  card: '| | ккал |\n|:--|--:|\n| · Банан | 105 |',
+}));
+const foodReport = vi.fn(() => ({ text: 'report', card: 'report-table' }));
 const handlers = { logFood, foodReport } as unknown as Parameters<
   typeof import('../src/llm/assistant.js').runAssistant
 >[1];
@@ -116,9 +119,23 @@ describe('food dispatch and context', () => {
     const { runAssistant } = await import('../src/llm/assistant.js');
     const res = await runAssistant(ctx(), handlers);
     expect(logFood).toHaveBeenCalledWith(input);
-    expect(res).toMatchObject({ kind: 'text', humorizable: false });
+    // The table travels as a separate card (appended by the caller after the
+    // tone passes), never inside the model's own words.
+    expect(res).toMatchObject({
+      kind: 'text',
+      text: 'Записал банан, 105 ккал.',
+      humorizable: false,
+      card: '| | ккал |\n|:--|--:|\n| · Банан | 105 |',
+    });
     const second = call(-1).messages.at(-1)!.content[0] as unknown as { content: string };
     expect(second.content).toContain('За сегодня всего: 105 ккал');
+  });
+
+  it('a card-only turn (model said nothing) is still a reply, not «…»', async () => {
+    responses = [tool('food_report', { fromDate: null, toDate: null }), text('')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const res = await runAssistant(ctx({ userContent: 'сколько я съел' }), handlers);
+    expect(res).toMatchObject({ kind: 'text', text: '', card: 'report-table' });
   });
 
   it('carries the diary line on a normal turn, drops it on a spend-shaped one', async () => {

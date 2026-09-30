@@ -106,40 +106,108 @@ export function itemLine(e: FoodEntry): string {
   return `#${e.id} ${e.name}${grams} — ${fmtNum(e.kcal)} ккал${m ? ` · ${m}` : ''}`;
 }
 
-/** Full diary of ONE day: headline, macros, then items grouped by meal. */
+// --- User-facing tables -----------------------------------------------------
+// The diary is read at a glance, so it renders as a GFM table (Telegram rich
+// messages show it natively; the HTML fallback turns it into an aligned <pre>).
+// No entry ids here: ids are for the model («удали последнее»), not for people —
+// global ids read as a meaningless running count across days.
+
+const TABLE_HEAD = '| | ккал | Б | Ж | У |\n|:--|--:|--:|--:|--:|';
+const NAME_MAX = 16;
+
+function cell(n: number | null): string {
+  return n === null ? '?' : fmtNum(n);
+}
+
+/** Table cells never contain a pipe; long names are cut so rows stay one line. */
+function cellText(s: string): string {
+  const clean = s.replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+  return [...clean].length > NAME_MAX
+    ? `${[...clean].slice(0, NAME_MAX - 1).join('').trimEnd()}…`
+    : clean;
+}
+
+function row(label: string, kcal: string, p: string, f: string, c: string): string {
+  return `| ${label} | ${kcal} | ${p} | ${f} | ${c} |`;
+}
+
+function boldRow(label: string, t: Totals): string {
+  return row(
+    `**${label}**`,
+    `**${fmtNum(t.kcal)}**`,
+    `**${fmtNum(t.protein)}**`,
+    `**${fmtNum(t.fat)}**`,
+    `**${fmtNum(t.carbs)}**`,
+  );
+}
+
+/** Goal and what is left of it (negative = over), macro cells «—» when not targeted. */
+function goalRows(t: Totals, goal: FoodGoal): string[] {
+  const g = (v: number | null) => (v ? fmtNum(v) : '—');
+  const left = (v: number | null, eaten: number) =>
+    v ? (v - eaten < 0 ? `−${fmtNum(eaten - v)}` : fmtNum(v - eaten)) : '—';
+  return [
+    row('Цель', g(goal.kcal), g(goal.protein), g(goal.fat), g(goal.carbs)),
+    row(
+      'Осталось',
+      left(goal.kcal, t.kcal),
+      left(goal.protein, t.protein),
+      left(goal.fat, t.fat),
+      left(goal.carbs, t.carbs),
+    ),
+  ];
+}
+
+/** Title + progress line above a day table. */
+function dayTitle(t: Totals, goal: FoodGoal | null, dateStr: string, label: string): string {
+  const title = `**${label}, ${weekday(dateStr)} ${shortDate(dateStr)}**`;
+  if (!goal) return `${title} · ${fmtNum(t.kcal)} ккал`;
+  const pct = Math.round((t.kcal / goal.kcal) * 100);
+  return `${title} · ${fmtNum(t.kcal)} из ${fmtNum(goal.kcal)} ккал\n${progressBar(t.kcal, goal.kcal)} ${pct}%`;
+}
+
+/**
+ * Full diary of ONE day as a table: a bold subtotal row per meal (in day order)
+ * with its items under it, then the day total, and with a goal — the goal and
+ * what is left of it for kcal and each macro.
+ */
 export function renderDay(
   entries: FoodEntry[],
   goal: FoodGoal | null,
   dateStr: string,
   label: string,
 ): string {
-  const head = `🍽 ${label} (${weekday(dateStr)} ${shortDate(dateStr)})`;
   if (entries.length === 0) {
-    return `${head}: пока ничего не записано.${goal ? ` Цель — ${fmtNum(goal.kcal)} ккал.` : ''}`;
+    const title = `**${label}, ${weekday(dateStr)} ${shortDate(dateStr)}**`;
+    return `${title} — пока ничего не записано.${goal ? ` Цель — ${fmtNum(goal.kcal)} ккал.` : ''}`;
   }
   const t = sumEntries(entries);
-  const lines = [`${head}: ${kcalHeadline(t.kcal, goal)}`, macrosLine(t, goal)];
+  const rows: string[] = [];
   for (const meal of MEAL_ORDER) {
     const group = entries.filter((e) => e.meal === meal);
     if (group.length === 0) continue;
-    const sub = sumEntries(group);
-    lines.push('');
-    lines.push(
-      `${meal ? MEAL_LABELS[meal] : 'Другое'} — ${fmtNum(sub.kcal)} ккал · ${macrosShort(sub)}`,
-    );
-    for (const e of group) lines.push(`  ${itemLine(e)}`);
+    rows.push(boldRow(meal ? MEAL_LABELS[meal] : 'Другое', sumEntries(group)));
+    for (const e of group) {
+      const grams = e.grams ? ` ${fmtNum(e.grams)}г` : '';
+      rows.push(
+        row(`· ${cellText(e.name)}${grams}`, fmtNum(e.kcal), cell(e.protein), cell(e.fat), cell(e.carbs)),
+      );
+    }
   }
+  rows.push(boldRow('Итого', t));
+  if (goal) rows.push(...goalRows(t, goal));
+  const out = [dayTitle(t, goal, dateStr, label), '', TABLE_HEAD, ...rows];
   if (t.missingMacros > 0) {
-    lines.push('');
-    lines.push(`(у ${t.missingMacros} поз. БЖУ не оценены — в суммы не вошли)`);
+    out.push('', `*? — БЖУ не оценены (${t.missingMacros} поз.), в итог не вошли*`);
   }
-  return lines.join('\n');
+  return out.join('\n');
 }
 
 /**
- * Statistics over a period: one line per day (days with nothing logged are shown
- * as gaps and kept OUT of the average — an unlogged day is not a zero-calorie day),
- * then averages and, with a goal, how many logged days stayed within it.
+ * Statistics over a period as a table: one row per day (days with nothing logged
+ * show «—» and are kept OUT of the average — an unlogged day is not a
+ * zero-calorie day), the average of logged days, the goal, and how many logged
+ * days stayed within it.
  */
 export function renderPeriod(
   entries: FoodEntry[],
@@ -154,36 +222,44 @@ export function renderPeriod(
     list.push(e);
     byDay.set(e.localDate, list);
   }
-  const lines = [`📊 Питание ${shortDate(fromDate)}–${shortDate(toDate)}`];
+  const title = `**Питание ${shortDate(fromDate)}–${shortDate(toDate)}**`;
+  const rows: string[] = [];
   const logged: Totals[] = [];
   for (const d of days) {
     const list = byDay.get(d);
+    const label = `${weekday(d)} ${shortDate(d)}`;
     if (!list || list.length === 0) {
-      lines.push(`${weekday(d)} ${shortDate(d)} — не записано`);
+      rows.push(row(label, '—', '', '', ''));
       continue;
     }
     const t = sumEntries(list);
     logged.push(t);
-    const pct = goal ? ` (${Math.round((t.kcal / goal.kcal) * 100)}%)` : '';
-    lines.push(`${weekday(d)} ${shortDate(d)} — ${fmtNum(t.kcal)} ккал${pct} · ${macrosShort(t)}`);
+    const over = goal && t.kcal > goal.kcal ? ' ↑' : '';
+    rows.push(row(label, `${fmtNum(t.kcal)}${over}`, fmtNum(t.protein), fmtNum(t.fat), fmtNum(t.carbs)));
   }
-  if (logged.length === 0) {
-    lines.push('', 'За этот период ничего не записано.');
-    return lines.join('\n');
-  }
+  if (logged.length === 0) return `${title} — за этот период ничего не записано.`;
   const n = logged.length;
-  const avg = (k: keyof Omit<Totals, 'missingMacros'>) =>
-    logged.reduce((s, t) => s + t[k], 0) / n;
-  lines.push('');
-  lines.push(`В среднем за ${n} дн. с записями: ${fmtNum(avg('kcal'))} ккал`);
-  lines.push(
-    `Б ${fmtNum(avg('protein'))} · Ж ${fmtNum(avg('fat'))} · У ${fmtNum(avg('carbs'))} г в день`,
-  );
+  const avg = (k: 'kcal' | 'protein' | 'fat' | 'carbs') => logged.reduce((s, t) => s + t[k], 0) / n;
+  const avgTotals: Totals = {
+    kcal: avg('kcal'),
+    protein: avg('protein'),
+    fat: avg('fat'),
+    carbs: avg('carbs'),
+    missingMacros: 0,
+  };
+  rows.push(boldRow('Среднее', avgTotals));
+  if (goal) {
+    const g = (v: number | null) => (v ? fmtNum(v) : '—');
+    rows.push(row('Цель', g(goal.kcal), g(goal.protein), g(goal.fat), g(goal.carbs)));
+  }
+  const out = [title, '', TABLE_HEAD.replace('| |', '| День |'), ...rows, ''];
+  const notes = [`среднее по ${n} дн. с записями`];
   if (goal) {
     const within = logged.filter((t) => t.kcal <= goal.kcal).length;
-    lines.push(`В цель (${fmtNum(goal.kcal)} ккал) уложился ${within} из ${n} дн.`);
+    notes.push(`в цель по ккал: ${within} из ${n}`, '↑ — перебор');
   }
-  return lines.join('\n');
+  out.push(`*${notes.join(' · ')}*`);
+  return out.join('\n');
 }
 
 /**

@@ -82,6 +82,7 @@ import {
 } from './schema.js';
 import type { Turn } from '../db/repos/conversation.repo.js';
 import { flightFeedConfigured } from '../flight/feed.js';
+import type { FoodToolResult } from '../food/handler.js';
 
 export interface AssistantContext {
   /**
@@ -255,10 +256,10 @@ export interface AssistantHandlers {
   calendarEvents: (input: CalendarEventsInput) => string;
   /** Set the chat's timezone («я во Вьетнаме»); return a short confirmation. */
   setTimezone: (input: SetTimezoneInput) => string;
-  /** Calorie diary write (add / remove / set_goal); returns the day's running total. */
-  logFood: (input: LogFoodInput) => string;
-  /** Calorie diary read-back: a day in full or a period as statistics. */
-  foodReport: (input: FoodReportInput) => string;
+  /** Calorie diary write (add / remove / set_goal): model text + the day table card. */
+  logFood: (input: LogFoodInput) => FoodToolResult;
+  /** Calorie diary read-back (a day in full or a period): model text + the table card. */
+  foodReport: (input: FoodReportInput) => FoodToolResult;
 }
 
 export type AssistantResult =
@@ -282,6 +283,10 @@ export type AssistantResult =
       scheduled?: boolean;
       humorizable?: boolean;
       toned?: boolean;
+      // A ready, deterministic markdown TABLE (the calorie diary) the caller
+      // appends under `text` verbatim — after any tone pass, so no rewrite and
+      // no model re-typing can touch its figures. Last diary call of the turn wins.
+      card?: string;
     };
 
 const MAX_ITERATIONS = 6;
@@ -461,6 +466,8 @@ export async function runAssistant(
   // Tracks whether any tool ran this turn. A plain-chat answer (no tools) is the
   // only thing safe to hand to the tone-only humorizer downstream.
   let usedTool = false;
+  // The diary table to show under the reply (see AssistantResult.card).
+  let card: string | undefined;
 
   // Normalise stored history into a valid alternating prefix (first turn user, no
   // two same-role turns in a row) before appending the current user message —
@@ -831,9 +838,9 @@ export async function runAssistant(
           if (!parsed.success) {
             logger.warn({ err: parsed.error }, 'log_food input failed validation');
           }
-          const confirmation = parsed.success
-            ? handlers.logFood(parsed.data)
-            : 'Could not parse the food entry.';
+          const out = parsed.success ? handlers.logFood(parsed.data) : null;
+          if (out?.card) card = out.card;
+          const confirmation = out ? out.text : 'Could not parse the food entry.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -845,9 +852,9 @@ export async function runAssistant(
           if (!parsed.success) {
             logger.warn({ err: parsed.error }, 'food_report input failed validation');
           }
-          const report = parsed.success
-            ? handlers.foodReport(parsed.data)
-            : 'Could not parse the food report period.';
+          const out = parsed.success ? handlers.foodReport(parsed.data) : null;
+          if (out?.card) card = out.card;
+          const report = out ? out.text : 'Could not parse the food report period.';
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -898,8 +905,20 @@ export async function runAssistant(
     // Tutor answers are never humorizable: precision is the whole point of the
     // mode, so the OpenAI tone pass must not touch them (this also covers the
     // scheduler path, which trusts this flag).
-    return { kind: 'text', text: text || '…', scheduled, humorizable: !usedTool && !tutor };
+    return {
+      kind: 'text',
+      // With a card attached an empty reply is fine — the table says it all.
+      text: text || (card ? '' : '…'),
+      scheduled,
+      humorizable: !usedTool && !tutor,
+      ...(card ? { card } : {}),
+    };
   }
 
-  return { kind: 'text', text: 'Что-то пошло не так, попробуй ещё раз.', scheduled };
+  return {
+    kind: 'text',
+    text: 'Что-то пошло не так, попробуй ещё раз.',
+    scheduled,
+    ...(card ? { card } : {}),
+  };
 }

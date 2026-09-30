@@ -1,4 +1,9 @@
-import { foodContextFor, makeFoodReportHandler, makeLogFoodHandler } from '../../food/handler.js';
+import {
+  foodContextFor,
+  makeFoodReportHandler,
+  makeLogFoodHandler,
+  withFoodCard,
+} from '../../food/handler.js';
 import type { Context } from 'grammy';
 import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../../config.js';
@@ -1286,21 +1291,30 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   });
   logger.info({ decision: slangDecision, source: args.source }, 'slang gate');
   const replyText =
-    slangDecision === 'sent' ? await applySlangOrOriginal(humorized, lexicon) : humorized;
+    slangDecision === 'sent' && humorized.trim()
+      ? await applySlangOrOriginal(humorized, lexicon)
+      : humorized;
 
-  await replyMarkdown(ctx, replyText, {
+  // The calorie-diary table rides UNDER the reply, attached after both tone
+  // passes: its figures and layout are rendered by code and must not be touched.
+  // History/log keep just the words — the table would bloat the history window,
+  // and the next turn's context carries the diary anyway.
+  await replyMarkdown(ctx, withFoodCard(replyText, result.card), {
     reply_to_message_id: ctx.message?.message_id,
   });
   // The bot's own post belongs in the raw log too — a recap that shows only what
   // people said reads as a monologue and loses what was answered/decided.
-  recordChatLog({ chatId, role: 'assistant', tgUserId: null, content: replyText });
+  // A diary turn may carry no words at all (the table said it) — keep a marker
+  // rather than an empty assistant turn.
+  const storedReply = replyText.trim() || (result.card ? '[показал таблицу дневника еды]' : replyText);
+  recordChatLog({ chatId, role: 'assistant', tgUserId: null, content: storedReply });
   // A reminder request is a completed side-action, not dialogue — keep it out of
   // history so it can't replay and re-create the reminder on a later message.
   if (result.scheduled) return 'replied';
   // Record this conversational exchange (and only this) for future context.
   // Store what we actually sent (the humorized text) so history matches the chat.
   addTurn({ chatId, role: 'user', tgUserId, senderName: senderName(ctx), content: historyText });
-  addTurn({ chatId, role: 'assistant', tgUserId: null, content: replyText });
+  addTurn({ chatId, role: 'assistant', tgUserId: null, content: storedReply });
   pruneOld(chatId, cfg.CONVERSATION_HISTORY_LIMIT * 2);
   return 'replied';
 }
@@ -1410,7 +1424,7 @@ async function rewordPendingInner(
   // than dead-ending with "Не понял правку" — the reword flow is a graceful superset,
   // not an expense-only trap.
   if (result.kind !== 'expense') {
-    await replyMarkdown(ctx, result.text, {
+    await replyMarkdown(ctx, withFoodCard(result.text, result.card), {
       reply_to_message_id: ctx.message?.message_id,
     });
     return;

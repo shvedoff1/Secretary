@@ -8,7 +8,7 @@ import {
   shiftDays,
 } from '../../food/handler.js';
 import { fmtNum } from '../../food/nutrition.js';
-import { replyLong } from '../../util/telegramText.js';
+import { sendRichMarkdown } from '../../util/richMessage.js';
 
 export type FoodCommand =
   | { kind: 'day'; offset: number }
@@ -71,7 +71,7 @@ const HELP =
   'голосовое или фото тарелки/этикетки. Я прикину калории и БЖУ, если надо — уточню одно.\n\n' +
   '/food — сегодня · /food вчера · /food week · /food month\n' +
   '/food goal 2000 — дневная цель в ккал; можно сразу с БЖУ в граммах: /food goal 2400 150 65 300 · /food goal off\n' +
-  '/food del <id> — удалить запись';
+  'Поправить или удалить запись — просто скажи: «убери шпроты», «курицы было 150 г».';
 
 /**
  * `/food` — the sender's calorie diary in this chat, zero LLM tokens: today's
@@ -90,14 +90,16 @@ export async function cmdFood(ctx: Context): Promise<void> {
   const today = localToday(foodTimezone(chatId));
 
   switch (cmd.kind) {
+    // Tables go out as rich markdown (native Telegram table, aligned <pre> fallback).
     case 'day': {
       const d = shiftDays(today, cmd.offset);
-      await replyLong(ctx, renderFoodReport(chatId, userId, d, d, today));
+      await sendRichMarkdown(ctx.api, chatId, renderFoodReport(chatId, userId, d, d, today));
       return;
     }
     case 'period':
-      await replyLong(
-        ctx,
+      await sendRichMarkdown(
+        ctx.api,
+        chatId,
         renderFoodReport(chatId, userId, shiftDays(today, -(cmd.days - 1)), today, today),
       );
       return;

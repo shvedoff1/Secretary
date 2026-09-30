@@ -88,7 +88,7 @@ describe('macros on every line', () => {
     );
   });
 
-  it('puts БЖУ on meal subtotals and per-day stats', () => {
+  it('puts БЖУ on meal subtotal rows and per-day rows of the tables', () => {
     const day = renderDay(
       [
         entry({ meal: 'snack', kcal: 160, protein: 8, fat: 8, carbs: 12 }),
@@ -98,8 +98,8 @@ describe('macros on every line', () => {
       '2026-09-30',
       'Сегодня',
     );
-    expect(day).toContain('Перекус — 160 ккал · Б 8 · Ж 8 · У 12');
-    expect(day).toContain('Другое — 380 ккал · Б 70 · Ж 9 · У 0');
+    expect(day).toContain('| **Перекус** | **160** | **8** | **8** | **12** |');
+    expect(day).toContain('| **Другое** | **380** | **70** | **9** | **0** |');
     expect(day).not.toContain('Без приёма пищи');
 
     const week = renderPeriod(
@@ -108,7 +108,7 @@ describe('macros on every line', () => {
       '2026-09-29',
       '2026-09-30',
     );
-    expect(week).toContain('вт 29.09 — 2 000 ккал · Б 150 · Ж 60 · У 200');
+    expect(week).toContain('| вт 29.09 | 2 000 | 150 | 60 | 200 |');
   });
 
   it('context line carries the day macros so «сколько белка осталось» is answerable', () => {
@@ -121,21 +121,48 @@ describe('macros on every line', () => {
   });
 });
 
-describe('renderDay', () => {
-  it('groups by meal in day order and shows ids for corrections', () => {
-    const out = renderDay(
+describe('renderDay (table)', () => {
+  const goal = { kcal: 2000, protein: 100, fat: null, carbs: null };
+  const out = () =>
+    renderDay(
       [
-        entry({ id: 12, meal: 'dinner', name: 'Паста', kcal: 600 }),
-        entry({ id: 10, meal: 'breakfast', name: 'Овсянка', grams: 250, kcal: 300 }),
+        entry({ id: 12, meal: 'dinner', name: 'Паста', kcal: 600, protein: 20, fat: 15, carbs: 90 }),
+        entry({ id: 10, meal: 'breakfast', name: 'Овсянка', grams: 250, kcal: 300, protein: 10, fat: 6, carbs: 50 }),
       ],
-      { kcal: 2000, protein: 100, fat: null, carbs: null },
+      goal,
       '2026-09-29',
       'Сегодня',
     );
-    expect(out.indexOf('Завтрак')).toBeLessThan(out.indexOf('Ужин'));
-    expect(out).toContain('#10 Овсянка (250 г) — 300 ккал');
-    expect(out).toContain('900 / 2 000 ккал');
-    expect(out).toContain('Б 2/100');
+
+  it('is a GFM table: meals in day order, items under them, total, goal and what is left', () => {
+    const md = out();
+    expect(md).toContain('**Сегодня, вт 29.09** · 900 из 2 000 ккал');
+    expect(md).toContain('| | ккал | Б | Ж | У |\n|:--|--:|--:|--:|--:|');
+    expect(md.indexOf('Завтрак')).toBeLessThan(md.indexOf('Ужин'));
+    expect(md).toContain('| · Овсянка 250г | 300 | 10 | 6 | 50 |');
+    expect(md).toContain('| **Итого** | **900** | **30** | **21** | **140** |');
+    // Untargeted macros show «—» rather than a fake goal.
+    expect(md).toContain('| Цель | 2 000 | 100 | — | — |');
+    expect(md).toContain('| Осталось | 1 100 | 70 | — | — |');
+  });
+
+  it('never shows entry ids — they are the model\'s handles, not the user\'s', () => {
+    expect(out()).not.toMatch(/#\d/);
+  });
+
+  it('shows an overshoot as a negative «left»', () => {
+    const md = renderDay([entry({ kcal: 2300, protein: 120, fat: 1, carbs: 1 })], goal, '2026-09-29', 'Сегодня');
+    expect(md).toContain('| Осталось | −300 | −20 | — | — |');
+  });
+
+  it('cuts long names so rows stay on one line and never lets a pipe break the table', () => {
+    const md = renderDay(
+      [entry({ name: 'Куриная грудка отварная/жареная | соус', grams: 230 })],
+      null,
+      '2026-09-29',
+      'Сегодня',
+    );
+    expect(md).toContain('| · Куриная грудка… 230г |');
   });
 
   it('says plainly when nothing is logged', () => {
@@ -143,9 +170,9 @@ describe('renderDay', () => {
   });
 });
 
-describe('renderPeriod', () => {
+describe('renderPeriod (table)', () => {
   it('keeps unlogged days out of the average instead of counting them as zero', () => {
-    const out = renderPeriod(
+    const md = renderPeriod(
       [
         entry({ localDate: '2026-09-27', kcal: 1800 }),
         entry({ localDate: '2026-09-29', kcal: 2200 }),
@@ -154,9 +181,10 @@ describe('renderPeriod', () => {
       '2026-09-27',
       '2026-09-29',
     );
-    expect(out).toContain('пн 28.09 — не записано');
-    expect(out).toContain('В среднем за 2 дн. с записями: 2 000 ккал');
-    expect(out).toContain('уложился 1 из 2 дн.');
+    expect(md).toContain('| пн 28.09 | — |  |  |  |');
+    expect(md).toContain('| вт 29.09 | 2 200 ↑ |');
+    expect(md).toContain('| **Среднее** | **2 000** |');
+    expect(md).toContain('среднее по 2 дн. с записями · в цель по ккал: 1 из 2');
   });
 
   it('reports an empty period', () => {

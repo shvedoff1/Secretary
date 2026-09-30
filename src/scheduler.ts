@@ -1,4 +1,4 @@
-import { makeFoodReportHandler } from './food/handler.js';
+import { FOOD_NOOP, makeFoodReportHandler, withFoodCard } from './food/handler.js';
 import type { Bot } from 'grammy';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
@@ -261,13 +261,13 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // forecast and the bot posts the recommendation to the chat.
         surfForecast,
         addPoi: () => 'noop',
-        logFood: () => 'noop',
+        logFood: () => FOOD_NOOP,
         // «каждый вечер присылай итог по калориям»: the report only reads, so it
         // stays live — for the person who created the task (a diary is personal).
         foodReport:
           task.tgUserId !== null
             ? makeFoodReportHandler(task.chatId, task.tgUserId)
-            : () => 'Не знаю, чей дневник — у задачи нет автора.',
+            : () => ({ text: 'Не знаю, чей дневник — у задачи нет автора.', card: null }),
         // Spending report stays live too: a recurring task can post the daily
         // spending digest (it short-circuits to ready, humorized text).
         spendingReport: makeSpendingReportHandler(task.chatId),
@@ -278,7 +278,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         calendarEvents: makeCalendarEventsHandler(task.chatId),
       },
     );
-    if (result.kind === 'text' && result.text.trim()) {
+    if (result.kind === 'text' && (result.text.trim() || result.card)) {
       // A task can opt into the tone-only humorizer (set when it was created).
       // Mirror the live chat flow: only a plain-chat answer (no tool used) is
       // eligible — a tool result (e.g. a surf forecast) carries facts that must
@@ -331,7 +331,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
           ? await applySlangOrOriginal(humorized, lexicon)
           : humorized;
       const prefix = task.title ? `⏰ ${task.title}\n` : '';
-      const posted = prefix + text;
+      // A diary table (food_report) goes under the text AFTER the tone passes, so
+      // its figures and layout reach the chat exactly as rendered.
+      const posted = prefix + withFoodCard(text, result.card);
       await sendMarkdown(bot, task.chatId, posted);
       // Record what the task posted into conversation history so a follow-up — a
       // reply or a next-message «обнови прогноз» — has the context it refers to.

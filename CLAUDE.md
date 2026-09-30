@@ -795,8 +795,20 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   in full or a range as per-day stats. THE MODEL ESTIMATES, THE CODE COUNTS: every
   total, average and goal % the user reads is computed in `nutrition.ts` (pure,
   unit-tested) and handed back in the tool result — the prompt forbids adding numbers
-  up. БЖУ are shown EVERYWHERE, not just kcal — each item, meal subtotals, per-day
-  stats, the log/remove confirmations and the context line (users track macros).
+  up. What the USER reads is a TABLE, not prose: `renderDay` / `renderPeriod` emit a
+  GFM table (meal subtotal rows in bold with items under them, total, goal, what is
+  left; per-day rows + average for a range — kcal AND БЖУ everywhere), sent as rich
+  markdown (native table, aligned `<pre>` fallback; names cut to 16 chars so the
+  fallback fits a phone). Diary tools return `FoodToolResult {text, card}`: `text`
+  (with #ids) goes to the model, `card` (the table, NO ids — global ids read as a
+  meaningless count across days) rides out on `AssistantResult.card` and the caller
+  appends it under the reply with `withFoodCard` AFTER the tone passes (live flow,
+  reword, scheduler, inline), so the model is told to answer in one short line and
+  never re-type numbers; history/log store only the words. MEAL is deterministic
+  unless the words name it: `meal: null` + today → `mealForHour` on the chat-local
+  clock (04–11 завтрак, 11–16 обед, 16–18 перекус, 18–23 ужин, night перекус); a past
+  day with no meal named stays «Другое». Deleting is by words («убери шпроты»);
+  `/food del <id>` still parses but is no longer advertised.
   Clarifying questions are prompt-driven (job 16 in `SYSTEM_PROMPT`): log clear
   meals at once with a stated assumption; ask ONE question (with the default inside
   it) only when a hidden detail swings the total by ~a third; never a second round.
@@ -812,8 +824,8 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   off in tutor chats and on the expense-only scan; `log_food` off for scheduled and
   inline runs (state writes), `food_report` stays live there (a recurring «вечером
   итог по калориям» reports the task creator's diary; inline reads the asker's DM
-  diary). `/food` (`вчера|week|month|<N>d`, `goal <kcal> [Б Ж У]|off`, `del <id>`) is
-  the zero-token view. Off via `ENABLE_FOOD=false`.
+  diary). `/food` (`вчера|week|month|<N>d`, `goal <kcal> [Б Ж У]|off`) is the
+  zero-token view. Off via `ENABLE_FOOD=false`.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

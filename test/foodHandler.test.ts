@@ -66,7 +66,12 @@ describe('log_food add', () => {
       ['Борщ', 250, 'lunch'],
       ['Хлеб', 80, 'lunch'],
     ]);
-    expect(out).toContain(`#${rows[0]!.id} Борщ ~350 г — 250 ккал`);
+    expect(out).toContain(`#${rows[0]!.id} Борщ (350 г) — 250 ккал · Б 10 · Ж 12 · У 25`);
+    // An item with no macro estimate says so instead of pretending zeros.
+    expect(out).toContain(`#${rows[1]!.id} Хлеб — 80 ккал.`);
+    // БЖУ for the meal and for the whole day, not just calories.
+    expect(out).toContain('За приём: 330 ккал · Б 10 · Ж 12 · У 25 г');
+    expect(out).toMatch(/За сегодня всего: 330 ккал, Б 10 · Ж 12 · У 25 г/);
     expect(out).toContain('За приём: 330 ккал');
     expect(out).toContain('За сегодня всего: 330 ккал');
     expect(out).toContain('Цели по калориям нет');
@@ -115,6 +120,8 @@ describe('log_food add', () => {
     expect(goalOut).toContain('Цель записана: 2 000 ккал');
     const out = log(add([item('Гречка', 500)]));
     expect(out).toContain('500 / 2 000 ккал');
+    // Macro goals show as progress too: protein has a target, fat/carbs don't.
+    expect(out).toContain('Б 0/120 · Ж 0 · У 0 г');
     expect(out).toContain('осталось 1 500');
   });
 });

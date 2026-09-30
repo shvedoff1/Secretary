@@ -17,7 +17,10 @@ import {
   datesInRange,
   fmtNum,
   foodContextLine,
+  itemLine,
   kcalHeadline,
+  macrosLine,
+  macrosShort,
   renderDay,
   renderPeriod,
   sumEntries,
@@ -97,12 +100,13 @@ export function makeLogFoodHandler(
         return `Записей ${ids.map((i) => `#${i}`).join(', ')} в дневнике этого человека нет — ничего не удалил.`;
       }
       const dates = [...new Set(removed.map((e) => e.localDate))];
+      const goal = getFoodGoal(chatId, tgUserId);
       const totals = dates.map((d) => {
-        const t = sumEntries(listFoodEntries(chatId, tgUserId, d, d)).kcal;
-        return `${d === today ? 'сегодня' : d}: ${kcalHeadline(t, getFoodGoal(chatId, tgUserId))}`;
+        const t = sumEntries(listFoodEntries(chatId, tgUserId, d, d));
+        return `${d === today ? 'сегодня' : d}: ${kcalHeadline(t.kcal, goal)}, ${macrosLine(t, goal)}`;
       });
       return (
-        `Удалил: ${removed.map((e) => `#${e.id} ${e.name} (${fmtNum(e.kcal)} ккал)`).join('; ')}. ` +
+        `Удалил: ${removed.map(itemLine).join('; ')}. ` +
         `Итого ${totals.join('; ')}.`
       );
     }
@@ -130,15 +134,13 @@ export function makeLogFoodHandler(
     const meal = sumEntries(added);
     const day = sumEntries(listFoodEntries(chatId, tgUserId, date, date));
     const goal = getFoodGoal(chatId, tgUserId);
-    const list = added
-      .map((e) => `#${e.id} ${e.name}${e.grams ? ` ~${fmtNum(e.grams)} г` : ''} — ${fmtNum(e.kcal)} ккал`)
-      .join('; ');
+    const list = added.map(itemLine).join('; ');
     return (
       `Записал (${date === today ? 'сегодня' : date}): ${list}. ` +
-      `За приём: ${fmtNum(meal.kcal)} ккал (Б ${fmtNum(meal.protein)} · Ж ${fmtNum(meal.fat)} · У ${fmtNum(meal.carbs)} г). ` +
-      `За ${date === today ? 'сегодня' : 'день'} всего: ${kcalHeadline(day.kcal, goal)}.` +
+      `За приём: ${fmtNum(meal.kcal)} ккал · ${macrosShort(meal)} г. ` +
+      `За ${date === today ? 'сегодня' : 'день'} всего: ${kcalHeadline(day.kcal, goal)}, ${macrosLine(day, goal)}.` +
       (goal ? '' : ' Цели по калориям нет — можно задать словами («моя норма 2000 ккал»).') +
-      ' (Цифры — оценка; ответь коротко, можно назвать допущение по порции.)'
+      ' (Цифры — оценка. Ответь коротко, но БЖУ покажи всегда: у каждой позиции и в итоге дня; можно назвать допущение по порции.)'
     );
   };
 }

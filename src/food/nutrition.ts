@@ -72,7 +72,8 @@ export function datesInRange(fromDate: string, toDate: string, max = 366): strin
   return out;
 }
 
-function macrosLine(t: Totals, goal: FoodGoal | null): string {
+/** Day/period macro totals, against the goal when it sets them: «Б 99/150 · Ж 38/65 · У 22/300 г». */
+export function macrosLine(t: Pick<Totals, 'protein' | 'fat' | 'carbs'>, goal: FoodGoal | null): string {
   const part = (label: string, v: number, g: number | null | undefined) =>
     `${label} ${fmtNum(v)}${g ? `/${fmtNum(g)}` : ''}`;
   return `${part('Б', t.protein, goal?.protein)} · ${part('Ж', t.fat, goal?.fat)} · ${part('У', t.carbs, goal?.carbs)} г`;
@@ -87,9 +88,22 @@ export function kcalHeadline(kcal: number, goal: FoodGoal | null): string {
   return `${fmtNum(kcal)} / ${fmtNum(goal.kcal)} ккал ${progressBar(kcal, goal.kcal)} ${pct}% (${tail})`;
 }
 
-function itemLine(e: FoodEntry): string {
+/** Compact macros for one item or subtotal: «Б 70 · Ж 9 · У 0»; '' when none were estimated. */
+export function macrosShort(m: {
+  protein: number | null;
+  fat: number | null;
+  carbs: number | null;
+}): string {
+  if (m.protein === null && m.fat === null && m.carbs === null) return '';
+  const v = (x: number | null) => (x === null ? '?' : fmtNum(x));
+  return `Б ${v(m.protein)} · Ж ${v(m.fat)} · У ${v(m.carbs)}`;
+}
+
+/** «#14 Куриная грудка (230 г) — 380 ккал · Б 70 · Ж 9 · У 0». */
+export function itemLine(e: FoodEntry): string {
   const grams = e.grams ? ` (${fmtNum(e.grams)} г)` : '';
-  return `#${e.id} ${e.name}${grams} — ${fmtNum(e.kcal)} ккал`;
+  const m = macrosShort(e);
+  return `#${e.id} ${e.name}${grams} — ${fmtNum(e.kcal)} ккал${m ? ` · ${m}` : ''}`;
 }
 
 /** Full diary of ONE day: headline, macros, then items grouped by meal. */
@@ -110,7 +124,9 @@ export function renderDay(
     if (group.length === 0) continue;
     const sub = sumEntries(group);
     lines.push('');
-    lines.push(`${meal ? MEAL_LABELS[meal] : 'Без приёма пищи'} — ${fmtNum(sub.kcal)} ккал`);
+    lines.push(
+      `${meal ? MEAL_LABELS[meal] : 'Другое'} — ${fmtNum(sub.kcal)} ккал · ${macrosShort(sub)}`,
+    );
     for (const e of group) lines.push(`  ${itemLine(e)}`);
   }
   if (t.missingMacros > 0) {
@@ -149,7 +165,7 @@ export function renderPeriod(
     const t = sumEntries(list);
     logged.push(t);
     const pct = goal ? ` (${Math.round((t.kcal / goal.kcal) * 100)}%)` : '';
-    lines.push(`${weekday(d)} ${shortDate(d)} — ${fmtNum(t.kcal)} ккал${pct}`);
+    lines.push(`${weekday(d)} ${shortDate(d)} — ${fmtNum(t.kcal)} ккал${pct} · ${macrosShort(t)}`);
   }
   if (logged.length === 0) {
     lines.push('', 'За этот период ничего не записано.');
@@ -183,7 +199,8 @@ export function foodContextLine(
 ): string | null {
   if (entries.length === 0 && !goal) return null;
   const t = sumEntries(entries);
-  const total = goal ? `${fmtNum(t.kcal)} of goal ${fmtNum(goal.kcal)} kcal` : `${fmtNum(t.kcal)} kcal`;
+  const kcal = goal ? `${fmtNum(t.kcal)} of goal ${fmtNum(goal.kcal)} kcal` : `${fmtNum(t.kcal)} kcal`;
+  const total = `${kcal} (${macrosLine(t, goal)})`;
   const shown = entries.slice(-maxItems);
   const hidden = entries.length - shown.length;
   const items =

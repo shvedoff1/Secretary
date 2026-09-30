@@ -795,7 +795,9 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   in full or a range as per-day stats. THE MODEL ESTIMATES, THE CODE COUNTS: every
   total, average and goal % the user reads is computed in `nutrition.ts` (pure,
   unit-tested) and handed back in the tool result — the prompt forbids adding numbers
-  up. Clarifying questions are prompt-driven (job 16 in `SYSTEM_PROMPT`): log clear
+  up. БЖУ are shown EVERYWHERE, not just kcal — each item, meal subtotals, per-day
+  stats, the log/remove confirmations and the context line (users track macros).
+  Clarifying questions are prompt-driven (job 16 in `SYSTEM_PROMPT`): log clear
   meals at once with a stated assumption; ask ONE question (with the default inside
   it) only when a hidden detail swings the total by ~a third; never a second round.
   Diaries are PERSONAL — keyed (chat_id, tg_user_id), every read scoped to both; the

@@ -3,7 +3,9 @@ import {
   datesInRange,
   fmtNum,
   foodContextLine,
+  itemLine,
   kcalHeadline,
+  macrosShort,
   progressBar,
   renderDay,
   renderPeriod,
@@ -72,6 +74,50 @@ describe('sums and formatting', () => {
       '2026-10-02',
     ]);
     expect(weekday('2026-09-29')).toBe('вт');
+  });
+});
+
+describe('macros on every line', () => {
+  it('renders item macros, marking a partial estimate and skipping a missing one', () => {
+    expect(itemLine(entry({ id: 14, name: 'Курица', grams: 230, kcal: 380, protein: 70, fat: 9, carbs: 0 }))).toBe(
+      '#14 Курица (230 г) — 380 ккал · Б 70 · Ж 9 · У 0',
+    );
+    expect(macrosShort({ protein: 5, fat: null, carbs: 20 })).toBe('Б 5 · Ж ? · У 20');
+    expect(itemLine(entry({ id: 3, name: 'Кофе', kcal: 5, protein: null, fat: null, carbs: null }))).toBe(
+      '#3 Кофе — 5 ккал',
+    );
+  });
+
+  it('puts БЖУ on meal subtotals and per-day stats', () => {
+    const day = renderDay(
+      [
+        entry({ meal: 'snack', kcal: 160, protein: 8, fat: 8, carbs: 12 }),
+        entry({ meal: null, kcal: 380, protein: 70, fat: 9, carbs: 0 }),
+      ],
+      null,
+      '2026-09-30',
+      'Сегодня',
+    );
+    expect(day).toContain('Перекус — 160 ккал · Б 8 · Ж 8 · У 12');
+    expect(day).toContain('Другое — 380 ккал · Б 70 · Ж 9 · У 0');
+    expect(day).not.toContain('Без приёма пищи');
+
+    const week = renderPeriod(
+      [entry({ localDate: '2026-09-29', kcal: 2000, protein: 150, fat: 60, carbs: 200 })],
+      null,
+      '2026-09-29',
+      '2026-09-30',
+    );
+    expect(week).toContain('вт 29.09 — 2 000 ккал · Б 150 · Ж 60 · У 200');
+  });
+
+  it('context line carries the day macros so «сколько белка осталось» is answerable', () => {
+    const line = foodContextLine(
+      [entry({ kcal: 380, protein: 70, fat: 9, carbs: 0 })],
+      { kcal: 2400, protein: 150, fat: 65, carbs: 300 },
+      '2026-09-30',
+    )!;
+    expect(line).toContain('Б 70/150 · Ж 9/65 · У 0/300 г');
   });
 });
 

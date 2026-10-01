@@ -232,3 +232,78 @@ describe('withFoodCard', () => {
     expect(food.withFoodCard('Привет', null)).toBe('Привет');
   });
 });
+
+describe('editing without ids (regression: «мне не видно номера записей»)', () => {
+  // 00:18 on 2026-10-02 UTC: yesterday's dinner gets corrected after midnight.
+  const afterMidnight = () => Date.UTC(2026, 9, 2, 0, 18);
+  const remove = (match: string[] | null, over: Record<string, unknown> = {}) => ({
+    action: 'remove' as const,
+    items: null,
+    meal: null,
+    date: null,
+    entryIds: null,
+    goal: null,
+    match,
+    ...over,
+  });
+
+  it('removes by dish name, falling back to yesterday, and asks for the corrected re-add', async () => {
+    const { food, repo } = await load();
+    const log = food.makeLogFoodHandler(-100, 7, afterMidnight);
+    log(add([item('Картофель жареный', 450), item('Масло подсолнечное', 180)], { date: '2026-10-01', meal: 'dinner' }));
+
+    const out = log(remove(['картошку']));
+    expect(out.text).toContain('Удалил: #');
+    expect(out.text).toContain('Картофель жареный');
+    expect(out.text).toContain('2026-10-01, dinner');
+    expect(out.text).toContain('теперь добавь исправленную позицию');
+    expect(repo.listFoodEntries(-100, 7, '2026-10-01', '2026-10-01').map((e) => e.name)).toEqual([
+      'Масло подсолнечное',
+    ]);
+    // The card shows the day that changed — yesterday — not an empty today.
+    expect(out.card).toContain('Вчера');
+  });
+
+  it('an ambiguous name removes nothing and hands back the candidates with ids', async () => {
+    const { food, repo } = await load();
+    const log = food.makeLogFoodHandler(-100, 7, now);
+    log(add([item('Картофель жареный', 450), item('Картофель отварной', 80)]));
+    const out = log(remove(['картофель']));
+    expect(out.text).toContain('подходит к нескольким записям');
+    expect(out.text).toMatch(/#\d+ Картофель жареный 450 \(2026-09-29\)/);
+    expect(repo.listFoodEntries(-100, 7, '2026-09-29', '2026-09-29')).toHaveLength(2);
+  });
+
+  it('a missing name lists what IS there instead of failing silently', async () => {
+    const { food } = await load();
+    const log = food.makeLogFoodHandler(-100, 7, now);
+    log(add([item('Банан', 105)]));
+    const out = log(remove(['шпроты']));
+    expect(out.text).toContain('«шпроты» не нашёл');
+    expect(out.text).toContain('Банан 105');
+    expect(out.card).toBeNull();
+  });
+
+  it('never matches another person\'s diary', async () => {
+    const { food, repo } = await load();
+    food.makeLogFoodHandler(-100, 8, now)(add([item('Шпроты', 148)]));
+    food.makeLogFoodHandler(-100, 7, now)(remove(['шпроты']));
+    expect(repo.listFoodEntries(-100, 8, '2026-09-29', '2026-09-29')).toHaveLength(1);
+  });
+
+  it('food_report gives the model an id index the user never sees', async () => {
+    const { food } = await load();
+    food.makeLogFoodHandler(-100, 7, now)(add([item('Шпроты', 148)]));
+    const res = food.makeFoodReportHandler(-100, 7, now)({ fromDate: null, toDate: null });
+    expect(res.text).toMatch(/Служебно .*#\d+ Шпроты 148 \(2026-09-29\)/);
+    expect(res.card).not.toMatch(/#\d/);
+  });
+
+  it('the context covers yesterday too', async () => {
+    const { food } = await load();
+    food.makeLogFoodHandler(-100, 7, afterMidnight)(add([item('Плов', 600)], { date: '2026-10-01' }));
+    const line = food.foodContextFor(-100, 7, afterMidnight())!;
+    expect(line).toContain('yesterday 2026-10-01');
+    expect(line).toMatch(/#\d+ Плов 600/);
+  });
+});

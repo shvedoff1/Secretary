@@ -262,28 +262,41 @@ export function renderPeriod(
   return out.join('\n');
 }
 
+/** One entry the way the MODEL sees it: id handle + name + kcal (+ date when asked). */
+export function entryRef(e: FoodEntry, withDate = false): string {
+  return `#${e.id} ${e.name} ${fmtNum(e.kcal)}${withDate ? ` (${e.localDate})` : ''}`;
+}
+
 /**
- * Compact line for the context block: the sender's TODAY so far, with entry ids so
- * «убери последнее / вычеркни кофе» can name the row. Null when there is nothing
- * to show (keeps the block shape stable for chats that never log food).
+ * Compact context-block line: the sender's diary for TODAY and, when it has
+ * entries, YESTERDAY — with entry ids, so «убери шпроты» / «картошка была сырая»
+ * can name the row. Yesterday matters: a late-evening meal is fixed after
+ * midnight, and with only today visible the model had no id to remove and asked
+ * the user for one. Null when there is nothing to show (keeps the block shape
+ * stable for chats that never log food).
  */
 export function foodContextLine(
-  entries: FoodEntry[],
+  days: { label: string; date: string; entries: FoodEntry[] }[],
   goal: FoodGoal | null,
-  dateStr: string,
   maxItems = 12,
 ): string | null {
-  if (entries.length === 0 && !goal) return null;
-  const t = sumEntries(entries);
-  const kcal = goal ? `${fmtNum(t.kcal)} of goal ${fmtNum(goal.kcal)} kcal` : `${fmtNum(t.kcal)} kcal`;
-  const total = `${kcal} (${macrosLine(t, goal)})`;
-  const shown = entries.slice(-maxItems);
-  const hidden = entries.length - shown.length;
-  const items =
-    shown.length > 0
-      ? `: ${hidden > 0 ? `(+${hidden} earlier) ` : ''}${shown
-          .map((e) => `#${e.id} ${e.name} ${fmtNum(e.kcal)}`)
-          .join('; ')}`
-      : ' — nothing logged yet';
-  return `Food diary of the sender, today ${dateStr}: ${total}${items}`;
+  const [first, ...rest] = days;
+  if (!first) return null;
+  const others = rest.filter((d) => d.entries.length > 0);
+  if (first.entries.length === 0 && others.length === 0 && !goal) return null;
+  const part = (d: { label: string; date: string; entries: FoodEntry[] }) => {
+    const t = sumEntries(d.entries);
+    const kcal = goal ? `${fmtNum(t.kcal)} of goal ${fmtNum(goal.kcal)} kcal` : `${fmtNum(t.kcal)} kcal`;
+    const shown = d.entries.slice(-maxItems);
+    const hidden = d.entries.length - shown.length;
+    const items =
+      shown.length > 0
+        ? `: ${hidden > 0 ? `(+${hidden} earlier) ` : ''}${shown.map((e) => entryRef(e)).join('; ')}`
+        : ' — nothing logged yet';
+    return `${d.label} ${d.date}: ${kcal} (${macrosLine(t, goal)})${items}`;
+  };
+  return (
+    'Food diary of the sender (#ids are internal handles for log_food remove — never show them): ' +
+    [first, ...others].map(part).join(' | ')
+  );
 }

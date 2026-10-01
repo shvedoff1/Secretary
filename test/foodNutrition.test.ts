@@ -113,9 +113,8 @@ describe('macros on every line', () => {
 
   it('context line carries the day macros so «сколько белка осталось» is answerable', () => {
     const line = foodContextLine(
-      [entry({ kcal: 380, protein: 70, fat: 9, carbs: 0 })],
+      [{ label: 'today', date: '2026-09-30', entries: [entry({ kcal: 380, protein: 70, fat: 9, carbs: 0 })] }],
       { kcal: 2400, protein: 150, fat: 65, carbs: 300 },
-      '2026-09-30',
     )!;
     expect(line).toContain('Б 70/150 · Ж 9/65 · У 0/300 г');
   });
@@ -193,27 +192,52 @@ describe('renderPeriod (table)', () => {
 });
 
 describe('foodContextLine', () => {
+  const day = (date: string, entries: FoodEntry[], label = 'today') => ({ label, date, entries });
+
   it('is null for someone who never logs (keeps the block shape stable)', () => {
-    expect(foodContextLine([], null, '2026-09-29')).toBeNull();
+    expect(foodContextLine([day('2026-09-29', []), day('2026-09-28', [], 'yesterday')], null)).toBeNull();
   });
 
-  it('lists ids and the total against the goal', () => {
+  it('lists ids and the total against the goal, and says the ids are internal', () => {
     const line = foodContextLine(
-      [entry({ id: 5, name: 'Банан', kcal: 105 })],
+      [day('2026-09-29', [entry({ id: 5, name: 'Банан', kcal: 105 })])],
       { kcal: 1800, protein: null, fat: null, carbs: null },
-      '2026-09-29',
     )!;
     expect(line).toContain('Food diary');
+    expect(line).toContain('never show them');
     expect(line).toContain('#5 Банан 105');
     expect(line).toContain('105 of goal 1 800 kcal');
   });
 
+  it('includes YESTERDAY when it has entries — a late meal is fixed after midnight', () => {
+    // Regression: at 00:18 the model saw only an empty «today», had no id for
+    // yesterday's potatoes and asked the user for one.
+    const line = foodContextLine(
+      [
+        day('2026-10-02', []),
+        day('2026-10-01', [entry({ id: 41, name: 'Картофель жареный', kcal: 450 })], 'yesterday'),
+      ],
+      null,
+    )!;
+    expect(line).toContain('today 2026-10-02: 0 kcal');
+    expect(line).toContain('yesterday 2026-10-01');
+    expect(line).toContain('#41 Картофель жареный 450');
+  });
+
+  it('skips an empty yesterday', () => {
+    const line = foodContextLine(
+      [day('2026-10-02', [entry({ id: 1, kcal: 10 })]), day('2026-10-01', [], 'yesterday')],
+      null,
+    )!;
+    expect(line).not.toContain('yesterday');
+  });
+
   it('shows a goal even with an empty day, and caps the item list', () => {
     expect(
-      foodContextLine([], { kcal: 1800, protein: null, fat: null, carbs: null }, '2026-09-29'),
+      foodContextLine([day('2026-09-29', [])], { kcal: 1800, protein: null, fat: null, carbs: null }),
     ).toContain('nothing logged yet');
     const many = Array.from({ length: 15 }, (_, i) => entry({ id: 100 + i, kcal: 10 }));
-    const line = foodContextLine(many, null, '2026-09-29', 12)!;
+    const line = foodContextLine([day('2026-09-29', many)], null, 12)!;
     expect(line).toContain('(+3 earlier)');
     expect(line).toContain('#114');
     expect(line).not.toContain('#100 ');

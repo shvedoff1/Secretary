@@ -249,6 +249,8 @@ export const LogFoodZ = z.object({
   meal: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).nullable(),
   date: z.string().regex(DATE_RE).nullable(),
   entryIds: z.array(z.number().int().positive()).max(50).nullable(),
+  // remove by dish NAME («убери шпроты»), when no id is at hand.
+  match: z.array(z.string().min(1).max(120)).max(20).nullable().optional(),
   goal: z
     .object({
       kcal: z.number().min(0).max(10000),
@@ -906,7 +908,7 @@ export const logFoodJsonSchema = {
       type: 'string',
       enum: ['add', 'remove', 'set_goal'],
       description:
-        '"add" — log what the sender ate (items). "remove" — delete logged entries by id (entryIds; «убери последнее» = the last id in "Food diary" of the context block). To CORRECT an entry, remove it and add the fixed one in the same turn. "set_goal" — set the sender\'s daily targets (goal).',
+        '"add" — log what the sender ate (items). "remove" — delete logged entries by id (entryIds from "Food diary" in the context block or a food_report index) OR by dish name (match), never ask the user for ids. To CORRECT an entry («картошка была сырая», «курицы было 150 г»), call remove for the old entry and add for the fixed one in the SAME turn, keeping its date and meal. "set_goal" — set the sender\'s daily targets (goal).',
     },
     items: {
       type: ['array', 'null'],
@@ -921,6 +923,12 @@ export const logFoodJsonSchema = {
     date: {
       type: ['string', 'null'],
       description: 'Chat-LOCAL date YYYY-MM-DD the food belongs to, only when it is NOT today («вчера на ужин»). null => today.',
+    },
+    match: {
+      type: ['array', 'null'],
+      items: { type: 'string' },
+      description:
+        'For remove: dish names as the user calls them («шпроты», «картошка») — matched forgivingly against the diary of `date` (or today, then yesterday). Use when you have no id. An ambiguous or missing name removes nothing and returns the candidates with ids. null otherwise.',
     },
     entryIds: {
       type: ['array', 'null'],
@@ -940,7 +948,7 @@ export const logFoodJsonSchema = {
       description: 'For set_goal only; null otherwise.',
     },
   },
-  required: ['action', 'items', 'meal', 'date', 'entryIds', 'goal'],
+  required: ['action', 'items', 'meal', 'date', 'entryIds', 'match', 'goal'],
 } as const;
 
 export const foodReportJsonSchema = {

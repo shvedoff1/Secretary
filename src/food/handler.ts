@@ -10,6 +10,7 @@ import {
   listFoodEntries,
   removeFoodEntries,
   setFoodGoal,
+  type FoodEntry,
   type Meal,
 } from '../db/repos/food.repo.js';
 import type { FoodReportInput, LogFoodInput } from '../llm/schema.js';
@@ -17,6 +18,7 @@ import { zonedParts } from '../util/day.js';
 import {
   datesInRange,
   fmtNum,
+  entryRef,
   foodContextLine,
   itemLine,
   kcalHeadline,
@@ -141,12 +143,38 @@ export function makeLogFoodHandler(
     }
 
     if (input.action === 'remove') {
-      const ids = input.entryIds ?? [];
-      if (ids.length === 0) return { text: 'Не указаны id записей (#N) — какие убрать?', card: null };
-      const removed = removeFoodEntries(chatId, tgUserId, ids);
+      const ids = [...(input.entryIds ?? [])];
+      const notes: string[] = [];
+      // By NAME too, so a fix never depends on the model holding an id: «убери
+      // шпроты», «картошка была сырая». Searched on the given day, else today
+      // then yesterday (an evening meal is often fixed after midnight).
+      for (const needle of input.match ?? []) {
+        const found = matchEntries(chatId, tgUserId, needle, input.date, today);
+        if (found.status === 'one') ids.push(found.entry.id);
+        else if (found.status === 'many') {
+          notes.push(
+            `«${needle}» подходит к нескольким записям — ничего не удалил по нему, уточни id: ` +
+              found.entries.map((e) => entryRef(e, true)).join('; '),
+          );
+        } else {
+          notes.push(
+            `«${needle}» не нашёл. Записи за ${found.searched.join(' и ')}: ` +
+              (found.pool.length ? found.pool.map((e) => entryRef(e, true)).join('; ') : 'пусто'),
+          );
+        }
+      }
+      if (ids.length === 0) {
+        return {
+          text: notes.length ? notes.join(' ') : 'Не указано, что убрать (entryIds или match).',
+          card: null,
+        };
+      }
+      const removed = removeFoodEntries(chatId, tgUserId, [...new Set(ids)]);
       if (removed.length === 0) {
         return {
-          text: `Записей ${ids.map((i) => `#${i}`).join(', ')} в дневнике этого человека нет — ничего не удалил.`,
+          text:
+            `Записей ${ids.map((i) => `#${i}`).join(', ')} в дневнике этого человека нет — ничего не удалил. ` +
+            notes.join(' '),
           card: null,
         };
       }
@@ -157,7 +185,12 @@ export function makeLogFoodHandler(
         return `${d === today ? 'сегодня' : d}: ${kcalHeadline(t.kcal, goal)}, ${macrosLine(t, goal)}`;
       });
       return {
-        text: `Удалил: ${removed.map(itemLine).join('; ')}. Итого ${totals.join('; ')}.${MODEL_NOTE}`,
+        text:
+          `Удалил: ${removed.map((e) => `${itemLine(e)} [${e.localDate}${e.meal ? `, ${e.meal}` : ''}]`).join('; ')}. ` +
+          `Итого ${totals.join('; ')}.` +
+          (notes.length ? ` ${notes.join(' ')}` : '') +
+          ' Если это была правка — теперь добавь исправленную позицию (action add) с той же датой и приёмом пищи.' +
+          MODEL_NOTE,
         // The newest affected day is the one the user is looking at.
         card: dayCard(dates[dates.length - 1]!),
       };
@@ -212,10 +245,22 @@ export function makeFoodReportHandler(
   return (input) => {
     const today = localToday(foodTimezone(chatId), nowFn());
     const card = renderFoodReport(chatId, tgUserId, input.fromDate, input.toDate, today);
+    // The table carries no ids (they are not for people), so the model gets an
+    // id index next to it — otherwise «убери X» after a report has nothing to
+    // name the row with (it asked the user for ids, which nobody sees).
+    const from = input.fromDate ?? input.toDate ?? today;
+    const to = input.toDate ?? input.fromDate ?? today;
+    const listed = listFoodEntries(chatId, tgUserId, from < to ? from : to, from < to ? to : from);
+    const index =
+      listed.length > 0 && listed.length <= 60
+        ? `\n\nСлужебно (id для log_food remove, пользователю не показывать): ${listed
+            .map((e) => entryRef(e, true))
+            .join('; ')}`
+        : '';
     return {
       // The model sees the same table (to comment on it) but must not re-type it.
       text:
-        `${card}\n\n(Эта таблица уже будет показана пользователю под твоим ответом как есть — ` +
+        `${card}${index}\n\n(Эта таблица уже будет показана пользователю под твоим ответом как есть — ` +
         'не повторяй её и цифры; можешь добавить одну короткую мысль по делу или просто ничего.)',
       card,
     };
@@ -247,9 +292,63 @@ export function renderFoodReport(
 /** The context-block line for the sender (null when they have no diary today). */
 export function foodContextFor(chatId: number, tgUserId: number, now: number = Date.now()): string | null {
   const today = localToday(foodTimezone(chatId), now);
+  const yesterday = shiftDays(today, -1);
   return foodContextLine(
-    listFoodEntries(chatId, tgUserId, today, today),
+    [
+      { label: 'today', date: today, entries: listFoodEntries(chatId, tgUserId, today, today) },
+      { label: 'yesterday', date: yesterday, entries: listFoodEntries(chatId, tgUserId, yesterday, yesterday) },
+    ],
     getFoodGoal(chatId, tgUserId),
-    today,
   );
+}
+
+type MatchResult =
+  | { status: 'one'; entry: FoodEntry }
+  | { status: 'many'; entries: FoodEntry[] }
+  | { status: 'none'; searched: string[]; pool: FoodEntry[] };
+
+function norm(s: string): string {
+  return s.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Word stems (first 5 letters) — Russian inflects endings: «картошку» ~ «картошка». */
+function stems(s: string): string[] {
+  return norm(s)
+    .split(' ')
+    .filter((w) => w.length >= 3)
+    .map((w) => w.slice(0, 5));
+}
+
+/**
+ * Find the ONE entry a quoted dish name means, forgivingly: exact name, then
+ * containment either way, then shared word stems. Searched on `date` when given,
+ * else today, then yesterday. Several hits on the same rung are AMBIGUOUS — the
+ * caller removes nothing and hands the candidates back, rather than deleting the
+ * wrong food.
+ */
+export function matchEntries(
+  chatId: number,
+  tgUserId: number,
+  needle: string,
+  date: string | null,
+  today: string,
+): MatchResult {
+  const days = date ? [date] : [today, shiftDays(today, -1)];
+  const n = norm(needle);
+  const ns = stems(needle);
+  for (const d of days) {
+    const pool = listFoodEntries(chatId, tgUserId, d, d);
+    const rungs: ((e: FoodEntry) => boolean)[] = [
+      (e) => norm(e.name) === n,
+      (e) => n.length >= 3 && (norm(e.name).includes(n) || n.includes(norm(e.name))),
+      (e) => ns.length > 0 && stems(e.name).some((s) => ns.includes(s)),
+    ];
+    for (const test of rungs) {
+      const hits = pool.filter(test);
+      if (hits.length === 1) return { status: 'one', entry: hits[0]! };
+      if (hits.length > 1) return { status: 'many', entries: hits };
+    }
+  }
+  const pool = days.flatMap((d) => listFoodEntries(chatId, tgUserId, d, d));
+  return { status: 'none', searched: days, pool };
 }

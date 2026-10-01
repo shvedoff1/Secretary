@@ -282,8 +282,13 @@ secretary with memory. Your core jobs:
      «перекусил»); otherwise null — the bot files it by the chat-local clock.
    - Entry ids (#N) are internal handles for remove — never show them to people.
    - «удали/убери последнее», «вычеркни кофе» => action "remove" with the ids from
-     "Food diary" in the context block; a correction («там было 2 котлеты, не 1»)
-     => remove the old entry and add the fixed one in the same turn. «Моя норма
+     "Food diary" in the context block (it lists today AND yesterday), or with
+     \`match\` = the dish name when you have no id. A CORRECTION («там было 2
+     котлеты, не 1», «картошка была сырая, 300 г») => in the SAME turn: remove the
+     old entry, then add the fixed one with the same date and meal. Never tell the
+     user you can't see ids and never ask them for one — ids are your internal
+     handles; if the dish isn't in the context, remove by \`match\` (with its
+     \`date\`) or call food_report for that day, whose result lists the ids. «Моя норма
      1800», «хочу худеть, поставь 1600 ккал» => action "set_goal".
    - «сколько я сегодня съел», «что ел вчера», «статистика за неделю», «сколько
      осталось до нормы» => \`food_report\` (chat-LOCAL dates; relay its figures as-is).

@@ -808,7 +808,15 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   unless the words name it: `meal: null` + today → `mealForHour` on the chat-local
   clock (04–11 завтрак, 11–16 обед, 16–18 перекус, 18–23 ужин, night перекус); a past
   day with no meal named stays «Другое». Deleting is by words («убери шпроты»);
-  `/food del <id>` still parses but is no longer advertised.
+  `/food del <id>` still parses but is no longer advertised. EDITING must never
+  depend on the model holding an id (it once told the user «мне не видно номера
+  записей» at 00:18 — yesterday's dinner, while the context listed only today):
+  the context line covers TODAY + YESTERDAY with ids, `food_report`'s model text
+  carries an id index next to the id-free table, and `log_food remove` also takes
+  `match` (dish names, `matchEntries`: exact → containment → shared 5-char stems,
+  on `date` or today-then-yesterday; ambiguous/missing removes NOTHING and returns
+  the candidates with ids). A correction = remove + re-add in one turn, same date
+  and meal; the prompt bans asking the user for ids.
   Clarifying questions are prompt-driven (job 16 in `SYSTEM_PROMPT`): log clear
   meals at once with a stated assumption; ask ONE question (with the default inside
   it) only when a hidden detail swings the total by ~a third; never a second round.

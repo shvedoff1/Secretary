@@ -182,6 +182,7 @@ describe('renderPeriod (table)', () => {
     );
     expect(md).toContain('| пн 28.09 | — |  |  |  |');
     expect(md).toContain('| вт 29.09 | 2 200 ↑ |');
+    expect(md).toContain('| Итого | 4 000 |');
     expect(md).toContain('| **Среднее** | **2 000** |');
     expect(md).toContain('среднее по 2 дн. с записями · в цель по ккал: 1 из 2');
   });

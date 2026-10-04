@@ -247,6 +247,10 @@ export function renderPeriod(
     carbs: avg('carbs'),
     missingMacros: 0,
   };
+  // Total over the logged days (plain), then the per-day average (bold) — the
+  // average is the number people compare against the goal.
+  const sum = (k: 'kcal' | 'protein' | 'fat' | 'carbs') => logged.reduce((s, t) => s + t[k], 0);
+  rows.push(row('Итого', fmtNum(sum('kcal')), fmtNum(sum('protein')), fmtNum(sum('fat')), fmtNum(sum('carbs'))));
   rows.push(boldRow('Среднее', avgTotals));
   if (goal) {
     const g = (v: number | null) => (v ? fmtNum(v) : '—');

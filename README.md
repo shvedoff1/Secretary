@@ -259,7 +259,7 @@ Then just talk:
 `/start` `/help` `/request` · admin: `/approve <id>` `/deny <id>` · `/group <code>`
 `/members` `/link …` `/whoami` · memory: `/memory` `/remember <text>` `/forget`
 · reminders: `/tasks` `/canceltask <id>` · calendar: `/calendar` (`/calendar add <ics-url> [имя]`, `/calendar del <id>`, `/calendar check`)
-· calorie diary: `/food` (`/food вчера|week|month`, `/food goal 2000`)
+· calorie diary: `/food` (`/food вчера|week|month`, `/food 28.09`, `/food 01.09-15.09`, `/food goal 2000`)
 · lexicon: `/slang` (`/slang clear`, `/slang on|off`)
 · expense dictionary: `/trata` (`/trata <word>`, `/trata clear`)
 · chat log: admin `/chatlog <chatId>` (`/chatlog <chatId> clear`)

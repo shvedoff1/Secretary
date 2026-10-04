@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFoodArgs } from '../src/bot/commands/food.js';
+import { parseFoodArgs, parseFoodDate, parseFoodRange } from '../src/bot/commands/food.js';
 
 describe('/food argument grammar', () => {
   it('defaults to today and knows yesterday', () => {
@@ -48,5 +48,53 @@ describe('/food argument grammar', () => {
 
   it('falls back to help on anything else', () => {
     expect(parseFoodArgs('как дела')).toEqual({ kind: 'help' });
+  });
+});
+
+describe('/food custom dates and ranges', () => {
+  const today = '2026-10-04';
+
+  it('reads a date in every common shape, inferring the latest past year', () => {
+    expect(parseFoodDate('28.09', today)).toBe('2026-09-28');
+    expect(parseFoodDate('28/09', today)).toBe('2026-09-28');
+    expect(parseFoodDate('28.09.26', today)).toBe('2026-09-28');
+    expect(parseFoodDate('28.09.2025', today)).toBe('2025-09-28');
+    expect(parseFoodDate('2026-09-01', today)).toBe('2026-09-01');
+    // A day-month still ahead this year means LAST year's.
+    expect(parseFoodDate('28.12', today)).toBe('2025-12-28');
+    expect(parseFoodDate('04.10', today)).toBe('2026-10-04');
+  });
+
+  it('rejects impossible calendar dates', () => {
+    expect(parseFoodDate('31.02', today)).toBeNull();
+    expect(parseFoodDate('2026-13-01', today)).toBeNull();
+  });
+
+  it('parses ranges glued, spaced, worded and reversed', () => {
+    const sep = { from: '2026-09-01', to: '2026-09-15' };
+    expect(parseFoodRange('01.09-15.09', today)).toEqual(sep);
+    expect(parseFoodRange('01.09 - 15.09', today)).toEqual(sep);
+    expect(parseFoodRange('01.09 — 15.09', today)).toEqual(sep);
+    expect(parseFoodRange('01.09 15.09', today)).toEqual(sep);
+    expect(parseFoodRange('с 01.09 по 15.09', today)).toEqual(sep);
+    expect(parseFoodRange('15.09-01.09', today)).toEqual(sep);
+    expect(parseFoodRange('2026-09-01 2026-09-15', today)).toEqual(sep);
+    expect(parseFoodRange('01.09..15.09', today)).toEqual(sep);
+  });
+
+  it('a single date is a one-day range, and non-dates are not ranges', () => {
+    expect(parseFoodRange('28.09', today)).toEqual({ from: '2026-09-28', to: '2026-09-28' });
+    expect(parseFoodRange('week', today)).toBeNull();
+    expect(parseFoodRange('goal 2400', today)).toBeNull();
+    expect(parseFoodRange('01.09 15.09 20.09', today)).toBeNull();
+    expect(parseFoodRange('31.02-05.03', today)).toBeNull();
+  });
+
+  it('wins in /food parsing without breaking the other verbs', () => {
+    expect(parseFoodArgs('01.09-15.09', today)).toEqual({ kind: 'range', from: '2026-09-01', to: '2026-09-15' });
+    expect(parseFoodArgs('28.09', today)).toEqual({ kind: 'range', from: '2026-09-28', to: '2026-09-28' });
+    expect(parseFoodArgs('14d', today)).toEqual({ kind: 'period', days: 14 });
+    expect(parseFoodArgs('goal 2400 150 65 300', today)).toMatchObject({ kind: 'goal', kcal: 2400 });
+    expect(parseFoodArgs('del 12', today)).toEqual({ kind: 'del', ids: [12] });
   });
 });

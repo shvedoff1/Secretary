@@ -13,6 +13,7 @@ import { sendRichMarkdown } from '../../util/richMessage.js';
 export type FoodCommand =
   | { kind: 'day'; offset: number }
   | { kind: 'period'; days: number }
+  | { kind: 'range'; from: string; to: string }
   | { kind: 'goal'; kcal: number; protein: number | null; fat: number | null; carbs: number | null }
   | { kind: 'goal_off' }
   | { kind: 'del'; ids: number[] }
@@ -21,12 +22,78 @@ export type FoodCommand =
 const WEEK = new Set(['week', 'неделя', 'неделю', '7']);
 const MONTH = new Set(['month', 'месяц', '30']);
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * One date as the user types it: «28.09», «28.09.26», «28.09.2026», «28/09»,
+ * «2026-09-28». A date without a year is the LATEST such day not after today
+ * («/food 28.12» typed in January means last December, not next one). Invalid
+ * calendar dates (31.02) are null. Pure, so it is unit-tested.
+ */
+export function parseFoodDate(token: string, today: string): string | null {
+  const t = token.trim();
+  let y: number | null;
+  let m: number;
+  let d: number;
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+  const dm = /^(\d{1,2})[./](\d{1,2})(?:[./](\d{2}|\d{4}))?$/.exec(t);
+  if (iso) {
+    [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+  } else if (dm) {
+    d = Number(dm[1]);
+    m = Number(dm[2]);
+    y = dm[3] ? Number(dm[3].length === 2 ? `20${dm[3]}` : dm[3]) : null;
+  } else {
+    return null;
+  }
+  const build = (yy: number): string | null => {
+    const dt = new Date(Date.UTC(yy, m - 1, d));
+    if (dt.getUTCFullYear() !== yy || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+    return `${yy}-${pad2(m)}-${pad2(d)}`;
+  };
+  if (y !== null) return build(y);
+  const thisYear = Number(today.slice(0, 4));
+  const candidate = build(thisYear);
+  if (candidate && candidate <= today) return candidate;
+  return build(thisYear - 1);
+}
+
+/**
+ * A custom period: «01.09-15.09», «01.09 - 15.09», «01.09 15.09», «с 01.09 по
+ * 15.09», «2026-09-01 2026-09-15», or a single date («28.09» → that day). The
+ * order of the two ends doesn't matter. Null when the text isn't dates.
+ */
+export function parseFoodRange(text: string, today: string): { from: string; to: string } | null {
+  const DATE = /\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?/g;
+  const tokens = text.match(DATE) ?? [];
+  // Everything that is not a date must be a separator — otherwise this is not
+  // a range («goal 2400», «del 12», chatter) and other branches handle it.
+  const rest = text
+    .replace(DATE, ' ')
+    .toLowerCase()
+    .replace(/[-–—]|\.\./g, ' ')
+    // `\b` is ASCII-only in JS, so Cyrillic words are delimited by hand.
+    .replace(/(^|\s)(с|по|до|from|to)(?=\s|$)/g, ' ')
+    .trim();
+  if (rest !== '') return null;
+  if (tokens.length === 0 || tokens.length > 2) return null;
+  const dates = tokens.map((tk) => parseFoodDate(tk, today));
+  if (dates.some((x) => x === null)) return null;
+  const [a, b = a] = dates as string[];
+  return a! <= b! ? { from: a!, to: b! } : { from: b!, to: a! };
+}
+
 /**
  * Parse `/food` arguments. Pure, so the grammar is unit-tested:
- * (none)/today · yesterday/вчера · week · month · <N>d · goal <kcal> [Б Ж У] (brackets optional) ·
- * goal off · del <id> [id…].
+ * (none)/today · yesterday/вчера · week · month · <N>d · <date> · <date>-<date> ·
+ * goal <kcal> [Б Ж У] (brackets optional) · goal off · del <id> [id…].
  */
-export function parseFoodArgs(raw: string): FoodCommand {
+export function parseFoodArgs(
+  raw: string,
+  today: string = new Date().toISOString().slice(0, 10),
+): FoodCommand {
+  const range = parseFoodRange(raw, today);
+  if (range) return { kind: 'range', ...range };
   const parts = raw.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const [head = '', ...rest] = parts;
   if (head === '' || head === 'today' || head === 'сегодня') return { kind: 'day', offset: 0 };
@@ -69,7 +136,8 @@ export function parseFoodArgs(raw: string): FoodCommand {
 const HELP =
   'Дневник еды — просто скажи или покажи, что съел: «съел гречку с курицей», ' +
   'голосовое или фото тарелки/этикетки. Я прикину калории и БЖУ, если надо — уточню одно.\n\n' +
-  '/food — сегодня · /food вчера · /food week · /food month\n' +
+  '/food — сегодня · /food вчера · /food 28.09 — конкретный день\n' +
+  'Статистика по дням (ккал и БЖУ): /food week · /food month · /food 14d · /food 01.09-15.09\n' +
   '/food goal 2000 — дневная цель в ккал; можно сразу с БЖУ в граммах: /food goal 2400 150 65 300 · /food goal off\n' +
   'Поправить или удалить запись — просто скажи: «убери шпроты», «курицы было 150 г».';
 
@@ -86,8 +154,8 @@ export async function cmdFood(ctx: Context): Promise<void> {
   }
   const chatId = ctx.chat.id;
   const userId = ctx.from.id;
-  const cmd = parseFoodArgs((ctx.match as string | undefined) ?? '');
   const today = localToday(foodTimezone(chatId));
+  const cmd = parseFoodArgs((ctx.match as string | undefined) ?? '', today);
 
   switch (cmd.kind) {
     // Tables go out as rich markdown (native Telegram table, aligned <pre> fallback).
@@ -102,6 +170,11 @@ export async function cmdFood(ctx: Context): Promise<void> {
         chatId,
         renderFoodReport(chatId, userId, shiftDays(today, -(cmd.days - 1)), today, today),
       );
+      return;
+    case 'range':
+      // One day renders as the full diary, a span as the per-day table;
+      // renderFoodReport clamps the future and over-long spans (92 days).
+      await sendRichMarkdown(ctx.api, chatId, renderFoodReport(chatId, userId, cmd.from, cmd.to, today));
       return;
     case 'goal':
       setFoodGoal(chatId, userId, {

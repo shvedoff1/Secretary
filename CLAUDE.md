@@ -832,8 +832,10 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   off in tutor chats and on the expense-only scan; `log_food` off for scheduled and
   inline runs (state writes), `food_report` stays live there (a recurring «вечером
   итог по калориям» reports the task creator's diary; inline reads the asker's DM
-  diary). `/food` (`вчера|week|month|<N>d`, `goal <kcal> [Б Ж У]|off`) is the
-  zero-token view. Off via `ENABLE_FOOD=false`.
+  diary). `/food` (`вчера|week|month|<N>d`, a date `28.09` or a custom range
+  `01.09-15.09` / `01.09 15.09` / `с 01.09 по 15.09` / ISO — `parseFoodRange`, a
+  yearless date is the latest one not after today; `goal <kcal> [Б Ж У]|off`) is
+  the zero-token view; a range renders per-day КБЖУ rows + Итого + Среднее. Off via `ENABLE_FOOD=false`.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

@@ -191,7 +191,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `BOT_TOKEN` | yes | — | From @BotFather |
 | `ANTHROPIC_API_KEY` | yes | — | Claude API key |
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
-| `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Model id. Thinking is kept off on routing turns with the model's own off-switch (`between_tools` on Sonnet 5.5, `disabled` on older models; Opus 5.5 can't turn it off) |
+| `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Model id. Adaptive thinking is on for every turn; per-call token usage is logged as `assistant usage` |
 | `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |

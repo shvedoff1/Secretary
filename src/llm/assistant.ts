@@ -1,5 +1,4 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { thinkingFor } from './thinking.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -507,17 +506,19 @@ export async function runAssistant(
   }
   messages.push({ role: 'user', content: currentContent });
 
-  const thinkingParam = thinkingFor(cfg.ANTHROPIC_MODEL, { tutor });
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await anthropic.messages.create({
       model: cfg.ANTHROPIC_MODEL,
-      // Tutor answers are long (step-by-step solutions) and adaptive thinking
-      // spends from the same budget, so tutor mode gets a much bigger cap.
-      max_tokens: tutor ? 8192 : 2048,
-      // Secretary keeps thinking OFF; tutor mode lets the model reason. The
-      // off-switch differs per model (Sonnet 5.5 rejects `disabled`) — see
-      // thinkingFor. Cast: the SDK version predates `between_tools`.
-      ...(thinkingParam ? { thinking: thinkingParam as Anthropic.ThinkingConfigParam } : {}),
+      // Thinking spends from this same budget, so it has to leave room for the
+      // reasoning AND the answer / tool-call JSON — a 2048 cap with thinking on
+      // would truncate. 16k stays under the SDK's non-streaming timeout limit.
+      max_tokens: 16_000,
+      // Adaptive thinking on EVERY turn, every mode: the model decides how much
+      // to reason (a «привет» costs little, a receipt split or a bug recap more).
+      // Chosen deliberately for answer quality; costs are watched via the
+      // `assistant usage` log line below. Valid on every current model (Sonnet
+      // 5.5 / Opus 5.5 reject `disabled`, adaptive is accepted everywhere).
+      thinking: { type: 'adaptive' },
       // Cache the stable prefix (tools render before system, so one breakpoint on
       // the system block caches both tool schemas + system prompt). Re-reads cost
       // ~0.1x: this is the main lever against per-call token cost. Tutor chats
@@ -537,9 +538,12 @@ export async function runAssistant(
       messages,
     });
 
-    logger.debug(
+    // INFO, not debug: with thinking on, per-turn spend is the number to watch
+    // (output includes the thinking tokens).
+    logger.info(
       {
         model: cfg.ANTHROPIC_MODEL,
+        iteration: i,
         input: res.usage.input_tokens,
         output: res.usage.output_tokens,
         cacheRead: res.usage.cache_read_input_tokens,

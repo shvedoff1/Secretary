@@ -7,6 +7,7 @@ process.env.ADMIN_TELEGRAM_ID = '1';
 process.env.DATABASE_PATH = ':memory:';
 
 vi.mock('../src/bot/listenMode.js', () => ({ isQuietChat: vi.fn(() => false) }));
+vi.mock('../src/bot/expenseScan.js', () => ({ expenseScanAllowed: vi.fn(() => true) }));
 vi.mock('../src/bot/triggers.js', () => ({
   isAddressed: vi.fn(() => true),
   looksLikeExpenseForChat: vi.fn(() => false),
@@ -31,6 +32,8 @@ import { onPhoto, handlePhotoTurn } from '../src/bot/handlers/onPhoto.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
 import { isAddressed, mentionsBotByName, captionLooksLikeSharedExpense } from '../src/bot/triggers.js';
 import { isQuietChat } from '../src/bot/listenMode.js';
+import { expenseScanAllowed } from '../src/bot/expenseScan.js';
+import { downloadTelegramFile } from '../src/util/telegramFile.js';
 import { bufferForward, isForwardBufferEnabled } from '../src/bot/forwardBuffer.js';
 
 const mockRun = vi.mocked(runAndRespond);
@@ -52,6 +55,7 @@ beforeEach(() => {
   mockAddressed.mockReturnValue(true);
   mockRun.mockResolvedValue('replied');
   vi.mocked(isQuietChat).mockReturnValue(false);
+  vi.mocked(expenseScanAllowed).mockReturnValue(true);
   vi.mocked(mentionsBotByName).mockReturnValue(false);
   vi.mocked(captionLooksLikeSharedExpense).mockReturnValue(false);
 });
@@ -159,5 +163,18 @@ describe('photos in a listen-only chat (/listen on)', () => {
     expect(bufferForward).not.toHaveBeenCalled();
     expect(mockRun).not.toHaveBeenCalled();
     vi.mocked(isForwardBufferEnabled).mockReturnValue(false);
+  });
+});
+
+describe('photos: the receipt scan needs a Splid group', () => {
+  it('ignores an unaddressed receipt-looking photo in a chat without Splid — no download', async () => {
+    mockAddressed.mockReturnValue(false);
+    vi.mocked(captionLooksLikeSharedExpense).mockReturnValue(true);
+    vi.mocked(expenseScanAllowed).mockReturnValue(false);
+
+    await onPhoto(ctx('на меня и Ваню'));
+
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(downloadTelegramFile).not.toHaveBeenCalled();
   });
 });

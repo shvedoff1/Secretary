@@ -20,6 +20,7 @@ import { modeAllowsChime, modeAllowsSlang } from '../../modes.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
 import { isQuietChat } from '../listenMode.js';
+import { expenseScanAllowed } from '../expenseScan.js';
 import { logRefs } from '../threads.js';
 import {
   bufferForward,
@@ -169,6 +170,9 @@ export async function onMessage(ctx: Context): Promise<void> {
   // else — no by-name asks («бот, …» is how a work chat talks ABOUT the product),
   // and no silent expense scan (a model call on every number-bearing line).
   let decision = quiet ? (isAddressed(ctx) ? 'process' : 'ignore') : routeMessage(ctx, text);
+  // The silent spend scan exists only where Splid is connected — elsewhere a
+  // spend-looking line is plain chatter (no model call, the chime timer arms).
+  if (decision === 'auto-expense' && !expenseScanAllowed(ctx.chat.id)) decision = 'ignore';
   if (!quiet && decision !== 'process' && addressesBotByName(text)) {
     decision = 'process';
   }

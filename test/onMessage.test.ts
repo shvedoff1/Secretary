@@ -9,6 +9,7 @@ process.env.ADMIN_TELEGRAM_ID = '1';
 process.env.DATABASE_PATH = ':memory:';
 
 vi.mock('../src/bot/listenMode.js', () => ({ isQuietChat: vi.fn(() => false) }));
+vi.mock('../src/bot/expenseScan.js', () => ({ expenseScanAllowed: vi.fn(() => true) }));
 vi.mock('../src/bot/triggers.js', () => ({
   routeMessage: vi.fn(),
   isAddressed: vi.fn(),
@@ -70,6 +71,7 @@ import { getChatMode } from '../src/db/repos/chatSettings.repo.js';
 import { bufferForward, isForwardBufferEnabled } from '../src/bot/forwardBuffer.js';
 import { recordChatLog } from '../src/bot/chatLog.js';
 import { isQuietChat } from '../src/bot/listenMode.js';
+import { expenseScanAllowed } from '../src/bot/expenseScan.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
@@ -103,6 +105,7 @@ beforeEach(() => {
   mockEditTarget.mockReturnValue(undefined);
   mockMode.mockReturnValue('secretary');
   vi.mocked(isQuietChat).mockReturnValue(false);
+  vi.mocked(expenseScanAllowed).mockReturnValue(true);
   resetPendingFiles();
 });
 
@@ -604,5 +607,27 @@ describe('onMessage in a listen-only chat (/listen on)', () => {
     expect(bufferForward).not.toHaveBeenCalled();
     expect(mockRun).not.toHaveBeenCalled();
     expect(mockChime).not.toHaveBeenCalled();
+  });
+});
+
+describe('onMessage: the spend scan needs a Splid group', () => {
+  it('treats a spend-looking line as plain chatter in a chat without Splid', async () => {
+    vi.mocked(expenseScanAllowed).mockReturnValue(false);
+    mockRoute.mockReturnValue('auto-expense');
+
+    await onMessage(ctx('купил бкб за 4000'));
+
+    expect(mockRun).not.toHaveBeenCalled();
+    // …so it arms the chime like any other ignored message.
+    expect(mockChime).toHaveBeenCalledOnce();
+  });
+
+  it('still scans where Splid is connected', async () => {
+    mockRoute.mockReturnValue('auto-expense');
+
+    await onMessage(ctx('такси 500 на всех'));
+
+    expect(mockRun).toHaveBeenCalledOnce();
+    expect(mockRun.mock.calls[0]?.[1]).toMatchObject({ addressed: false });
   });
 });

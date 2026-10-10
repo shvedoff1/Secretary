@@ -644,7 +644,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   exact figures reach the user verbatim instead of being re-phrased by the model.
 - Expense-only scan: a group message that was NOT addressed to the bot but looks like
   a spend (`routeMessage` → `auto-expense`, `addressed:false`) can only end in a
-  `record_expense` preview or in silence — any text it produces is dropped. So that run
+  `record_expense` preview or in silence — any text it produces is dropped. The scan
+  exists ONLY where a Splid group is connected (`expenseScanAllowed`,
+  `src/bot/expenseScan.ts`): elsewhere there is no `record_expense` tool, so it was a
+  full model call thrown away — onMessage routes such a line to `ignore` (the chime
+  arms as usual), onPhoto skips the receipt guess (no download), and `runAndRespond`
+  returns `silent` as a backstop. The scan never sets the 👀 «thinking» mark either
+  (`manageReaction` requires `addressed`) — it answers nobody, and the flash on
+  random people's number-bearing lines read as the bot reacting. So that run
   is stripped to exactly that job (`expenseOnly` on `AssistantContext`, set in
   `runAndRespond` from `!addressed`): `record_expense` is the ONLY tool, and the context
   block carries no memory / reminders / watches / places (chat RULES stay — they're

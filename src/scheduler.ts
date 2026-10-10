@@ -1,3 +1,4 @@
+import { foodAllowedIn, isPrivateChat, splidActiveIn } from './core/chatScope.js';
 import { FOOD_NOOP, makeFoodReportHandler, withFoodCard } from './food/handler.js';
 import type { Bot } from 'grammy';
 import { loadConfig } from './config.js';
@@ -140,7 +141,7 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
     // plain reminder/surf task works fine without it.
     const chatCfg = getChatConfig(task.chatId);
     let members: Member[] = [];
-    if (chatCfg?.provider_group_id) {
+    if (chatCfg?.provider_group_id && splidActiveIn(task.chatId)) {
       try {
         members = await getProvider(chatCfg.provider_name).listMembers({
           groupId: chatCfg.provider_group_id,
@@ -209,7 +210,9 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         // The chat's standing rules apply to a scheduled post exactly as they do to
         // a live reply — «без эмодзи» must not lapse just because a timer fired it.
         rules: listRules(task.chatId).map((r) => r.text),
-        splidConnected: !!chatCfg?.provider_group_id,
+        splidConnected: splidActiveIn(task.chatId),
+        privateChat: isPrivateChat(task.chatId),
+        foodAvailable: foodAllowedIn(task.chatId),
         // The chat's calendar follows its scheduled runs too, so a recurring
         // «каждое утро скажи, что по календарю» task can read it (read-only).
         calendarConnected: calendarConnected(task.chatId),

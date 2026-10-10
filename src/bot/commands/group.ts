@@ -2,6 +2,7 @@ import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { getProvider } from '../../core/registry.js';
 import { ProviderError } from '../../core/provider.js';
+import { expensesAllowedIn } from '../../core/chatScope.js';
 import {
   getChatConfig,
   setProviderGroup,
@@ -10,6 +11,14 @@ import {
 
 export async function cmdGroup(ctx: Context): Promise<void> {
   if (!ctx.chat || !ctx.from) return;
+  // Shared expenses are a group-chat feature (core/chatScope.ts) — a group
+  // linked here would be inert, so say where it belongs instead.
+  if (!expensesAllowedIn(ctx.chat.id)) {
+    await ctx.reply(
+      'Splid подключается в групповом чате — там, где делите траты. Добавь меня в группу и отправь /group <код> там.',
+    );
+    return;
+  }
   const code = ((ctx.match as string | undefined) ?? '').trim();
   if (!code) {
     await ctx.reply('Использование: /group <код-приглашения Splid>');

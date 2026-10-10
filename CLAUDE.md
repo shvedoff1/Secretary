@@ -900,6 +900,19 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   [<date>] <текст>|clear`. Shown under the day's title, and for a period as a
   `📝 <day> — <note>` list UNDER the table (a text column would break the table on
   a phone); the context line carries today's/yesterday's note. Off via `ENABLE_FOOD=false`.
+- FEATURE SPLIT BY CHAT KIND (`src/core/chatScope.ts`): the calorie diary is
+  PERSONAL and lives in private chats only; shared expenses (Splid, receipts, the
+  spend scan, spending_report) live in GROUP chats only. Decided from the chat id
+  sign (Telegram DMs are positive, groups negative) so the scheduler and inline
+  paths — which have no ctx — apply it too; every call site goes through
+  `foodAllowedIn` / `expensesAllowedIn` / `splidActiveIn`, never `chatId > 0`
+  inline. Each side is ABSENT, not discouraged, where the other belongs: no diary
+  tools / food line in a group (`foodAvailable: false` → a «Calorie diary: private
+  chat only» hint so the model redirects to the DM), no expense tools in a DM
+  (`splidConnected` is `splidActiveIn`, and `privateChat` makes the Splid line read
+  «group chats only» so the model doesn't offer /group). A Splid group linked from
+  a DM before the split stays stored but inert (no roster fetch either); `/group`
+  in a DM and `/food` in a group answer with where to go instead.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

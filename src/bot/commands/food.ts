@@ -1,5 +1,6 @@
 import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
+import { foodAllowedIn } from '../../core/chatScope.js';
 import {
   clearFoodGoal,
   getDayNote,
@@ -173,6 +174,11 @@ export async function cmdFood(ctx: Context): Promise<void> {
   if (!ctx.chat || !ctx.from) return;
   if (!loadConfig().ENABLE_FOOD) {
     await ctx.reply('Дневник еды выключен на этом боте.');
+    return;
+  }
+  // The diary is personal and lives in the DM only (core/chatScope.ts).
+  if (!foodAllowedIn(ctx.chat.id)) {
+    await ctx.reply('Дневник калорий веду только в личке — напиши мне туда /food.');
     return;
   }
   const chatId = ctx.chat.id;

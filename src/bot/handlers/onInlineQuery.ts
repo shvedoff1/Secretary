@@ -292,6 +292,9 @@ export async function runInlineAnswer(args: {
       // No Splid in an inline answer even if the DM has a group: recording an
       // expense needs the preview/confirm keyboard, which inline can't host.
       splidConnected: false,
+      // Inline answers as the asker's DM (chatId = their tg id): the diary's home.
+      privateChat: true,
+      foodAvailable: true,
       // The DM's standing rules follow the user into inline — «отвечай короче»
       // must hold wherever the answer lands.
       rules: listRules(chatId).map((r) => r.text),

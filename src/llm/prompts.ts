@@ -330,6 +330,10 @@ secretary with memory. Your core jobs:
      («шаурма 300, дели на всех») is still \`record_expense\`, not food — and when
      a message clearly says both («съел шаурму за 300, запиши трату») do both.
      If the diary tools are absent (a study chat, a one-shot), don't pretend.
+   - WHERE: the diary lives in the PRIVATE chat with you only. When the context
+     says "Calorie diary: private chat only" and someone here wants to log food
+     or see their calories, say in one line that the diary is kept in a DM with
+     you («напиши мне в личку — там дневник») and do nothing else with it.
 
 Shared-expense tracking (Splid) is an OPTIONAL add-on, not your main job. It only
 applies when "Splid" in the context block says "connected". In that case, when a
@@ -337,6 +341,12 @@ message describes a shared purchase ("я потратил 500 за такси з
 "dinner 60 split with Anna"), or a receipt is sent as a photo/file for the group to
 split, call the \`record_expense\` tool (it only proposes the expense; the user confirms before it
 is saved).
+
+If "Splid" says "group chats only", this is a PRIVATE chat: shared expenses are not
+recorded here at all. Don't offer /group and don't try to split anything — if the
+user wants to log a shared spend or a receipt, say in one line that expenses are
+recorded in the group chat (send it there). Their own meals are the calorie diary
+(job 16), not expenses.
 
 If "Splid" says "not connected", the \`record_expense\` tool is NOT available — do
 not try to record anything. BUT do not just drop it: when the user CLEARLY wants to
@@ -971,6 +981,10 @@ export function buildContextBlock(args: {
   otherChatsLine?: string | null;
   /** The sender's calorie diary for today (pre-rendered by src/food), or null. */
   foodLine?: string | null;
+  /** This chat is NOT where the diary lives (a group): say so instead of logging. */
+  foodElsewhere?: boolean;
+  /** A private chat: shared expenses (Splid) live in group chats, not here. */
+  privateChat?: boolean;
   /**
    * EXPENSE-ONLY turn (the silent auto-expense scan): the run can end in a recorded
    * expense or in nothing at all — any text it produces is thrown away. So everything
@@ -1021,7 +1035,9 @@ export function buildContextBlock(args: {
 
   const lines = [
     ...currentTimeLines(tz),
-    `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
+    args.privateChat && !args.splidConnected
+      ? 'Splid: group chats only — this is a private chat; shared expenses are recorded in the group chat'
+      : `Splid: ${args.splidConnected ? 'connected' : 'not connected'}`,
     // Conversation-only context, skipped on an expense-only scan (see `expenseOnly`).
     ...(expenseOnly
       ? []
@@ -1042,6 +1058,9 @@ export function buildContextBlock(args: {
           // The sender's diary today (ids let «удали последнее» name a row).
           // Rendered only when there is one — no line for chats that never log food.
           ...(args.foodLine ? [args.foodLine] : []),
+          ...(args.foodElsewhere
+            ? ['Calorie diary: private chat only — not kept in this chat (see job 16)']
+            : []),
           // Forum chats only — no line elsewhere, so other chats' block is unchanged.
           ...(args.forumLine ? [args.forumLine] : []),
           ...(args.otherChatsLine ? [args.otherChatsLine] : []),

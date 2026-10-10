@@ -107,9 +107,11 @@ added without touching the core.
   «кружочки» are NOT processed when they arrive (too expensive in a busy chat): they're
   logged as references (caption, link, a cheap-to-open file id) and the bot opens one
   specific picture — or a video's preview frame — only when asked («что на том
-  скрине?», `view_media`). For a chat where people talk to EACH OTHER in voice, turn on
-  listen-only with `/listen <chatId> on`: every voice note is transcribed and logged
-  silently, and the bot answers only when it is called by name or replied to. Needs
+  скрине?», `view_media`). For a chat where people talk to EACH OTHER, turn on listen-only
+  with `/listen <chatId> on`: everything is logged (voice notes transcribed) silently,
+  and the bot speaks ONLY on an explicit @mention or a reply to its own message — its
+  name said in a voice note or typed in text, forwards and expense-looking lines are
+  ignored, and it never chimes in or reacts. Needs
   privacy mode OFF (see Setup) so the bot sees every message. The log keeps up to a
   year / 50k messages per chat by default (`CHAT_LOG_RETENTION_DAYS`,
   `CHAT_LOG_KEEP_PER_CHAT`).

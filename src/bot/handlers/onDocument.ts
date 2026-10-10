@@ -7,6 +7,7 @@ import { runAndRespond, senderName } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { forwardOrigin, isForwarded } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
+import { isQuietChat } from '../listenMode.js';
 import { logRefs } from '../threads.js';
 import { bufferForward, isForwardBufferEnabled, FORWARD_MARK } from '../forwardBuffer.js';
 import { FILE_ATTACHMENT_MARKER } from '../../llm/prompts.js';
@@ -71,7 +72,10 @@ export async function onDocument(ctx: Context): Promise<void> {
   // even here (it's a photo that skipped compression), so it parks its file_id
   // and joins the pack as a picture — size-capped at 5 MB (the Messages API's
   // per-image limit) so one huge PNG can't sink the whole consuming turn.
-  if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+  // Listen-only chats (/listen): logged above, answered only on an explicit
+  // @mention / reply — no forward marks, no by-name captions.
+  const quiet = isQuietChat(ctx);
+  if (!quiet && isForwardBufferEnabled() && isForwarded(ctx.message)) {
     const asImage =
       classifyFile(doc.mime_type, doc.file_name) === 'image' &&
       (doc.file_size ?? 0) <= Math.min(loadConfig().FILE_MAX_MB, 5) * 1024 * 1024;
@@ -92,7 +96,7 @@ export async function onDocument(ctx: Context): Promise<void> {
     return;
   }
 
-  const addressed = isAddressed(ctx) || (!!caption && mentionsBotByName(caption));
+  const addressed = isAddressed(ctx) || (!quiet && !!caption && mentionsBotByName(caption));
   if (!addressed) return;
 
   const cfg = loadConfig();

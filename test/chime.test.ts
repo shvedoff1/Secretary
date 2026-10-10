@@ -296,3 +296,16 @@ describe('chime hour-tier escalation', () => {
     expect(runMock).not.toHaveBeenCalled();
   });
 });
+
+describe('chime in a listen-only chat', () => {
+  it('never fires where /listen is on, even with the chime switched on', async () => {
+    const chime = await load();
+    const { setListenOnly } = await import('../src/db/repos/chatSettings.repo.js');
+    setListenOnly(1, true);
+    chime.recordChatMessage(1, 'Аня', 'релиз в пятницу');
+    chime.armChime(ctx());
+
+    await vi.advanceTimersByTimeAsync(HOUR_MS * 2);
+    expect(runMock).not.toHaveBeenCalled();
+  });
+});

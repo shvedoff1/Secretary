@@ -383,16 +383,19 @@ describe('onVoice in a listen-only chat (/listen on)', () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('still answers a note that calls the bot by name with a request', async () => {
+  it('IGNORES the bot named in the speech — only a reply/@mention counts', async () => {
+    // In a work chat «бот, …» is how people talk about the product.
     mockTranscribe.mockResolvedValue('Скай, сделай саммари по багам');
     mockAddressed.mockReturnValue(false);
     mockByName.mockReturnValue(true);
     mockRun.mockResolvedValue('replied');
 
-    const { ctx } = fakeCtx();
+    const { ctx, react, reply } = fakeCtx();
     await onVoice(ctx);
 
-    expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(react).not.toHaveBeenCalled();
+    expect(reply).not.toHaveBeenCalled();
   });
 
   it('still answers a note that replies to the bot', async () => {

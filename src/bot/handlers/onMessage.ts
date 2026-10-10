@@ -19,6 +19,7 @@ import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { modeAllowsChime, modeAllowsSlang } from '../../modes.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
+import { isQuietChat } from '../listenMode.js';
 import { logRefs } from '../threads.js';
 import {
   bufferForward,
@@ -78,7 +79,11 @@ export async function onMessage(ctx: Context): Promise<void> {
   // consumed by the user's next addressed message («сделай саммари») or by a tap
   // on the mark — see forwardBuffer.ts. In a DM this also stops the bot from
   // replying to every single forward.
-  if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+  // Listen-only chats (/listen) record forwards like any message but never mark
+  // or answer them — only an explicit ping/reply makes the bot speak there.
+  const quiet = isQuietChat(ctx);
+
+  if (!quiet && isForwardBufferEnabled() && isForwarded(ctx.message)) {
     bufferForward(ctx.chat.id, {
       messageId: ctx.message!.message_id,
       origin: forwardOrigin(ctx.message) ?? 'источник неизвестен',
@@ -159,14 +164,18 @@ export async function onMessage(ctx: Context): Promise<void> {
   // Addressed → process; looks-like-expense → silent auto-expense; else ignore.
   // Also answer a by-name question to the bot ("Скай, какая погода?") even when
   // it isn't a reply/@mention — same rule as voice notes.
-  let decision = routeMessage(ctx, text);
-  if (decision !== 'process' && addressesBotByName(text)) {
+  //
+  // A LISTEN-ONLY chat is stricter: an @mention or a reply to the bot, nothing
+  // else — no by-name asks («бот, …» is how a work chat talks ABOUT the product),
+  // and no silent expense scan (a model call on every number-bearing line).
+  let decision = quiet ? (isAddressed(ctx) ? 'process' : 'ignore') : routeMessage(ctx, text);
+  if (!quiet && decision !== 'process' && addressesBotByName(text)) {
     decision = 'process';
   }
   if (decision === 'ignore') {
     // Not for us — start the silence countdown. If the chat then stays quiet for a
     // minute, the bot rolls the dice and may chime in to keep the conversation going.
-    if (chimes) armChime(ctx);
+    if (chimes && !quiet) armChime(ctx);
     return;
   }
 

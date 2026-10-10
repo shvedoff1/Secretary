@@ -8,6 +8,7 @@ process.env.ANTHROPIC_API_KEY = 'x';
 process.env.ADMIN_TELEGRAM_ID = '1';
 process.env.DATABASE_PATH = ':memory:';
 
+vi.mock('../src/bot/listenMode.js', () => ({ isQuietChat: vi.fn(() => false) }));
 vi.mock('../src/bot/triggers.js', () => ({
   routeMessage: vi.fn(),
   isAddressed: vi.fn(),
@@ -68,6 +69,7 @@ import { getEditTarget } from '../src/bot/editTargets.js';
 import { getChatMode } from '../src/db/repos/chatSettings.repo.js';
 import { bufferForward, isForwardBufferEnabled } from '../src/bot/forwardBuffer.js';
 import { recordChatLog } from '../src/bot/chatLog.js';
+import { isQuietChat } from '../src/bot/listenMode.js';
 
 const mockRoute = vi.mocked(routeMessage);
 const mockByName = vi.mocked(addressesBotByName);
@@ -100,6 +102,7 @@ beforeEach(() => {
   mockFresh.mockReturnValue(false);
   mockEditTarget.mockReturnValue(undefined);
   mockMode.mockReturnValue('secretary');
+  vi.mocked(isQuietChat).mockReturnValue(false);
   resetPendingFiles();
 });
 
@@ -551,5 +554,55 @@ describe('onMessage and attached files', () => {
 
     expect(mockFileTurn).not.toHaveBeenCalled();
     expect(mockRun).toHaveBeenCalledOnce();
+  });
+});
+
+describe('onMessage in a listen-only chat (/listen on)', () => {
+  beforeEach(() => {
+    vi.mocked(isQuietChat).mockReturnValue(true);
+  });
+
+  it('IGNORES the bot called by name — only an @mention or a reply counts', async () => {
+    mockRoute.mockReturnValue('ignore');
+    mockByName.mockReturnValue(true);
+
+    await onMessage(ctx('бот опять лагает, Скай, глянь логи'));
+
+    expect(mockRun).not.toHaveBeenCalled();
+    // Still recorded: the log is the whole point of the chat.
+    expect(mockLog).toHaveBeenCalledOnce();
+  });
+
+  it('answers an explicit @mention / reply', async () => {
+    mockAddressed.mockReturnValue(true);
+
+    await onMessage(ctx('@bot что решили по релизу?'));
+
+    expect(mockRun).toHaveBeenCalledOnce();
+    expect(mockRun.mock.calls[0]?.[1]).toMatchObject({ addressed: true });
+  });
+
+  it('skips the silent expense scan — no model call on every number-bearing line', async () => {
+    mockRoute.mockReturnValue('auto-expense');
+
+    await onMessage(ctx('билд 512 упал за 30 минут'));
+
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('neither marks nor buffers a forward, and never arms a chime', async () => {
+    const fwd = {
+      message: { text: 'чужой текст', forward_origin: { type: 'hidden_user', sender_user_name: 'X', date: 1 } },
+      chat: { id: 1, type: 'group' },
+      from: { id: 2 },
+      react: vi.fn(),
+    } as unknown as Context;
+
+    await onMessage(fwd);
+    await onMessage(ctx('просто болтаем'));
+
+    expect(bufferForward).not.toHaveBeenCalled();
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(mockChime).not.toHaveBeenCalled();
   });
 });

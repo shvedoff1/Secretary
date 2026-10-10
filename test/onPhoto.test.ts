@@ -6,6 +6,7 @@ process.env.ANTHROPIC_API_KEY = 'x';
 process.env.ADMIN_TELEGRAM_ID = '1';
 process.env.DATABASE_PATH = ':memory:';
 
+vi.mock('../src/bot/listenMode.js', () => ({ isQuietChat: vi.fn(() => false) }));
 vi.mock('../src/bot/triggers.js', () => ({
   isAddressed: vi.fn(() => true),
   looksLikeExpenseForChat: vi.fn(() => false),
@@ -28,7 +29,8 @@ vi.mock('../src/bot/forwardBuffer.js', () => ({
 
 import { onPhoto, handlePhotoTurn } from '../src/bot/handlers/onPhoto.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
-import { isAddressed } from '../src/bot/triggers.js';
+import { isAddressed, mentionsBotByName, captionLooksLikeSharedExpense } from '../src/bot/triggers.js';
+import { isQuietChat } from '../src/bot/listenMode.js';
 import { bufferForward, isForwardBufferEnabled } from '../src/bot/forwardBuffer.js';
 
 const mockRun = vi.mocked(runAndRespond);
@@ -49,6 +51,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockAddressed.mockReturnValue(true);
   mockRun.mockResolvedValue('replied');
+  vi.mocked(isQuietChat).mockReturnValue(false);
+  vi.mocked(mentionsBotByName).mockReturnValue(false);
+  vi.mocked(captionLooksLikeSharedExpense).mockReturnValue(false);
 });
 
 describe('photos are looked at, not gated on Splid', () => {
@@ -114,5 +119,45 @@ describe('photos are looked at, not gated on Splid', () => {
 
     expect(mockRun).not.toHaveBeenCalled();
     expect(vi.mocked(downloadTelegramFile)).not.toHaveBeenCalled();
+  });
+});
+
+describe('photos in a listen-only chat (/listen on)', () => {
+  beforeEach(() => {
+    vi.mocked(isQuietChat).mockReturnValue(true);
+    mockAddressed.mockReturnValue(false);
+  });
+
+  it('ignores a caption that merely names the bot, and a receipt-looking caption', async () => {
+    vi.mocked(mentionsBotByName).mockReturnValue(true);
+    vi.mocked(captionLooksLikeSharedExpense).mockReturnValue(true);
+
+    await onPhoto(ctx('Скай, на меня и Ваню'));
+
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('still looks at a photo that @mentions / replies to the bot', async () => {
+    mockAddressed.mockReturnValue(true);
+
+    await onPhoto(ctx('@bot что на скрине?'));
+
+    expect(mockRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mark a forwarded photo for the batch', async () => {
+    vi.mocked(isForwardBufferEnabled).mockReturnValue(true);
+    const c = ctx();
+    (c.message as unknown as Record<string, unknown>).forward_origin = {
+      type: 'hidden_user',
+      sender_user_name: 'X',
+      date: 1,
+    };
+
+    await onPhoto(c);
+
+    expect(bufferForward).not.toHaveBeenCalled();
+    expect(mockRun).not.toHaveBeenCalled();
+    vi.mocked(isForwardBufferEnabled).mockReturnValue(false);
   });
 });

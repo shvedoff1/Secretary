@@ -3,7 +3,7 @@ import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
 import { runAndRespond } from './assist.js';
 import { getRecentChat, clearRecentChat } from '../recentChat.js';
-import { getChatMode, isChimeEnabled } from '../../db/repos/chatSettings.repo.js';
+import { getChatMode, isChimeEnabled, isListenOnly } from '../../db/repos/chatSettings.repo.js';
 import { modeAllowsChime } from '../../modes.js';
 
 // The rolling buffer of recent chatter lives in `recentChat.ts` so the scheduler
@@ -124,6 +124,8 @@ export function armChime(ctx: Context): void {
   // Per-chat opt-out: the admin can silence the spontaneous chime completely
   // for a specific chat (/chime <chatId> off) without touching the global flag.
   if (!isChimeEnabled(chatId)) return;
+  // A listen-only chat never hears from the bot unprompted (/listen).
+  if (isListenOnly(chatId)) return;
 
   const tiers = chimeTiers(cfg);
   if (tiers.length === 0) return;

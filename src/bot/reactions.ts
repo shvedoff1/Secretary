@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 import type { ReactionTypeEmoji } from '@grammyjs/types';
 import { logger } from '../logger.js';
-import { isReactionsEnabled } from '../db/repos/chatSettings.repo.js';
+import { isListenOnly, isReactionsEnabled } from '../db/repos/chatSettings.repo.js';
 
 // Light chat seasoning: a small fraction of messages get a random positive
 // reaction. No LLM, no memory, no per-user rules.
@@ -30,6 +30,8 @@ export async function maybeAutoReact(ctx: Context): Promise<void> {
   // messages skip the lookup entirely.
   const chatId = ctx.chat?.id;
   if (chatId != null && !isReactionsEnabled(chatId)) return;
+  // Listen-only chats (/listen) stay silent — no random reactions either.
+  if (chatId != null && isListenOnly(chatId)) return;
   const emoji = POSITIVE_REACTIONS[Math.floor(Math.random() * POSITIVE_REACTIONS.length)];
   if (!emoji) return;
   try {

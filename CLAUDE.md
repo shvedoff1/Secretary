@@ -334,9 +334,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   and `view_media` (`src/summary/media.ts`; exposed only next to summarize_chat AND
   when the caller passes a `viewMedia` handler — the live flow, not scheduler/inline)
   opens ONE of them (magic-byte sniffed, ≤5 MB, a video is said to be only its
-  still). LISTEN-ONLY (`/listen <chatId> on|off` → `chat_settings.listen_only`): a
-  group voice note is transcribed + logged + learned but answered only when addressed
-  (reply to the bot / `addressesBotByName` on the transcript) — no ✍, no admin DM.
+  still). LISTEN-ONLY (`/listen <chatId> on|off` → `chat_settings.listen_only`,
+  read via `isQuietChat` in `src/bot/listenMode.ts`): the bot is a silent recorder —
+  everything is logged (voice transcribed + learned), but it speaks ONLY on an explicit
+  @mention or a reply to its own message (`isAddressed`). Deliberately ignored there:
+  its name in a voice transcript or typed text (`addressesBotByName` — a work chat says
+  «бот» about the product), a caption naming it, the silent expense scan, the forward
+  batch (no 🫡 marks), the chime and random reactions; voice notes get no ✍ and no
+  admin DM.
   FROM THE DM («что в рабочем чате?»): `summarize_chat.chat` reads ANOTHER chat's
   log, but only when the handler got `crossChat` — set solely for a PRIVATE chat
   (`crossChatAccess` in `flows/assist.ts`) and for a DM-owned scheduled task (creator

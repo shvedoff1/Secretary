@@ -101,17 +101,18 @@ describe('runAssistant humorizable flag', () => {
     expect(result).toEqual({ kind: 'text', text: 'Привет!', scheduled: false, humorizable: true });
   });
 
-  it('calls Anthropic with the configured default model (Sonnet 5), thinking disabled', async () => {
+  it('calls Anthropic with the configured default model (Sonnet 5.5), thinking off via between_tools', async () => {
     responses = [textResponse('Привет!')];
     const { runAssistant } = await import('../src/llm/assistant.js');
     await runAssistant(baseCtx('привет'), handlers);
 
-    // Model is the new default, and thinking is explicitly disabled so Sonnet 5
-    // doesn't turn on adaptive thinking (latency + max_tokens budget) by default.
+    // Model is the new default, and thinking is explicitly OFF so the model
+    // doesn't run adaptive thinking (latency + max_tokens budget) by default.
     expect(createMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'claude-sonnet-5',
-        thinking: { type: 'disabled' },
+        model: 'claude-sonnet-5-5',
+        // Sonnet 5.5 rejects `disabled`; between_tools is its off-switch.
+        thinking: { type: 'between_tools' },
       }),
     );
   });
@@ -324,7 +325,7 @@ describe('runAssistant tutor mode', () => {
     });
   });
 
-  it('secretary mode still gets the chill prompt and disabled thinking (regression guard)', async () => {
+  it('secretary mode still gets the chill prompt and thinking off (regression guard)', async () => {
     responses = [textResponse('привет!')];
     const { runAssistant } = await import('../src/llm/assistant.js');
     await runAssistant(baseCtx('привет'), handlers);
@@ -334,7 +335,7 @@ describe('runAssistant tutor mode', () => {
       thinking: { type: string };
       max_tokens: number;
     };
-    expect(call.thinking).toEqual({ type: 'disabled' });
+    expect(call.thinking).toEqual({ type: 'between_tools' });
     expect(call.max_tokens).toBe(2048);
     expect(call.system[0]!.text).toContain('Secretary');
   });

@@ -885,9 +885,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `chat_config` row (only Splid-linked ones), so chat-wide settings live in `chat_settings`.
 - LLM cost: the stable prefix (tool schemas + system prompt) is prompt-cached via
   `cache_control` in `assistant.ts`. Keep `SYSTEM_PROMPT` static so the cache holds.
-- Model is configurable via `ANTHROPIC_MODEL` (default `claude-sonnet-5`). The assistant
-  call sends `thinking: {type: 'disabled'}` explicitly: on Sonnet 5 adaptive thinking turns
-  ON by default when `thinking` is omitted, which would add latency to every tool-routing
-  turn and eat into the 2048-token `max_tokens` budget (thinking counts against it). Disabling
-  keeps the snappy Sonnet-4.6 behaviour; flip it to `{type:'adaptive'}` + a bigger `max_tokens`
-  if you ever want reasoning.
+- Model is configurable via `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`; the deploy
+  workflow's fallback matches). The assistant keeps thinking OFF on routing turns —
+  adaptive thinking would add latency to every turn and eat into the 2048-token
+  `max_tokens` budget — but the off-switch is MODEL-SPECIFIC and a wrong one is a 400 on
+  every turn, so it is chosen by the pure `thinkingFor` (`src/llm/thinking.ts`, pinned by
+  a test): `between_tools` on Sonnet 5.5 (`disabled` is rejected there), `disabled` on
+  Sonnet 5 and older, omitted on Opus 5.5 / Fable (thinking can't be turned off); tutor
+  mode is `adaptive` everywhere. The SDK predates `between_tools`, hence the cast.

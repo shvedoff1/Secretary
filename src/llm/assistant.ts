@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { thinkingFor } from './thinking.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -506,20 +507,17 @@ export async function runAssistant(
   }
   messages.push({ role: 'user', content: currentContent });
 
+  const thinkingParam = thinkingFor(cfg.ANTHROPIC_MODEL, { tutor });
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await anthropic.messages.create({
       model: cfg.ANTHROPIC_MODEL,
       // Tutor answers are long (step-by-step solutions) and adaptive thinking
       // spends from the same budget, so tutor mode gets a much bigger cap.
       max_tokens: tutor ? 8192 : 2048,
-      // Secretary keeps thinking OFF explicitly. On Sonnet 5 (the default model)
-      // adaptive thinking turns ON whenever `thinking` is omitted — that would add
-      // latency to every tool-routing turn AND eat into the 2048-token budget
-      // (thinking counts against max_tokens), risking a truncated answer /
-      // tool-call JSON. Disabling keeps the snappy behaviour we had on Sonnet 4.6.
-      // Tutor mode is the opposite trade: accuracy over latency — solving
-      // math/physics is exactly what thinking is for, so let the model reason.
-      thinking: { type: tutor ? 'adaptive' : 'disabled' },
+      // Secretary keeps thinking OFF; tutor mode lets the model reason. The
+      // off-switch differs per model (Sonnet 5.5 rejects `disabled`) — see
+      // thinkingFor. Cast: the SDK version predates `between_tools`.
+      ...(thinkingParam ? { thinking: thinkingParam as Anthropic.ThinkingConfigParam } : {}),
       // Cache the stable prefix (tools render before system, so one breakpoint on
       // the system block caches both tool schemas + system prompt). Re-reads cost
       // ~0.1x: this is the main lever against per-call token cost. Tutor chats

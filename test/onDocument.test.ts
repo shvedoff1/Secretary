@@ -6,6 +6,7 @@ process.env.ANTHROPIC_API_KEY = 'x';
 process.env.ADMIN_TELEGRAM_ID = '1';
 process.env.DATABASE_PATH = ':memory:';
 
+vi.mock('../src/bot/listenMode.js', () => ({ isQuietChat: vi.fn(() => false) }));
 vi.mock('../src/bot/triggers.js', () => ({
   isAddressed: vi.fn(() => true),
   mentionsBotByName: vi.fn(() => false),
@@ -26,7 +27,8 @@ vi.mock('../src/bot/forwardBuffer.js', () => ({
 
 import { onDocument } from '../src/bot/handlers/onDocument.js';
 import { runAndRespond } from '../src/bot/flows/assist.js';
-import { isAddressed } from '../src/bot/triggers.js';
+import { isAddressed, mentionsBotByName } from '../src/bot/triggers.js';
+import { isQuietChat } from '../src/bot/listenMode.js';
 import { downloadTelegramFile } from '../src/util/telegramFile.js';
 import { bufferForward } from '../src/bot/forwardBuffer.js';
 import { hasPendingFile, takePendingFile, resetPendingFiles } from '../src/bot/pendingFile.js';
@@ -76,6 +78,8 @@ beforeEach(() => {
   resetPendingFiles();
   mockAddressed.mockReturnValue(true);
   mockRun.mockResolvedValue('replied');
+  vi.mocked(isQuietChat).mockReturnValue(false);
+  vi.mocked(mentionsBotByName).mockReturnValue(false);
 });
 
 describe('a file with no explanation is ASKED about, not read', () => {
@@ -191,5 +195,42 @@ describe('download failure', () => {
 
     expect(replies(c)[0]).toContain('Не смог скачать файл');
     expect(mockRun).not.toHaveBeenCalled();
+  });
+});
+
+describe('files in a listen-only chat (/listen on)', () => {
+  beforeEach(() => {
+    vi.mocked(isQuietChat).mockReturnValue(true);
+  });
+
+  it('ignores a caption that merely names the bot — no question, no download', async () => {
+    mockAddressed.mockReturnValue(false);
+    vi.mocked(mentionsBotByName).mockReturnValue(true);
+    const c = ctx({ caption: 'бот, вот лог' });
+
+    await onDocument(c);
+
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(mockDownload).not.toHaveBeenCalled();
+    expect(c.reply).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a forwarded file for the batch', async () => {
+    mockAddressed.mockReturnValue(false);
+    const c = ctx({ forwardFrom: true });
+
+    await onDocument(c);
+
+    expect(bufferForward).not.toHaveBeenCalled();
+    expect(c.react).not.toHaveBeenCalled();
+  });
+
+  it('still reads a file sent as a reply to the bot', async () => {
+    mockAddressed.mockReturnValue(true);
+    mockDownload.mockResolvedValue(Buffer.from('%PDF'));
+
+    await onDocument(ctx({ caption: 'разбери', replyToBot: true }));
+
+    expect(mockRun).toHaveBeenCalledTimes(1);
   });
 });

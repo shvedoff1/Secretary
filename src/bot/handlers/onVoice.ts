@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
-import { addressesBotByName, isAddressed } from '../triggers.js';
+import { isAddressed } from '../triggers.js';
 import { runAndRespond, senderName } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
 import { learnMemoryFromMessage } from '../flows/memory.js';
@@ -99,9 +99,10 @@ export async function onVoice(ctx: Context): Promise<void> {
   }
 
   // LISTEN-ONLY chats (/listen): a voice note is a line of the work chat to be
-  // transcribed and remembered, not a question — it's answered only when it is
-  // addressed (DM, a reply to the bot, or the bot named with a request in the
-  // transcript). Everything else stays silent: no ✍ mark, no reply, no admin DM.
+  // transcribed and remembered, not a question — it's answered only when it is a
+  // REPLY to the bot (or carries an @mention in its caption). Saying the bot's
+  // name in the speech does NOT count: a work chat says «бот» about the product
+  // all day. Everything else stays silent: no ✍ mark, no reply, no admin DM.
   const listenOnly = ctx.chat.type !== 'private' && isListenOnly(ctx.chat.id);
 
   // Acknowledge receipt; cleared below unless this becomes an expense. A
@@ -162,8 +163,8 @@ export async function onVoice(ctx: Context): Promise<void> {
   }
 
   // Listen-only: logged and learned above — that's the job. Answer only a note
-  // that is actually spoken TO the bot.
-  if (listenOnly && !addressed && !addressesBotByName(transcript)) {
+  // that explicitly replies to / pings the bot.
+  if (listenOnly && !addressed) {
     logger.info({ chatId: ctx.chat.id }, 'voice logged silently (listen-only)');
     return;
   }

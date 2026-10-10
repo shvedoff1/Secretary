@@ -22,7 +22,7 @@ export async function cmdHelp(ctx: Context): Promise<void> {
         '/rules <chatId> [add <текст>|del <N>|clear] — правила поведения для чата',
         '/trust <chatId> on|off — открыть/закрыть доступ участникам чата',
         '/chime <chatId> on|off — рандомные вбросы бота в тишину',
-        '/listen <chatId> on|off — голосовые только слушать и логировать (отвечать, только когда зовут)',
+        '/listen <chatId> on|off — тихий режим: всё в лог, отвечать только на @упоминание или ответ',
         '/humor <chatId> on|off — юморайзер (OpenAI-переписывание ответов)',
         '/slang <chatId> on|off — говорить словечками чата (факты не меняются)',
         '/react <chatId> on|off — рандомные реакции-эмодзи',

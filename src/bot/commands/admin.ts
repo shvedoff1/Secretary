@@ -431,7 +431,7 @@ export async function cmdChat(ctx: Context): Promise<void> {
       `доступ: ${isChatTrusted(id) ? 'доверенный чат — все участники' : 'только /whitelist' + (cfg?.provider_group_id ? ' + участники Splid-группы' : '')} (${code(`/trust ${id} on|off`)})`,
       adminsLine,
       `вбросы в тишину: ${isChimeEnabled(id) ? 'вкл' : 'выкл'} (${code(`/chime ${id} on|off`)})`,
-      `голосовые: ${isListenOnly(id) ? 'молча слушаю, отвечаю только когда зовут' : 'отвечаю на каждое'} (${code(`/listen ${id} on|off`)})`,
+      `тихий режим: ${isListenOnly(id) ? 'вкл — всё пишу в лог, отвечаю только на @упоминание или ответ на моё сообщение' : 'выкл — отвечаю на каждое голосовое и на обращение по имени'} (${code(`/listen ${id} on|off`)})`,
       `юморайзер: ${isChatHumorEnabled(id) ? 'вкл' : 'выкл'} (${code(`/humor ${id} on|off`)})`,
       `рандомные реакции: ${isReactionsEnabled(id) ? 'вкл' : 'выкл'} (${code(`/react ${id} on|off`)})`,
       rulesLine,
@@ -786,14 +786,15 @@ export async function cmdChime(ctx: Context): Promise<void> {
   );
 }
 
-// --- /listen <id> [on|off] : listen-only voice notes per chat -----------------
+// --- /listen <id> [on|off] : listen-only (quiet) mode per chat --------------
 
 /**
- * `/listen <chatId>` shows whether voice notes in that chat are answered;
- * `/listen <chatId> on|off` toggles LISTEN-ONLY. On = every voice note is still
- * transcribed and logged (recaps, bug candidates, memory), but the bot answers
- * one only when it's addressed — a reply to the bot, or its name with a request
- * in the speech. For a work chat where people talk to EACH OTHER in voice.
+ * `/listen <chatId>` shows whether the chat is in LISTEN-ONLY mode;
+ * `/listen <chatId> on|off` toggles it. On = everything is still logged (voice
+ * notes transcribed) for recaps and bug candidates, but the bot speaks ONLY on
+ * an explicit @mention or a reply to its own message — by-name asks, forwards,
+ * expense-looking lines, chimes and random reactions are all off (isQuietChat).
+ * For a work chat where people talk to EACH OTHER and say «бот» about the product.
  */
 export async function cmdListen(ctx: Context): Promise<void> {
   const usage = 'Использование: /listen <chatId> [on|off]';
@@ -808,8 +809,8 @@ export async function cmdListen(ctx: Context): Promise<void> {
   if (!want) {
     await ctx.reply(
       isListenOnly(id)
-        ? `Чат ${id}: голосовые слушаю МОЛЧА — расшифровываю и запоминаю, отвечаю только когда зовут. Отвечать на каждое: /listen ${id} off`
-        : `Чат ${id}: отвечаю на КАЖДОЕ голосовое. Только слушать и запоминать: /listen ${id} on`,
+        ? `Чат ${id}: тихий режим ВКЛ — всё пишу в лог (голосовые расшифровываю), отвечаю только на @упоминание или ответ на моё сообщение. Выключить: /listen ${id} off`
+        : `Чат ${id}: тихий режим ВЫКЛ — отвечаю на каждое голосовое и на обращение по имени. Включить: /listen ${id} on`,
     );
     return;
   }
@@ -820,8 +821,8 @@ export async function cmdListen(ctx: Context): Promise<void> {
   setListenOnly(id, want === 'on');
   await ctx.reply(
     want === 'on'
-      ? `👂 Чат ${id}: голосовые теперь только слушаю — расшифровка идёт в лог (саммари, кандидаты в баги), отвечаю, только если позвать по имени или ответить на моё сообщение.`
-      : `🗣 Чат ${id}: снова отвечаю на каждое голосовое.`,
+      ? `👂 Чат ${id}: тихий режим. Всё пишу в лог (голосовые расшифровываю — для саммари и кандидатов в баги), а отвечаю ТОЛЬКО на @упоминание или ответ на моё сообщение. Имя в голосовом или в тексте, пересланное, похожее на трату — игнорирую; вбросов и реакций нет.`
+      : `🗣 Чат ${id}: тихий режим выключен — снова отвечаю на каждое голосовое и на обращение по имени.`,
   );
 }
 

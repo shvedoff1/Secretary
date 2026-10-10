@@ -11,6 +11,7 @@ import { runAndRespond, senderName } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { forwardOrigin, isForwarded } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
+import { isQuietChat } from '../listenMode.js';
 import { logRefs } from '../threads.js';
 import {
   bufferForward,
@@ -46,7 +47,10 @@ export async function onPhoto(ctx: Context): Promise<void> {
   // along so the drain can attach the actual picture to the consuming turn —
   // caption-only buffering made «что на картинке?» over a forward unanswerable.
   // Nothing is downloaded here: an expired pack costs zero downloads.
-  if (isForwardBufferEnabled() && isForwarded(ctx.message)) {
+  // Listen-only chats (/listen): logged above, answered only on an explicit
+  // @mention / reply — no forward marks, no by-name captions, no receipt guesses.
+  const quiet = isQuietChat(ctx);
+  if (!quiet && isForwardBufferEnabled() && isForwarded(ctx.message)) {
     const largest = photos[photos.length - 1]!;
     bufferForward(ctx.chat.id, {
       messageId: ctx.message!.message_id,
@@ -66,13 +70,14 @@ export async function onPhoto(ctx: Context): Promise<void> {
   // Addressed = DM / @mention / reply to the bot, OR the caption talks to it by
   // name ("Скай, на меня Ивана и Антона") — the user is clearly talking to us, so
   // we both look at the photo and answer.
-  const addressed = isAddressed(ctx) || (!!caption && mentionsBotByName(caption));
+  const addressed = isAddressed(ctx) || (!quiet && !!caption && mentionsBotByName(caption));
   // Even when NOT addressed, a captioned photo is very likely a receipt to split
   // when the caption looks like a shared expense — either the usual numeric
   // heuristic ("чек на 1200 за ужин") or just names/allocation attached with no
   // number ("на меня Ивана и Антона"), since the amount is in the picture. A bare
   // picture with no relevant caption is still ignored — we don't OCR every photo.
   const sharedExpense =
+    !quiet &&
     !!caption &&
     (looksLikeExpenseForChat(ctx.chat.id, caption) || captionLooksLikeSharedExpense(caption));
   if (!addressed && !sharedExpense) return;

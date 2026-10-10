@@ -297,11 +297,11 @@ describe('/listen command', () => {
     const on = adminCtx(`${CHAT} on`);
     await cmdListen(on.ctx);
     expect(repo.isListenOnly(CHAT)).toBe(true);
-    expect(on.replies[0]).toContain('только слушаю');
+    expect(on.replies[0]).toContain('ТОЛЬКО на @упоминание');
 
     const status = adminCtx(`${CHAT}`);
     await cmdListen(status.ctx);
-    expect(status.replies[0]).toContain('МОЛЧА');
+    expect(status.replies[0]).toContain('тихий режим ВКЛ');
 
     await cmdListen(adminCtx(`${CHAT} off`).ctx);
     expect(repo.isListenOnly(CHAT)).toBe(false);
@@ -309,5 +309,25 @@ describe('/listen command', () => {
     const bad = adminCtx(`${CHAT} maybe`);
     await cmdListen(bad.ctx);
     expect(bad.replies[0]).toContain('Использование');
+  });
+});
+
+describe('random reactions in a listen-only chat', () => {
+  it('drops none where /listen is on', async () => {
+    await fresh();
+    const { setListenOnly } = await import('../src/db/repos/chatSettings.repo.js');
+    const { maybeAutoReact } = await import('../src/bot/reactions.js');
+    const react = vi.fn(async () => {});
+    const c = { chat: { id: CHAT, type: 'supergroup' }, message: { text: 'ок' }, react } as unknown as Context;
+    const roll = vi.spyOn(Math, 'random').mockReturnValue(0); // the roll would pass
+
+    setListenOnly(CHAT, true);
+    await maybeAutoReact(c);
+    expect(react).not.toHaveBeenCalled();
+
+    setListenOnly(CHAT, false);
+    await maybeAutoReact(c);
+    expect(react).toHaveBeenCalledOnce();
+    roll.mockRestore();
   });
 });

@@ -273,8 +273,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   in-flight-per-user guard stops concurrent runs, and the chosen handler re-checks
   approval (it can be revoked between keystroke and pick). Answers are clamped under
   the 4096-char cap (`clampInlineAnswer`) and keep the question visible above the
-  answer (the target chat never saw it). Off via `ENABLE_INLINE=false` (answers empty
-  so clients don't spin). `allowed_updates` in index.ts must list both update types.
+  answer (the target chat never saw it). OFF BY DEFAULT (`ENABLE_INLINE`, default false): with inline enabled in
+  BotFather, clients turn every message that STARTS with «@бот …» into an inline
+  popup — exactly how people ping the bot in a group. The real switch is BotFather
+  `/setinline` → Disable; with the flag off a stray query is answered empty so
+  clients don't spin. `allowed_updates` in index.ts must list both update types.
 - `src/summary/` — `summarize_chat` skill: recap what was actually SAID in a chat
   («перескажи, что было в последних 200 сообщениях», «что я пропустил», «о чём
   болтали вчера»). It needed a new store: `conversation_turn` is the assistant's

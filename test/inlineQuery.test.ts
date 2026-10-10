@@ -20,7 +20,8 @@ async function load(env: Record<string, string> = {}) {
   process.env.ANTHROPIC_API_KEY = 'x';
   process.env.ADMIN_TELEGRAM_ID = '1';
   process.env.DATABASE_PATH = ':memory:';
-  delete process.env.ENABLE_INLINE;
+  // Inline is off by default now; these tests exercise the feature itself.
+  process.env.ENABLE_INLINE = 'true';
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   vi.resetModules();
   const { migrate } = await import('../src/db/migrate.js');
@@ -243,5 +244,28 @@ describe('answer shaping', () => {
     expect(clamped).toContain('в личку');
     // A short answer passes through untouched.
     expect(inline.clampInlineAnswer('коротко')).toBe('коротко');
+  });
+});
+
+describe('inline mode default', () => {
+  it('is OFF unless ENABLE_INLINE is set — a stray query is answered empty, no LLM', async () => {
+    const { inline } = await load();
+    delete process.env.ENABLE_INLINE;
+    vi.resetModules();
+    const fresh = await import('../src/bot/handlers/onInlineQuery.js');
+    const calls: Answered[] = [];
+    const ctx = {
+      inlineQuery: { id: 'q', query: 'привет', from: { id: 1 } },
+      from: { id: 1 },
+      answerInlineQuery: async (results: unknown[], other: Record<string, unknown>) => {
+        calls.push({ results, other });
+        return true;
+      },
+    } as unknown as Context;
+    await fresh.onInlineQuery(ctx);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.results).toEqual([]);
+    expect(runAssistantMock).not.toHaveBeenCalled();
+    void inline;
   });
 });

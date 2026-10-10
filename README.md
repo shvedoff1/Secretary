@@ -157,7 +157,11 @@ added without touching the core.
      BotFather → `/setprivacy` → your bot → **Disable**. (Otherwise it only sees
      commands, @mentions, and replies.) The same is needed for chat recaps — a bot
      that can't see the messages can't log them.
-   - For **inline mode** (`@бот вопрос` from any chat): BotFather → `/setinline`
+   - **Inline mode is OFF by default** — leave it disabled in BotFather (`/setinline`
+     → Disable): while it is on, every message that starts with `@бот` turns into an
+     inline popup, which gets in the way of pinging the bot in a group.
+   - Only if you want **inline mode** (`@бот вопрос` from any chat; also set
+     `ENABLE_INLINE=true`): BotFather → `/setinline`
      (set a placeholder, e.g. «спроси секретаря…») **and** `/setinlinefeedback` →
      **Enabled (100%)**. The feedback part is not optional: the bot answers by
      editing a placeholder message after you pick the card, and without feedback
@@ -210,7 +214,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `CONVERSATION_HISTORY_LIMIT` | no | `20` | Turns kept as context |
 | `CONVERSATION_HISTORY_MAX_AGE_HOURS` | no | `12` | Drop dialogue history older than this so old tangents expire |
 | `ENABLE_WEB_SEARCH` | no | `true` | Needs outbound internet |
-| `ENABLE_INLINE` | no | `true` | Inline mode: `@бот вопрос` in any chat answers as it would in the asker's DM. Needs BotFather setup (`/setinline` + `/setinlinefeedback` at 100%); whitelisted users only |
+| `ENABLE_INLINE` | no | `false` | Inline mode: `@бот вопрос` in any chat answers as it would in the asker's DM. OFF by default — with inline enabled in BotFather, any message that starts with `@бот` turns into an inline popup, which gets in the way of pinging the bot in a group. To use it: `ENABLE_INLINE=true` + BotFather `/setinline` + `/setinlinefeedback` at 100%; whitelisted users only |
 | `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own (just tell the bot «я во Вьетнаме» / «мой часовой пояс — Бали» and it switches the chat's clock itself) |
 | `ENABLE_LEXICON` | no | `true` | Learn the chat's slang from messages and reuse it |
 | `ANTHROPIC_LEXICON_MODEL` | no | `claude-haiku-5-5` | Cheap model for the extraction batches |

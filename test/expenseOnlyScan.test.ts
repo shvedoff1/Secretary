@@ -86,6 +86,16 @@ describe('runAndRespond: memory on the silent auto-expense scan', () => {
       tgUserId: 7,
     });
     memory.insertPinned(-555, 'едем на Бали в марте');
+    // The scan only exists where Splid is connected.
+    const { setProviderGroup } = await import('../src/db/repos/chatConfig.repo.js');
+    setProviderGroup({
+      chatId: -555,
+      providerName: 'splid',
+      credential: 'x',
+      providerGroupId: 'G',
+      defaultCurrency: 'EUR',
+      createdBy: 7,
+    });
 
     await assist.runAndRespond(ctx(), {
       userContent: 'круассан 50 Ивану',
@@ -117,5 +127,50 @@ describe('runAndRespond: memory on the silent auto-expense scan', () => {
     expect(call.expenseOnly).toBe(false);
     expect(call.memoryChat).toEqual([{ content: 'едем на Бали в марте' }]);
     expect(call.memoryTotal).toBe(1);
+  });
+});
+
+describe('runAndRespond: no scan without a Splid group', () => {
+  it('makes no model call and marks nothing for an unaddressed line in a chat without Splid', async () => {
+    const { assist } = await load();
+    const react = vi.fn(async () => {});
+    const c = { ...ctx(-777), react } as unknown as Context;
+
+    const outcome = await assist.runAndRespond(c, {
+      userContent: 'купил бкб за 4000',
+      addressed: false,
+      source: 'text',
+      historyText: 'купил бкб за 4000',
+    });
+
+    expect(outcome).toBe('silent');
+    expect(runAssistantMock).not.toHaveBeenCalled();
+    expect(react).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+  });
+
+  it('never flashes 👀 on a scanned message even where Splid IS connected', async () => {
+    const { assist } = await load();
+    const { setProviderGroup } = await import('../src/db/repos/chatConfig.repo.js');
+    setProviderGroup({
+      chatId: -555,
+      providerName: 'splid',
+      credential: 'x',
+      providerGroupId: 'G',
+      defaultCurrency: 'EUR',
+      createdBy: 7,
+    });
+    const react = vi.fn(async () => {});
+    const c = { ...ctx(), react } as unknown as Context;
+
+    await assist.runAndRespond(c, {
+      userContent: 'круассан 50 Ивану',
+      addressed: false,
+      source: 'text',
+      historyText: 'круассан 50 Ивану',
+    });
+
+    expect(runAssistantMock).toHaveBeenCalledOnce();
+    expect(react).not.toHaveBeenCalled();
   });
 });

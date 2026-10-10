@@ -144,6 +144,7 @@ import {
 import { previewKeyboard } from '../keyboards.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 import { threadIdOf } from '../threads.js';
+import { expenseScanAllowed } from '../expenseScan.js';
 import { looksLikeExpense } from '../../util/money.js';
 import { FORWARDED_MESSAGE_MARKER, VOICE_TRANSCRIPT_MARKER } from '../../llm/prompts.js';
 import { forwardOrigin } from '../forwarded.js';
@@ -856,7 +857,19 @@ interface RunArgs {
  * Returns what happened so callers can adjust their own UI (reactions, etc.).
  */
 export async function runAndRespond(ctx: Context, args: RunArgs): Promise<RespondOutcome> {
-  const manageReaction = args.manageReaction ?? true;
+  // A silent expense scan (an UNADDRESSED message that merely looks like a spend)
+  // can only end in a recorded expense — and with no Splid group connected there
+  // is no record_expense tool, so the whole model call would be thrown away (it
+  // used to run anyway: a full assistant turn on someone's «купил бкб за 4000» in
+  // a dota chat, its text dropped).
+  // (The handlers already route such lines to «ignore» — this is the backstop for
+  // every other caller.)
+  if (!args.addressed && !expenseScanAllowed(ctx.chat!.id)) {
+    return 'silent';
+  }
+  // 👀 means «I'm answering you». A silent scan answers nobody, so it never marks
+  // the message — the bot used to flash 👀 on random people's lines with numbers.
+  const manageReaction = (args.manageReaction ?? true) && args.addressed;
   if (manageReaction) await setThinking(ctx);
   // Show "печатает…" while we generate, but only when we'll actually reply
   // (addressed). A silent auto-expense scan must stay invisible — no typing there.

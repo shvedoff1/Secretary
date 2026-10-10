@@ -12,6 +12,7 @@ import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { forwardOrigin, isForwarded } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
 import { isQuietChat } from '../listenMode.js';
+import { expenseScanAllowed } from '../expenseScan.js';
 import { logRefs } from '../threads.js';
 import {
   bufferForward,
@@ -76,8 +77,11 @@ export async function onPhoto(ctx: Context): Promise<void> {
   // heuristic ("чек на 1200 за ужин") or just names/allocation attached with no
   // number ("на меня Ивана и Антона"), since the amount is in the picture. A bare
   // picture with no relevant caption is still ignored — we don't OCR every photo.
+  // (Only where Splid is connected — otherwise nothing could be recorded, and the
+  // photo would be downloaded and sent to the model for nothing.)
   const sharedExpense =
     !quiet &&
+    expenseScanAllowed(ctx.chat.id) &&
     !!caption &&
     (looksLikeExpenseForChat(ctx.chat.id, caption) || captionLooksLikeSharedExpense(caption));
   if (!addressed && !sharedExpense) return;

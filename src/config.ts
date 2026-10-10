@@ -187,7 +187,12 @@ const ConfigSchema = z.object({
   // chosen_inline_result. Needs BotFather setup (/setinline + /setinlinefeedback
   // at 100%) — without feedback the placeholder is never filled in. Whitelisted
   // (approved) users only; randoms get a "закрыто" stub, never an LLM call.
-  ENABLE_INLINE: boolish.default(true),
+  // OFF by default: with inline enabled in BotFather, Telegram clients turn every
+  // message that STARTS with «@бот …» into an inline query (a popup over the input)
+  // — exactly how people ping the bot in a group, so it got in the way. The real
+  // switch is BotFather → /setinline → Disable; with this flag off a stray query
+  // is answered empty so no client spins.
+  ENABLE_INLINE: boolish.default(false),
   // Attached FILES (documents): images sent uncompressed, PDFs, plain-text files.
   // Off = the bot ignores documents exactly as it did before they were handled.
   ENABLE_FILE_INPUT: boolish.default(true),

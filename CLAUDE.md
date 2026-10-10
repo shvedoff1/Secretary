@@ -273,8 +273,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   in-flight-per-user guard stops concurrent runs, and the chosen handler re-checks
   approval (it can be revoked between keystroke and pick). Answers are clamped under
   the 4096-char cap (`clampInlineAnswer`) and keep the question visible above the
-  answer (the target chat never saw it). Off via `ENABLE_INLINE=false` (answers empty
-  so clients don't spin). `allowed_updates` in index.ts must list both update types.
+  answer (the target chat never saw it). OFF BY DEFAULT (`ENABLE_INLINE`, default false): with inline enabled in
+  BotFather, clients turn every message that STARTS with «@бот …» into an inline
+  popup — exactly how people ping the bot in a group. The real switch is BotFather
+  `/setinline` → Disable; with the flag off a stray query is answered empty so
+  clients don't spin. `allowed_updates` in index.ts must list both update types.
 - `src/summary/` — `summarize_chat` skill: recap what was actually SAID in a chat
   («перескажи, что было в последних 200 сообщениях», «что я пропустил», «о чём
   болтали вчера»). It needed a new store: `conversation_turn` is the assistant's
@@ -641,7 +644,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   exact figures reach the user verbatim instead of being re-phrased by the model.
 - Expense-only scan: a group message that was NOT addressed to the bot but looks like
   a spend (`routeMessage` → `auto-expense`, `addressed:false`) can only end in a
-  `record_expense` preview or in silence — any text it produces is dropped. So that run
+  `record_expense` preview or in silence — any text it produces is dropped. The scan
+  exists ONLY where a Splid group is connected (`expenseScanAllowed`,
+  `src/bot/expenseScan.ts`): elsewhere there is no `record_expense` tool, so it was a
+  full model call thrown away — onMessage routes such a line to `ignore` (the chime
+  arms as usual), onPhoto skips the receipt guess (no download), and `runAndRespond`
+  returns `silent` as a backstop. The scan never sets the 👀 «thinking» mark either
+  (`manageReaction` requires `addressed`) — it answers nobody, and the flash on
+  random people's number-bearing lines read as the bot reacting. So that run
   is stripped to exactly that job (`expenseOnly` on `AssistantContext`, set in
   `runAndRespond` from `!addressed`): `record_expense` is the ONLY tool, and the context
   block carries no memory / reminders / watches / places (chat RULES stay — they're

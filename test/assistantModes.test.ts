@@ -85,7 +85,7 @@ describe('system prompt per mode', () => {
     const sent = lastCall();
     expect(sent.system[0]!.text).toBe(ASSISTANT_SYSTEM_PROMPT);
     // Still the snappy, non-thinking configuration — only the persona changed.
-    expect(sent).toMatchObject({ thinking: { type: 'disabled' } });
+    expect(sent).toMatchObject({ thinking: { type: 'adaptive' } });
   });
 
   it('leaves the other modes on their own prompts', async () => {

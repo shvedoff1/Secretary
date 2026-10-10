@@ -12,7 +12,7 @@ const ConfigSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
 
-  ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-5-5'),
   // The PRECISE tier: user-facing text where a wrong detail costs more than the
   // tokens do — a calendar digest's «выезжай к 17:30, терминал…» before a
   // flight. Small volume (a few short calls a day per chat), so the strongest

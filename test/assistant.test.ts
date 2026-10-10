@@ -101,17 +101,19 @@ describe('runAssistant humorizable flag', () => {
     expect(result).toEqual({ kind: 'text', text: 'Привет!', scheduled: false, humorizable: true });
   });
 
-  it('calls Anthropic with the configured default model (Sonnet 5), thinking disabled', async () => {
+  it('calls Anthropic with the configured default model (Sonnet 5.5), adaptive thinking, room for it', async () => {
     responses = [textResponse('Привет!')];
     const { runAssistant } = await import('../src/llm/assistant.js');
     await runAssistant(baseCtx('привет'), handlers);
 
-    // Model is the new default, and thinking is explicitly disabled so Sonnet 5
-    // doesn't turn on adaptive thinking (latency + max_tokens budget) by default.
+    // Model is the new default; thinking is adaptive on every turn, and
+    // max_tokens leaves room for it (thinking spends from the same budget).
+    // `disabled` would be a 400 on Sonnet 5.5.
     expect(createMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'claude-sonnet-5',
-        thinking: { type: 'disabled' },
+        model: 'claude-sonnet-5-5',
+        thinking: { type: 'adaptive' },
+        max_tokens: 16_000,
       }),
     );
   });
@@ -324,7 +326,7 @@ describe('runAssistant tutor mode', () => {
     });
   });
 
-  it('secretary mode still gets the chill prompt and disabled thinking (regression guard)', async () => {
+  it('secretary mode gets the chill prompt and adaptive thinking too', async () => {
     responses = [textResponse('привет!')];
     const { runAssistant } = await import('../src/llm/assistant.js');
     await runAssistant(baseCtx('привет'), handlers);
@@ -334,8 +336,8 @@ describe('runAssistant tutor mode', () => {
       thinking: { type: string };
       max_tokens: number;
     };
-    expect(call.thinking).toEqual({ type: 'disabled' });
-    expect(call.max_tokens).toBe(2048);
+    expect(call.thinking).toEqual({ type: 'adaptive' });
+    expect(call.max_tokens).toBe(16_000);
     expect(call.system[0]!.text).toContain('Secretary');
   });
 });

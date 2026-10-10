@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -147,6 +148,8 @@ export async function extractMemory(
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_MEMORY_MODEL,
+      // No thinking, as repeatable as the model allows — see hiddenPassParams.
+      ...hiddenPassParams(cfg.ANTHROPIC_MEMORY_MODEL),
       max_tokens: 1024,
       system: MEMORY_EXTRACT_SYSTEM,
       messages: [{ role: 'user', content: userContent }],

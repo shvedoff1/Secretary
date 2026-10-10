@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -92,8 +93,9 @@ export async function classifyExpenseIntent(args: ClassifyArgs): Promise<Expense
     const res = await getAnthropic().messages.create(
       {
         model: cfg.ANTHROPIC_CLASSIFY_MODEL,
+        // No thinking, as repeatable as the model allows — see hiddenPassParams.
+        ...hiddenPassParams(cfg.ANTHROPIC_CLASSIFY_MODEL),
         max_tokens: 64,
-        temperature: 0,
         system: CLASSIFY_SYSTEM,
         messages: [{ role: 'user', content: renderClassifyInput(args) }],
       },

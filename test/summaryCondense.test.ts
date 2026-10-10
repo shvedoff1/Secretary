@@ -27,13 +27,15 @@ beforeEach(() => {
 
 describe('condenseChunk', () => {
   it('sends the chunk to the cheap model deterministically and returns the notes', async () => {
-    process.env.ANTHROPIC_SUMMARY_MODEL = 'claude-haiku-4-5-20251001';
+    process.env.ANTHROPIC_SUMMARY_MODEL = 'claude-haiku-5-5';
     createMock.mockResolvedValue(reply('  Гоша: едем в субботу  '));
     const { condenseChunk } = await import('../src/llm/summarize.js');
 
     expect(await condenseChunk('[10:00] Гоша: погнали в субботу')).toBe('Гоша: едем в субботу');
     const sent = createMock.mock.calls[0]![0];
-    expect(sent).toMatchObject({ model: 'claude-haiku-4-5-20251001', temperature: 0 });
+    expect(sent).toMatchObject({ model: 'claude-haiku-5-5', thinking: { type: 'disabled' } });
+    // Haiku 5.5 rejects a non-default temperature.
+    expect(sent).not.toHaveProperty('temperature');
     expect(sent.messages[0].content).toContain('погнали в субботу');
   });
 

@@ -118,6 +118,25 @@ describe('runAssistant humorizable flag', () => {
     );
   });
 
+  it('leaves effort to the model by default, and sends ANTHROPIC_EFFORT when set', async () => {
+    responses = [textResponse('Привет!')];
+    let { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(baseCtx('привет'), handlers);
+    expect(createMock.mock.calls[0]![0]).not.toHaveProperty('output_config');
+
+    process.env.ANTHROPIC_EFFORT = 'medium';
+    try {
+      vi.resetModules();
+      createMock.mockClear();
+      responses = [textResponse('Привет!')];
+      ({ runAssistant } = await import('../src/llm/assistant.js'));
+      await runAssistant(baseCtx('привет'), handlers);
+      expect(createMock.mock.calls[0]![0]).toMatchObject({ output_config: { effort: 'medium' } });
+    } finally {
+      delete process.env.ANTHROPIC_EFFORT;
+    }
+  });
+
   it('does NOT mark a tool-driven answer as humorizable', async () => {
     // Model calls `remember`, then composes a final text reply.
     responses = [

@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -65,8 +66,9 @@ export async function checkWatchCondition(
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_WATCH_MODEL,
+      // No thinking, as repeatable as the model allows — see hiddenPassParams.
+      ...hiddenPassParams(cfg.ANTHROPIC_WATCH_MODEL),
       max_tokens: 512,
-      temperature: 0,
       system: CHECK_SYSTEM,
       messages: [
         {

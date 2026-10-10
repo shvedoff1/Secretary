@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -47,10 +48,9 @@ export async function condenseChunk(
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_SUMMARY_MODEL,
+      // No thinking, as repeatable as the model allows — see hiddenPassParams.
+      ...hiddenPassParams(cfg.ANTHROPIC_SUMMARY_MODEL),
       max_tokens: 2048,
-      // Deterministic: the same window asked twice should compress the same way,
-      // otherwise two recaps of one evening disagree on details.
-      temperature: 0,
       system: CONDENSE_SYSTEM,
       messages: [{ role: 'user', content }],
     });

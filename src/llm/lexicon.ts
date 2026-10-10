@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -65,6 +66,8 @@ export async function extractLexicon(samples: string[]): Promise<LexiconTerm[]> 
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_LEXICON_MODEL,
+      // No thinking, as repeatable as the model allows — see hiddenPassParams.
+      ...hiddenPassParams(cfg.ANTHROPIC_LEXICON_MODEL),
       max_tokens: 1024,
       system: EXTRACT_SYSTEM,
       messages: [{ role: 'user', content: samples.join('\n') }],

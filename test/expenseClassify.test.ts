@@ -56,10 +56,13 @@ describe('classifyExpenseIntent', () => {
     expect(await classifyExpenseIntent(args)).toBe('expense');
 
     const [body, opts] = createMock.mock.calls[0] as unknown as [
-      { temperature: number; messages: { content: string }[]; system: string },
+      { temperature?: number; thinking?: { type: string }; messages: { content: string }[]; system: string },
       { timeout: number; maxRetries: number },
     ];
-    expect(body.temperature).toBe(0);
+    // Haiku 5.5 (the default): no thinking on a timeout-bound verdict, and no
+    // temperature (a non-default value is a 400 there).
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.temperature).toBeUndefined();
     const input = body.messages[0]!.content;
     expect(input).toContain('скинь Ване за ужин');
     expect(input).toContain('Group members: Андрей Шведов, Иван');

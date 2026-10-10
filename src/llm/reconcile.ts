@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -144,10 +145,9 @@ export async function reconcileMemory(items: MemoryItem[]): Promise<ReconcilePla
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_MEMORY_MODEL,
+      // No thinking, as repeatable as the model allows — see hiddenPassParams.
+      ...hiddenPassParams(cfg.ANTHROPIC_MEMORY_MODEL),
       max_tokens: 2048,
-      // Deterministic so re-running /reconcile on the same store proposes the same plan
-      // instead of a different subset each time.
-      temperature: 0,
       system: RECONCILE_SYSTEM,
       messages: [{ role: 'user', content: rendered }],
     });

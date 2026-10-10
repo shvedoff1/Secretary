@@ -21,6 +21,11 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   user-facing text where a wrong detail costs more than the tokens — today the
   calendar digest advice («выезжай к 17:30» before a flight). Adaptive thinking is
   on there (omit `thinking`; give `max_tokens` room for it).
+- The cheap tier defaults to `claude-haiku-5-5`. Every hidden pass spreads
+  `hiddenPassParams(model)` (`src/llm/hiddenPass.ts`) into its request instead of
+  hand-writing `temperature`/`thinking`: Haiku 5.5 has thinking ON by default (turned
+  off there) and 400s on any non-default `temperature`, while Haiku 4.5 still takes
+  `temperature: 0` — so an env override to either model keeps working.
 - Keep providers behind `ExpenseProvider` (`src/core/provider.ts`); `splid-js` is only
   imported under `src/providers/splid/`.
 
@@ -128,7 +133,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (they land in the context as tokens). Bulk cleanup of
   ACCUMULATED conflicts (what `/dedupememory`'s exact-match fold can't catch) is the
   admin `/reconcile <chatId>` command → `src/llm/reconcile.ts` (a one-shot Haiku pass at
-  `temperature:0` so re-runs are stable, proposing deletes/merges for contradictions/stale/
+  no thinking (`hiddenPassParams`) so re-runs stay close, proposing deletes/merges for contradictions/stale/
   dupes) → dry-run preview → `/reconcile <chatId> apply` (`applyReconcilePlan`); it never
   changes memory without the admin confirming. `withExpenseSweep` additionally marks any
   recorded-expense line (`looksLikeExpense`) for deletion DETERMINISTICALLY, so legacy
@@ -300,7 +305,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   (`SUMMARY_TAIL_CHAR_BUDGET`, the newest slice — that's what follow-ups land on) plus
   older chunks (`SUMMARY_CONDENSE_CHUNK_CHARS` × `SUMMARY_CONDENSE_MAX_CHUNKS`, filled
   from the newest end so overflow drops the OLDEST) that a cheap model compresses in
-  PARALLEL (`src/llm/summarize.ts`, `ANTHROPIC_SUMMARY_MODEL`, Haiku at temperature 0 —
+  PARALLEL (`src/llm/summarize.ts`, `ANTHROPIC_SUMMARY_MODEL`, Haiku, no thinking —
   notes, never a recap: this tier drops wording, not facts, since anything it invents is
   invisible to the tier above). The assembled text labels which part is notes and which
   is verbatim, and every failure mode is stated rather than hidden: chunks that failed to
@@ -350,7 +355,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   about without paying for their transcripts. When a chat goes quiet
   (`EPISODE_QUIET_MINUTES`, default 45) the finished session's log slice is closed
   as an EPISODE: a cheap pass (`src/llm/episode.ts`, `ANTHROPIC_EPISODE_MODEL`
-  Haiku at temperature 0, defensive JSON parse) compresses it into a few lines of
+  Haiku, no thinking, defensive JSON parse) compresses it into a few lines of
   NOTES plus 2-6 lowercase topic tags → `chat_episode` (migration 027,
   `episode.repo.ts`). Boundaries are DERIVED FROM LOG TIMESTAMPS on the minute tick
   (`closer.ts` + pure `detect.ts` — NOT in-memory timers like the chime's, so they
@@ -381,7 +386,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   `profile.repo.ts`) — "consolidation during rest": the bot's own running 2-5 line
   portrait of the chat ('' subject) and of each person (subject NOCASE-unique).
   `profileRefresh.ts` hands the cheap model (`src/llm/profile.ts`,
-  `ANTHROPIC_PROFILE_MODEL` Haiku at temperature 0) the current cards + the
+  `ANTHROPIC_PROFILE_MODEL` Haiku, no thinking) the current cards + the
   just-closed episodes' notes + the top ~40 FACTS as ground truth; it returns ONLY
   the cards the session changed (omitted = kept word-for-word — re-wording is
   where drift creeps in), parse is defensive (bad JSON → old cards stand, content
@@ -422,7 +427,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   state still match) and an unchanged-page hash (the model-facing excerpt —
   visible text + raw-HTML windows around keyword hits, `extract.ts`, pure — is
   hashed; same hash as last poll => same verdict, skip). Only a changed,
-  keyword-bearing page reaches `src/llm/watchCheck.ts` (Haiku, temperature 0,
+  keyword-bearing page reaches `src/llm/watchCheck.ts` (Haiku, no thinking,
   strict "concrete evidence only" prompt so a «скоро в кино» teaser never fires;
   any malformed/failed verdict reads as not-met — fail-safe). On met: notify FIRST,
   then disarm (a failed send retries next poll), and record the post as an
@@ -668,7 +673,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   every tier. TWO sources set the flag, cheapest first and only where Splid is
   connected (no `record_expense` => nothing to protect): the regex above, then —
   when it stays quiet — the CLASSIFIER (`src/llm/expenseClassify.ts`,
-  `ANTHROPIC_CLASSIFY_MODEL` Haiku at temperature 0, one JSON boolean, bounded by
+  `ANTHROPIC_CLASSIFY_MODEL` Haiku, no thinking, one JSON boolean, bounded by
   `EXPENSE_CLASSIFY_TIMEOUT_MS` with no retries) which sees ONLY the message, the
   roster and the last 3 turns — never memory, or the leak would just move one
   call down — and catches the numberless spends («скинь Ване за ужин»). It FAILS
@@ -892,3 +897,6 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   truncate answers / tool-call JSON). Spend is watched via the INFO `assistant usage`
   log line (output tokens include thinking). Never send `thinking: {type:'disabled'}`:
   Sonnet 5.5 and Opus 5.5 reject it with a 400 on every turn.
+  Thinking depth is `ANTHROPIC_EFFORT` (`low|medium|high|xhigh|max`, unset = the
+  model's own default — `high` on Sonnet 5.5), sent as `output_config.effort` on the
+  main call only; the deploy workflow passes it through from GitHub Variables.

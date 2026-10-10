@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -74,10 +75,9 @@ export async function summarizeEpisode(transcript: string): Promise<EpisodeNotes
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_EPISODE_MODEL,
+      // No thinking, as repeatable as the model allows — see hiddenPassParams.
+      ...hiddenPassParams(cfg.ANTHROPIC_EPISODE_MODEL),
       max_tokens: 1024,
-      // Deterministic: re-closing the same session (after a crash mid-tick) must
-      // produce the same notes, not a different memory of the same evening.
-      temperature: 0,
       system: EPISODE_SYSTEM,
       messages: [{ role: 'user', content: text }],
     });

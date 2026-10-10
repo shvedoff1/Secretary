@@ -192,6 +192,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `ANTHROPIC_API_KEY` | yes | — | Claude API key |
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Model id. Adaptive thinking is on for every turn; per-call token usage is logged as `assistant usage` |
+| `ANTHROPIC_EFFORT` | no | model default (`high` on Sonnet 5.5) | How hard the main model thinks: `low`/`medium`/`high`/`xhigh`/`max`. Set it as a GitHub Variable; the deploy passes it through |
 | `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
@@ -210,7 +211,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `ENABLE_INLINE` | no | `true` | Inline mode: `@бот вопрос` in any chat answers as it would in the asker's DM. Needs BotFather setup (`/setinline` + `/setinlinefeedback` at 100%); whitelisted users only |
 | `DEFAULT_TIMEZONE` | no | `UTC` | IANA fallback for reminders until a chat sets its own (just tell the bot «я во Вьетнаме» / «мой часовой пояс — Бали» and it switches the chat's clock itself) |
 | `ENABLE_LEXICON` | no | `true` | Learn the chat's slang from messages and reuse it |
-| `ANTHROPIC_LEXICON_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model for the extraction batches |
+| `ANTHROPIC_LEXICON_MODEL` | no | `claude-haiku-5-5` | Cheap model for the extraction batches |
 | `LEXICON_BATCH_SIZE` | no | `30` | Extract after this many buffered messages… |
 | `LEXICON_MAX_AGE_HOURS` | no | `24` | …or once the oldest is this old, whichever first |
 | `LEXICON_MAX_TERMS` | no | `40` | Learned terms fed back into context |
@@ -225,7 +226,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `SUMMARY_MAX_MESSAGES` | no | `1000` | Ceiling on one recap |
 | `SUMMARY_CHAR_BUDGET` | no | `14000` | How much transcript may reach the main model **verbatim**; a bigger window goes through the compression pass below |
 | `ENABLE_SUMMARY_CONDENSE` | no | `true` | For a window that doesn't fit verbatim, compress the older part with a cheap model and keep only the newest slice word-for-word. `false` = plain oldest-first truncation |
-| `ANTHROPIC_SUMMARY_MODEL` | no | `claude-haiku-4-5-20251001` | Cheap model used only for that compression (never for the recap itself) |
+| `ANTHROPIC_SUMMARY_MODEL` | no | `claude-haiku-5-5` | Cheap model used only for that compression (never for the recap itself) |
 | `SUMMARY_TAIL_CHAR_BUDGET` | no | `6000` | Newest slice kept verbatim inside a compressed recap |
 | `SUMMARY_CONDENSE_CHUNK_CHARS` | no | `20000` | Transcript per compression call |
 | `SUMMARY_CONDENSE_MAX_CHUNKS` | no | `8` | Max compression calls per recap (they run in parallel); chunk × max is how far back one recap can reach |

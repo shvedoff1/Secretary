@@ -519,6 +519,8 @@ export async function runAssistant(
       // `assistant usage` log line below. Valid on every current model (Sonnet
       // 5.5 / Opus 5.5 reject `disabled`, adaptive is accepted everywhere).
       thinking: { type: 'adaptive' },
+      // Thinking depth: ANTHROPIC_EFFORT, else the model's default.
+      ...(cfg.ANTHROPIC_EFFORT ? { output_config: { effort: cfg.ANTHROPIC_EFFORT } } : {}),
       // Cache the stable prefix (tools render before system, so one breakpoint on
       // the system block caches both tool schemas + system prompt). Re-reads cost
       // ~0.1x: this is the main lever against per-call token cost. Tutor chats

@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { hiddenPassParams } from './hiddenPass.js';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
@@ -118,10 +119,9 @@ export async function refreshProfileCards(input: {
   try {
     const res = await getAnthropic().messages.create({
       model: cfg.ANTHROPIC_PROFILE_MODEL,
+      // No thinking, as repeatable as the model allows — see hiddenPassParams.
+      ...hiddenPassParams(cfg.ANTHROPIC_PROFILE_MODEL),
       max_tokens: 1024,
-      // Deterministic: the same close must produce the same cards, or two
-      // restarts of one evening would remember two different chats.
-      temperature: 0,
       system: PROFILE_SYSTEM,
       messages: [{ role: 'user', content: userContent }],
     });

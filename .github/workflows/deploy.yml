@@ -89,7 +89,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,ANTHROPIC_EFFORT,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
           script: |
             set -euo pipefail
 
@@ -121,6 +121,11 @@ jobs:
             ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-5-5}
             DEFAULT_CURRENCY=${DEFAULT_CURRENCY:-EUR}
             EOF2
+            # Optional: how hard the main model thinks (low|medium|high|xhigh|max).
+            # Only written when set, so unset keeps the model's own default.
+            if [ -n "${ANTHROPIC_EFFORT:-}" ]; then
+              echo "ANTHROPIC_EFFORT=$ANTHROPIC_EFFORT" >> .env
+            fi
             # Optional: voice transcription. Only write the key when present so an
             # empty value can't shadow the in-app defaults (model / base URL).
             if [ -n "${OPENAI_API_KEY:-}" ]; then
@@ -181,6 +186,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          ANTHROPIC_EFFORT: ${{ vars.ANTHROPIC_EFFORT }}
           DEFAULT_CURRENCY: ${{ vars.DEFAULT_CURRENCY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # Tolerate either store: tokens live in Secrets here, but config-ish

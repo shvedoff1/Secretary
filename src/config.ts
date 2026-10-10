@@ -13,6 +13,10 @@ const ConfigSchema = z.object({
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
 
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-5-5'),
+  // How hard the main model thinks (output_config.effort). Unset = the model's own
+  // default (`high` on Sonnet 5.5). `medium`/`low` cut thinking tokens — the knob
+  // to turn when the per-turn `assistant usage` log shows thinking dominating cost.
+  ANTHROPIC_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   // The PRECISE tier: user-facing text where a wrong detail costs more than the
   // tokens do — a calendar digest's «выезжай к 17:30, терминал…» before a
   // flight. Small volume (a few short calls a day per chat), so the strongest
@@ -106,7 +110,7 @@ const ConfigSchema = z.object({
   // instead of the last couple of hundred. Off => plain oldest-first truncation.
   ENABLE_SUMMARY_CONDENSE: boolish.default(true),
   // Cheap model used only for that compression pass (never for the recap itself).
-  ANTHROPIC_SUMMARY_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  ANTHROPIC_SUMMARY_MODEL: z.string().default('claude-haiku-5-5'),
   // Newest slice kept verbatim, so the recap (and follow-ups about it) still has the
   // exact recent wording rather than notes about it.
   SUMMARY_TAIL_CHAR_BUDGET: z.coerce.number().int().positive().default(6_000),
@@ -123,7 +127,7 @@ const ConfigSchema = z.object({
   // slang / distorted word-forms the group uses so the assistant talks like them.
   ENABLE_LEXICON: boolish.default(true),
   // Cheap model used only for the lexicon extraction batches (not the main chat).
-  ANTHROPIC_LEXICON_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  ANTHROPIC_LEXICON_MODEL: z.string().default('claude-haiku-5-5'),
   // Fire an extraction batch once this many messages have buffered...
   LEXICON_BATCH_SIZE: z.coerce.number().int().positive().default(30),
   // ...or once the oldest buffered message is this old, whichever comes first.
@@ -150,7 +154,7 @@ const ConfigSchema = z.object({
   // so recall behaves like a person's. Mirrors the lexicon batching economics.
   ENABLE_MEMORY: boolish.default(true),
   // Cheap model used only for the memory extraction batches (not the main chat).
-  ANTHROPIC_MEMORY_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  ANTHROPIC_MEMORY_MODEL: z.string().default('claude-haiku-5-5'),
   // Fire an extraction batch once this many messages have buffered...
   MEMORY_BATCH_SIZE: z.coerce.number().int().positive().default(40),
   // ...or once the oldest buffered message is this old, whichever comes first.
@@ -233,7 +237,7 @@ const ConfigSchema = z.object({
   // Needs the chat log (ENABLE_CHAT_LOG) — episodes are cut from it.
   ENABLE_EPISODES: boolish.default(true),
   // Cheap model that writes the episode notes (never the main chat model).
-  ANTHROPIC_EPISODE_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  ANTHROPIC_EPISODE_MODEL: z.string().default('claude-haiku-5-5'),
   // Silence that ends a conversation session. Boundaries are detected from the
   // log's own timestamps on the minute tick (durable across restarts), not from
   // in-memory timers.
@@ -272,7 +276,7 @@ const ConfigSchema = z.object({
   // next refresh. Rendered as the "Profile memory" section of the context block.
   ENABLE_PROFILES: boolish.default(true),
   // Cheap model that rewrites the cards (never the main chat model).
-  ANTHROPIC_PROFILE_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  ANTHROPIC_PROFILE_MODEL: z.string().default('claude-haiku-5-5'),
   // How many cards the context block shows (chat card first, then most recently
   // refreshed people). Cards are a per-turn token cost, so this stays small.
   PROFILE_CONTEXT_MAX: z.coerce.number().int().positive().default(6),
@@ -288,13 +292,13 @@ const ConfigSchema = z.object({
   ENABLE_WATCH: boolish.default(true),
   // Cheap model that judges "did the event happen?" from a page excerpt each poll
   // (the keyword gate + unchanged-page hash keep most polls from reaching it).
-  ANTHROPIC_WATCH_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  ANTHROPIC_WATCH_MODEL: z.string().default('claude-haiku-5-5'),
   // Expense-intent CLASSIFIER for addressed turns the regex gate didn't catch
   // (see `isExpenseShaped` / `memoryFree`): a cheap yes/no pass that sees only
   // the message, the roster and the last few turns — never memory — and decides
   // whether the turn runs memory-free. Off => the regex gate alone decides.
   ENABLE_EXPENSE_CLASSIFIER: boolish.default(true),
-  ANTHROPIC_CLASSIFY_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  ANTHROPIC_CLASSIFY_MODEL: z.string().default('claude-haiku-5-5'),
   // Hard cap on the classifier's latency: it sits in front of every addressed
   // reply, so a slow verdict is dropped (fail-open: memory stays on, as before).
   EXPENSE_CLASSIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),

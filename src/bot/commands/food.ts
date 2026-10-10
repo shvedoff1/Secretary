@@ -1,13 +1,19 @@
 import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
-import { clearFoodGoal, removeFoodEntries, setFoodGoal } from '../../db/repos/food.repo.js';
+import {
+  clearFoodGoal,
+  getDayNote,
+  removeFoodEntries,
+  setDayNote,
+  setFoodGoal,
+} from '../../db/repos/food.repo.js';
 import {
   foodTimezone,
   localToday,
   renderFoodReport,
   shiftDays,
 } from '../../food/handler.js';
-import { fmtNum } from '../../food/nutrition.js';
+import { DAY_NOTE_MAX, fmtNum, mergeDayNote } from '../../food/nutrition.js';
 import { threadIdOf } from '../threads.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 
@@ -18,10 +24,13 @@ export type FoodCommand =
   | { kind: 'goal'; kcal: number; protein: number | null; fat: number | null; carbs: number | null }
   | { kind: 'goal_off' }
   | { kind: 'del'; ids: number[] }
+  | { kind: 'note'; date: string; text: string | null }
   | { kind: 'help' };
 
 const WEEK = new Set(['week', 'неделя', 'неделю', '7']);
 const MONTH = new Set(['month', 'месяц', '30']);
+const NOTE = new Set(['note', 'заметка', 'коммент', 'комментарий']);
+const CLEAR_NOTE = new Set(['clear', 'off', 'удали', 'убери', 'сброс', '-']);
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -127,6 +136,17 @@ export function parseFoodArgs(
       carbs: nums[3] ?? null,
     };
   }
+  if (NOTE.has(head)) {
+    // «/food note была тренировка» (today) · «/food note 28.09 болел» · «… clear».
+    const raw2 = raw.trim().slice(raw.trim().split(/\s+/)[0]!.length).trim();
+    const [first = '', ...tail] = raw2.split(/\s+/);
+    const dated = first ? parseFoodDate(first, today) : null;
+    const date = dated ?? today;
+    const text = (dated ? tail.join(' ') : raw2).trim();
+    if (!text) return { kind: 'help' };
+    if (CLEAR_NOTE.has(text.toLowerCase())) return { kind: 'note', date, text: null };
+    return { kind: 'note', date, text };
+  }
   if (head === 'del' || head === 'rm' || head === 'удали' || head === '-') {
     const ids = rest.map((x) => Number(x.replace(/^#/, ''))).filter((x) => Number.isInteger(x) && x > 0);
     return ids.length > 0 ? { kind: 'del', ids } : { kind: 'help' };
@@ -140,7 +160,9 @@ const HELP =
   '/food — сегодня · /food вчера · /food 28.09 — конкретный день\n' +
   'Статистика по дням (ккал и БЖУ): /food week · /food month · /food 14d · /food 01.09-15.09\n' +
   '/food goal 2000 — дневная цель в ккал; можно сразу с БЖУ в граммах: /food goal 2400 150 65 300 · /food goal off\n' +
-  'Поправить или удалить запись — просто скажи: «убери шпроты», «курицы было 150 г».';
+  '/food note была тренировка — заметка к сегодня · /food note 28.09 болел · /food note clear\n' +
+  'Поправить или удалить запись — просто скажи: «убери шпроты», «курицы было 150 г». ' +
+  'Заметку тоже можно словами: «сегодня была тренировка».';
 
 /**
  * `/food` — the sender's calorie diary in this chat, zero LLM tokens: today's
@@ -184,6 +206,18 @@ export async function cmdFood(ctx: Context): Promise<void> {
         inThread,
       );
       return;
+    case 'note': {
+      if (cmd.text === null) {
+        setDayNote(chatId, userId, cmd.date, '');
+      } else {
+        const merged = mergeDayNote(getDayNote(chatId, userId, cmd.date), cmd.text, false);
+        setDayNote(chatId, userId, cmd.date, merged.text);
+        if (merged.cut) await ctx.reply(`Заметка длинная — обрезал до ${DAY_NOTE_MAX} символов.`);
+      }
+      // Show the day with its note, so the result is visible right away.
+      await sendRichMarkdown(ctx.api, chatId, renderFoodReport(chatId, userId, cmd.date, cmd.date, today));
+      return;
+    }
     case 'goal':
       setFoodGoal(chatId, userId, {
         kcal: cmd.kcal,

@@ -106,6 +106,33 @@ export function itemLine(e: FoodEntry): string {
   return `#${e.id} ${e.name}${grams} — ${fmtNum(e.kcal)} ккал${m ? ` · ${m}` : ''}`;
 }
 
+/** A day note is a small field, not a diary entry: capped so tables stay readable. */
+export const DAY_NOTE_MAX = 200;
+
+/**
+ * Merge a new note into the day's existing one. Default APPENDS («была
+ * тренировка» then «ещё бегал» → «была тренировка; ещё бегал») — adding keeps
+ * what was there, replacing destroys it; `replace` is for a restatement. A
+ * repeat of something already in the note is a no-op. Over the cap the text is
+ * cut with «…» and `cut` says so, so the caller can tell the user.
+ */
+export function mergeDayNote(
+  existing: string | null,
+  add: string,
+  replace: boolean,
+): { text: string; cut: boolean } {
+  const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const a = clean(add);
+  const e = existing ? clean(existing) : '';
+  let merged: string;
+  if (replace || !e) merged = a;
+  else if (e.toLowerCase().includes(a.toLowerCase())) merged = e;
+  else merged = `${e}; ${a}`;
+  const chars = [...merged];
+  if (chars.length <= DAY_NOTE_MAX) return { text: merged, cut: false };
+  return { text: `${chars.slice(0, DAY_NOTE_MAX - 1).join('').trimEnd()}…`, cut: true };
+}
+
 // --- User-facing tables -----------------------------------------------------
 // The diary is read at a glance, so it renders as a GFM table (Telegram rich
 // messages show it natively; the HTML fallback turns it into an aligned <pre>).
@@ -176,10 +203,13 @@ export function renderDay(
   goal: FoodGoal | null,
   dateStr: string,
   label: string,
+  note: string | null = null,
 ): string {
+  const noteLine = note ? `📝 ${note}` : null;
   if (entries.length === 0) {
     const title = `**${label}, ${weekday(dateStr)} ${shortDate(dateStr)}**`;
-    return `${title} — пока ничего не записано.${goal ? ` Цель — ${fmtNum(goal.kcal)} ккал.` : ''}`;
+    const head = `${title} — пока ничего не записано.${goal ? ` Цель — ${fmtNum(goal.kcal)} ккал.` : ''}`;
+    return noteLine ? `${head}\n${noteLine}` : head;
   }
   const t = sumEntries(entries);
   const rows: string[] = [];
@@ -196,7 +226,7 @@ export function renderDay(
   }
   rows.push(boldRow('Итого', t));
   if (goal) rows.push(...goalRows(t, goal));
-  const out = [dayTitle(t, goal, dateStr, label), '', TABLE_HEAD, ...rows];
+  const out = [dayTitle(t, goal, dateStr, label), ...(noteLine ? [noteLine] : []), '', TABLE_HEAD, ...rows];
   if (t.missingMacros > 0) {
     out.push('', `*? — БЖУ не оценены (${t.missingMacros} поз.), в итог не вошли*`);
   }
@@ -214,7 +244,13 @@ export function renderPeriod(
   goal: FoodGoal | null,
   fromDate: string,
   toDate: string,
+  notes: Map<string, string> = new Map(),
 ): string {
+  // Day notes go UNDER the table as their own list: a text column would blow the
+  // table's width on a phone, and most days have none.
+  const noteLines = datesInRange(fromDate, toDate)
+    .filter((d) => notes.has(d))
+    .map((d) => `📝 ${weekday(d)} ${shortDate(d)} — ${notes.get(d)}`);
   const days = datesInRange(fromDate, toDate);
   const byDay = new Map<string, FoodEntry[]>();
   for (const e of entries) {
@@ -237,7 +273,10 @@ export function renderPeriod(
     const over = goal && t.kcal > goal.kcal ? ' ↑' : '';
     rows.push(row(label, `${fmtNum(t.kcal)}${over}`, fmtNum(t.protein), fmtNum(t.fat), fmtNum(t.carbs)));
   }
-  if (logged.length === 0) return `${title} — за этот период ничего не записано.`;
+  if (logged.length === 0) {
+    const empty = `${title} — за этот период ничего не записано.`;
+    return noteLines.length ? [empty, '', ...noteLines].join('\n') : empty;
+  }
   const n = logged.length;
   const avg = (k: 'kcal' | 'protein' | 'fat' | 'carbs') => logged.reduce((s, t) => s + t[k], 0) / n;
   const avgTotals: Totals = {
@@ -257,12 +296,13 @@ export function renderPeriod(
     rows.push(row('Цель', g(goal.kcal), g(goal.protein), g(goal.fat), g(goal.carbs)));
   }
   const out = [title, '', TABLE_HEAD.replace('| |', '| День |'), ...rows, ''];
-  const notes = [`среднее по ${n} дн. с записями`];
+  const footnotes = [`среднее по ${n} дн. с записями`];
   if (goal) {
     const within = logged.filter((t) => t.kcal <= goal.kcal).length;
-    notes.push(`в цель по ккал: ${within} из ${n}`, '↑ — перебор');
+    footnotes.push(`в цель по ккал: ${within} из ${n}`, '↑ — перебор');
   }
-  out.push(`*${notes.join(' · ')}*`);
+  out.push(`*${footnotes.join(' · ')}*`);
+  if (noteLines.length) out.push('', ...noteLines);
   return out.join('\n');
 }
 
@@ -280,15 +320,15 @@ export function entryRef(e: FoodEntry, withDate = false): string {
  * stable for chats that never log food).
  */
 export function foodContextLine(
-  days: { label: string; date: string; entries: FoodEntry[] }[],
+  days: { label: string; date: string; entries: FoodEntry[]; note?: string | null }[],
   goal: FoodGoal | null,
   maxItems = 12,
 ): string | null {
   const [first, ...rest] = days;
   if (!first) return null;
-  const others = rest.filter((d) => d.entries.length > 0);
-  if (first.entries.length === 0 && others.length === 0 && !goal) return null;
-  const part = (d: { label: string; date: string; entries: FoodEntry[] }) => {
+  const others = rest.filter((d) => d.entries.length > 0 || d.note);
+  if (first.entries.length === 0 && !first.note && others.length === 0 && !goal) return null;
+  const part = (d: { label: string; date: string; entries: FoodEntry[]; note?: string | null }) => {
     const t = sumEntries(d.entries);
     const kcal = goal ? `${fmtNum(t.kcal)} of goal ${fmtNum(goal.kcal)} kcal` : `${fmtNum(t.kcal)} kcal`;
     const shown = d.entries.slice(-maxItems);
@@ -297,7 +337,7 @@ export function foodContextLine(
       shown.length > 0
         ? `: ${hidden > 0 ? `(+${hidden} earlier) ` : ''}${shown.map((e) => entryRef(e)).join('; ')}`
         : ' — nothing logged yet';
-    return `${d.label} ${d.date}: ${kcal} (${macrosLine(t, goal)})${items}`;
+    return `${d.label} ${d.date}: ${kcal} (${macrosLine(t, goal)})${items}${d.note ? `; day note: «${d.note}»` : ''}`;
   };
   return (
     'Food diary of the sender (#ids are internal handles for log_food remove — never show them): ' +

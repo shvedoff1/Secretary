@@ -191,3 +191,48 @@ export function clearFoodGoal(chatId: number, tgUserId: number): boolean {
     .run(chatId, tgUserId);
   return info.changes > 0;
 }
+
+// --- Day notes (migration 036) ----------------------------------------------
+
+export function getDayNote(chatId: number, tgUserId: number, localDate: string): string | null {
+  const row = getDb()
+    .prepare('SELECT text FROM food_day_note WHERE chat_id = ? AND tg_user_id = ? AND local_date = ?')
+    .get(chatId, tgUserId, localDate) as { text: string } | undefined;
+  return row?.text ?? null;
+}
+
+/** Upsert a day's note; an empty/blank text deletes it. */
+export function setDayNote(chatId: number, tgUserId: number, localDate: string, text: string): void {
+  const t = text.trim();
+  if (!t) {
+    getDb()
+      .prepare('DELETE FROM food_day_note WHERE chat_id = ? AND tg_user_id = ? AND local_date = ?')
+      .run(chatId, tgUserId, localDate);
+    return;
+  }
+  getDb()
+    .prepare(
+      `INSERT INTO food_day_note (chat_id, tg_user_id, local_date, text, updated_at)
+       VALUES (?, ?, ?, ?, unixepoch() * 1000)
+       ON CONFLICT (chat_id, tg_user_id, local_date) DO UPDATE SET
+         text = excluded.text, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, tgUserId, localDate, t);
+}
+
+/** Notes over an inclusive chat-local range, keyed by date. */
+export function listDayNotes(
+  chatId: number,
+  tgUserId: number,
+  fromDate: string,
+  toDate: string,
+): Map<string, string> {
+  const rows = getDb()
+    .prepare(
+      `SELECT local_date, text FROM food_day_note
+        WHERE chat_id = ? AND tg_user_id = ? AND local_date >= ? AND local_date <= ?
+        ORDER BY local_date`,
+    )
+    .all(chatId, tgUserId, fromDate, toDate) as { local_date: string; text: string }[];
+  return new Map(rows.map((r) => [r.local_date, r.text]));
+}

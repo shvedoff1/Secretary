@@ -253,13 +253,17 @@ export const FoodItemZ = z.object({
 export type FoodItemInput = z.infer<typeof FoodItemZ>;
 
 export const LogFoodZ = z.object({
-  action: z.enum(['add', 'remove', 'set_goal']),
+  action: z.enum(['add', 'remove', 'set_goal', 'note']),
   items: z.array(FoodItemZ).max(30).nullable(),
   meal: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).nullable(),
   date: z.string().regex(DATE_RE).nullable(),
   entryIds: z.array(z.number().int().positive()).max(50).nullable(),
   // remove by dish NAME («убери шпроты»), when no id is at hand.
   match: z.array(z.string().min(1).max(120)).max(20).nullable().optional(),
+  // action=note: the day's short comment («была тренировка»); ''/null clears it.
+  note: z.string().max(400).nullable().optional(),
+  // action=note: true → the text REPLACES the day's note; otherwise it is appended.
+  noteReplace: z.boolean().nullable().optional(),
   goal: z
     .object({
       kcal: z.number().min(0).max(10000),
@@ -954,9 +958,9 @@ export const logFoodJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['add', 'remove', 'set_goal'],
+      enum: ['add', 'remove', 'set_goal', 'note'],
       description:
-        '"add" — log what the sender ate (items). "remove" — delete logged entries by id (entryIds from "Food diary" in the context block or a food_report index) OR by dish name (match), never ask the user for ids. To CORRECT an entry («картошка была сырая», «курицы было 150 г»), call remove for the old entry and add for the fixed one in the SAME turn, keeping its date and meal. "set_goal" — set the sender\'s daily targets (goal).',
+        '"add" — log what the sender ate (items). "remove" — delete logged entries by id (entryIds from "Food diary" in the context block or a food_report index) OR by dish name (match), never ask the user for ids. To CORRECT an entry («картошка была сырая», «курицы было 150 г»), call remove for the old entry and add for the fixed one in the SAME turn, keeping its date and meal. "set_goal" — set the sender\'s daily targets (goal). "note" — a short comment on the DAY (`note`, `date`): «сегодня была тренировка», «вчера день рождения», «болел»; appended to the day\'s note unless noteReplace.',
     },
     items: {
       type: ['array', 'null'],
@@ -978,6 +982,16 @@ export const logFoodJsonSchema = {
       description:
         'For remove: dish names as the user calls them («шпроты», «картошка») — matched forgivingly against the diary of `date` (or today, then yesterday). Use when you have no id. An ambiguous or missing name removes nothing and returns the candidates with ids. null otherwise.',
     },
+    note: {
+      type: ['string', 'null'],
+      description:
+        'For action note: the comment in the user\'s own short words («была тренировка», «ДР, ел торт»), ≤ 200 chars. Empty string or null with action note CLEARS the day\'s note («убери заметку»). null for other actions.',
+    },
+    noteReplace: {
+      type: ['boolean', 'null'],
+      description:
+        'For action note: true when the user restates/corrects the note («нет, напиши: …», «замени заметку»); false/null to APPEND to what the day already says («ещё бегал»).',
+    },
     entryIds: {
       type: ['array', 'null'],
       items: { type: 'integer' },
@@ -996,7 +1010,7 @@ export const logFoodJsonSchema = {
       description: 'For set_goal only; null otherwise.',
     },
   },
-  required: ['action', 'items', 'meal', 'date', 'entryIds', 'match', 'goal'],
+  required: ['action', 'items', 'meal', 'date', 'entryIds', 'match', 'note', 'noteReplace', 'goal'],
 } as const;
 
 export const foodReportJsonSchema = {

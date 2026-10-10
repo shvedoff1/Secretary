@@ -166,6 +166,12 @@ export interface AssistantContext {
    *  a one-shot must not write someone's diary). food_report is read-only and
    *  rides ENABLE_FOOD alone. */
   allowFoodLog?: boolean;
+  /** A private chat (DM)? Drives the per-kind feature split (core/chatScope.ts):
+   *  the Splid line explains expenses live in group chats. Absent = unknown. */
+  privateChat?: boolean;
+  /** Is the calorie diary available here (private chats only)? Default true;
+   *  false removes both diary tools and adds a «diary is in the DM» hint. */
+  foodAvailable?: boolean;
   /** The sender's calorie diary for today, pre-rendered (null/absent = nothing to show). */
   foodLine?: string | null;
   /** Whether this chat has a connected calendar (gates the tool, like splidConnected). */
@@ -421,8 +427,9 @@ export async function runAssistant(
     // never on the expense-only scan. Logging writes state, so it follows the
     // scheduled/inline discipline; the report only reads, so it stays live for a
     // recurring «вечером присылай итог по калориям».
-    enableFoodLog: !expenseOnly && !tutor && cfg.ENABLE_FOOD && ctx.allowFoodLog !== false,
-    enableFoodReport: !expenseOnly && !tutor && cfg.ENABLE_FOOD,
+    enableFoodLog:
+      !expenseOnly && !tutor && cfg.ENABLE_FOOD && ctx.foodAvailable !== false && ctx.allowFoodLog !== false,
+    enableFoodReport: !expenseOnly && !tutor && cfg.ENABLE_FOOD && ctx.foodAvailable !== false,
   });
 
   const contextBlock = tutor
@@ -474,7 +481,13 @@ export async function runAssistant(
         otherChatsLine: ctx.otherChatsLine ?? null,
         // The diary lists dish names — on a spend-shaped turn they'd be one more
         // title source besides the message, so it goes with memory there.
-        foodLine: cfg.ENABLE_FOOD && !memoryFree ? (ctx.foodLine ?? null) : null,
+        foodLine:
+          cfg.ENABLE_FOOD && !memoryFree && ctx.foodAvailable !== false ? (ctx.foodLine ?? null) : null,
+        // The feature split, stated to the model so it redirects instead of
+        // improvising: in a group the diary lives in the DM; in a DM shared
+        // expenses live in the group chat.
+        foodElsewhere: cfg.ENABLE_FOOD && !tutor && ctx.foodAvailable === false,
+        privateChat: ctx.privateChat === true,
         expenseOnly,
       });
 

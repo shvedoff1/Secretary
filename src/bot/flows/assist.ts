@@ -1,3 +1,4 @@
+import { foodAllowedIn, isPrivateChat, splidActiveIn } from '../../core/chatScope.js';
 import {
   foodContextFor,
   makeFoodReportHandler,
@@ -949,7 +950,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
 
   // Load the member roster (for name resolution + context) if configured.
   let members: Member[] = [];
-  if (chatCfg?.provider_group_id) {
+  // Only where Splid is ACTIVE — a group linked from a DM is inert (chatScope).
+  if (chatCfg?.provider_group_id && splidActiveIn(chatId)) {
     try {
       members = await getProvider(chatCfg.provider_name).listMembers({
         groupId: chatCfg.provider_group_id,
@@ -994,7 +996,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // deterministic regex gate, then — when it stays quiet — the cheap
   // classifier (`src/llm/expenseClassify.ts`, sees the message/roster/recent
   // turns, never memory). Fail-open: an unknown verdict keeps memory on.
-  const splidConnected = !!chatCfg?.provider_group_id;
+  // Expenses are a group-chat feature (see core/chatScope.ts): in a DM there is
+  // no record_expense, so nothing for the memory-free gate to protect.
+  const splidConnected = splidActiveIn(chatId);
   const gateOn = args.expenseGate !== false && args.addressed && splidConnected;
   let gate: 'scan' | 'regex' | 'classifier' | 'off' = expenseOnly ? 'scan' : 'off';
   if (gateOn && isExpenseShaped({ chatId, text: args.historyText, source: args.source })) {
@@ -1139,7 +1143,9 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         senderName: senderName(ctx),
         senderUsername: ctx.from?.username ?? null,
         timezone: getTimezone(chatId),
-        splidConnected: !!chatCfg?.provider_group_id,
+        splidConnected,
+        privateChat: isPrivateChat(chatId),
+        foodAvailable: foodAllowedIn(chatId),
         activeReminders: listTasks(chatId).map((t) => ({
           id: t.id,
           title: t.title,
@@ -1180,7 +1186,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         // The sender's calorie diary today — only when the feature is on and it's
         // a chat where the diary tools exist (not tutor, not the silent scan).
         foodLine:
-          cfg.ENABLE_FOOD && !expenseOnly && mode !== 'tutor'
+          cfg.ENABLE_FOOD && foodAllowedIn(chatId) && !expenseOnly && mode !== 'tutor'
             ? foodContextFor(chatId, tgUserId)
             : null,
         history,
@@ -1229,7 +1235,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   }
 
   if (result.kind === 'expense') {
-    if (!chatCfg?.provider_group_id) {
+    if (!splidConnected || !chatCfg?.provider_group_id) {
       await ctx.reply(
         'Чтобы записывать траты в Splid, подключи группу: /group <код-приглашения>. ' +
           'Это опционально — без него я и так помогу: напоминания, поиск, заметки. 🤙',
@@ -1431,7 +1437,9 @@ async function rewordPendingInner(
       members: members.map((m) => ({ name: m.name, initials: m.initials })),
       senderName: senderName(ctx),
       timezone: getTimezone(chatId),
-      splidConnected: !!chatCfg.provider_group_id,
+      splidConnected: splidActiveIn(chatId),
+      privateChat: isPrivateChat(chatId),
+      foodAvailable: foodAllowedIn(chatId),
       history: [],
       userContent: correctionContent,
     },

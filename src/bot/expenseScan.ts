@@ -1,4 +1,4 @@
-import { getChatConfig } from '../db/repos/chatConfig.repo.js';
+import { splidActiveIn } from '../core/chatScope.js';
 
 /**
  * May an UNADDRESSED message in this chat be scanned for a spend? Only where a
@@ -9,5 +9,5 @@ import { getChatConfig } from '../db/repos/chatConfig.repo.js';
  * spend-looking line is just chatter.
  */
 export function expenseScanAllowed(chatId: number): boolean {
-  return !!getChatConfig(chatId)?.provider_group_id;
+  return splidActiveIn(chatId);
 }

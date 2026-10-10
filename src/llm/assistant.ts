@@ -28,6 +28,7 @@ import {
   ADD_POI_TOOL,
   SPENDING_REPORT_TOOL,
   SUMMARIZE_CHAT_TOOL,
+  VIEW_MEDIA_TOOL,
   CALENDAR_EVENTS_TOOL,
   SET_TIMEZONE_TOOL,
   LOG_FOOD_TOOL,
@@ -52,6 +53,7 @@ import {
   AddPoiZ,
   SpendingReportZ,
   SummarizeChatZ,
+  ViewMediaZ,
   CalendarEventsZ,
   SetTimezoneZ,
   LogFoodZ,
@@ -75,6 +77,7 @@ import {
   type AddPoiInput,
   type SpendingReportInput,
   type SummarizeChatInput,
+  type ViewMediaInput,
   type CalendarEventsInput,
   type SetTimezoneInput,
   type LogFoodInput,
@@ -124,6 +127,10 @@ export interface AssistantContext {
   rules?: string[];
   /** Who runs the bot for this chat (display labels), for «кто ты?» answers. */
   botAdmins?: string[];
+  /** Forum chats: the known topics + the one this message is in (pre-rendered). */
+  forumLine?: string | null;
+  /** DM only: the work chats the user can ask about from here (pre-rendered). */
+  otherChatsLine?: string | null;
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
   /** Expose the watch_page tool (default true; false for scheduled runs). */
@@ -252,6 +259,12 @@ export interface AssistantHandlers {
    * cheap-model notes plus a verbatim tail) for the model to recap.
    */
   summarizeChat: (input: SummarizeChatInput) => Promise<string>;
+  /**
+   * Open one logged picture by its «[медиа #N]» ref; returns text and/or an image
+   * block. Optional: only the live chat flow (which has a bot Api to download
+   * with) provides it, and the tool is exposed only when it's present.
+   */
+  viewMedia?: (input: ViewMediaInput) => Promise<string | Anthropic.ToolResultBlockParam['content']>;
   /** Read the chat's cached calendar window; return the events as ready text. */
   calendarEvents: (input: CalendarEventsInput) => string;
   /** Set the chat's timezone («я во Вьетнаме»); return a short confirmation. */
@@ -390,6 +403,7 @@ export async function runAssistant(
     // nothing to read.
     enableSummary:
       !memoryFree && !tutor && cfg.ENABLE_CHAT_LOG && ctx.allowSummary !== false,
+    enableMediaView: !!handlers.viewMedia,
     // Calendar reads are gated on a calendar actually being connected (like
     // record_expense on splidConnected), so unconnected chats keep their cached
     // tool prefix. Read-only, hence live for scheduled runs; off for inline
@@ -456,6 +470,8 @@ export async function runAssistant(
         memoryTopics: memoryFree ? [] : (ctx.memoryTopics ?? []),
         rules: ctx.rules ?? [],
         botAdmins: ctx.botAdmins ?? [],
+        forumLine: ctx.forumLine ?? null,
+        otherChatsLine: ctx.otherChatsLine ?? null,
         // The diary lists dish names — on a spend-shaped turn they'd be one more
         // title source besides the message, so it goes with memory there.
         foodLine: cfg.ENABLE_FOOD && !memoryFree ? (ctx.foodLine ?? null) : null,
@@ -803,6 +819,21 @@ export async function runAssistant(
             type: 'tool_result',
             tool_use_id: block.id,
             content: transcript,
+            is_error: !parsed.success,
+          });
+        } else if (block.name === VIEW_MEDIA_TOOL) {
+          const parsed = ViewMediaZ.safeParse(block.input);
+          if (!parsed.success) {
+            logger.warn({ err: parsed.error }, 'view_media input failed validation');
+          }
+          const content =
+            parsed.success && handlers.viewMedia
+              ? await handlers.viewMedia(parsed.data)
+              : 'Could not parse the media ref.';
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content,
             is_error: !parsed.success,
           });
         } else if (block.name === SET_TIMEZONE_TOOL) {

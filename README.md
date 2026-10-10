@@ -97,6 +97,27 @@ added without touching the core.
   messages, `CHAT_LOG_RETENTION_DAYS` days), can be inspected/wiped by the admin with
   `/chatlog <chatId>` (`/chatlog <chatId> clear`), and switched off entirely with
   `ENABLE_CHAT_LOG=false`.
+- **Work chats with threads («кандидаты в баги из голосовых»)**: in a forum supergroup
+  the log remembers which topic every message was posted in (topic names are learned
+  as messages go by), so a recap can be scoped to one thread («что было в треде QA»,
+  «в этом треде») or to one channel («из голосовых»), and a FOCUSED ask («надёргай
+  кандидатов в баги из голосовых за неделю») gets a list of candidates — what breaks,
+  where, who said it, with a `t.me/c/…` link to each source message — instead of a
+  general recap. Replies go into the thread the question came from. Photos, videos and
+  «кружочки» are NOT processed when they arrive (too expensive in a busy chat): they're
+  logged as references (caption, link, a cheap-to-open file id) and the bot opens one
+  specific picture — or a video's preview frame — only when asked («что на том
+  скрине?», `view_media`). For a chat where people talk to EACH OTHER in voice, turn on
+  listen-only with `/listen <chatId> on`: every voice note is transcribed and logged
+  silently, and the bot answers only when it is called by name or replied to. Needs
+  privacy mode OFF (see Setup) so the bot sees every message. The log keeps up to a
+  year / 50k messages per chat by default (`CHAT_LOG_RETENTION_DAYS`,
+  `CHAT_LOG_KEEP_PER_CHAT`).
+  You can also ask about a work chat **from your DM with the bot** («что сегодня было
+  в Dev?», «какие баги накидали в рабочем чате за неделю?», or a daily DM task «каждое
+  утро присылай саммари рабочего чата»). The bot answers only about chats you are a
+  member of right now (checked with Telegram), and never answers about another chat
+  inside a group.
 - **Chat rules**: standing behaviour instructions in your own words — «все голосовые
   очищай от слов-паразитов и скидывай мне расшифровку», «отвечай короче», «без эмодзи».
   Just tell the bot («с этого момента …») and it records the rule itself, or use
@@ -132,7 +153,8 @@ added without touching the core.
 1. **Create a bot** with [@BotFather](https://t.me/BotFather) → get the token.
    - To let the bot auto-detect expense messages in groups, disable privacy mode:
      BotFather → `/setprivacy` → your bot → **Disable**. (Otherwise it only sees
-     commands, @mentions, and replies.)
+     commands, @mentions, and replies.) The same is needed for chat recaps — a bot
+     that can't see the messages can't log them.
    - For **inline mode** (`@бот вопрос` from any chat): BotFather → `/setinline`
      (set a placeholder, e.g. «спроси секретаря…») **and** `/setinlinefeedback` →
      **Enabled (100%)**. The feedback part is not optional: the bot answers by
@@ -197,8 +219,8 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `FORWARD_BUFFER_MAX` | no | `50` | Max messages kept per pack (the pack lands in one LLM turn) |
 | `LEARN_FROM_FORWARDS` | no | `false` | Let passive learning (slang + memory) read **forwarded** messages too. Off by default: a forward is someone else's words about someone else's life |
 | `ENABLE_CHAT_LOG` | no | `true` | Keep a rolling per-chat log of every message (incl. the ones the bot never answers) so it can recap what was said. `false` = nothing is recorded and the `summarize_chat` tool disappears |
-| `CHAT_LOG_KEEP_PER_CHAT` | no | `4000` | Max messages kept per chat |
-| `CHAT_LOG_RETENTION_DAYS` | no | `30` | Drop logged messages older than this |
+| `CHAT_LOG_KEEP_PER_CHAT` | no | `50000` | Max messages kept per chat (~15 MB of SQLite at the cap; costs no tokens) |
+| `CHAT_LOG_RETENTION_DAYS` | no | `365` | Drop logged messages older than this |
 | `SUMMARY_DEFAULT_MESSAGES` | no | `200` | How many messages a recap reads when no count/period is named |
 | `SUMMARY_MAX_MESSAGES` | no | `1000` | Ceiling on one recap |
 | `SUMMARY_CHAR_BUDGET` | no | `14000` | How much transcript may reach the main model **verbatim**; a bigger window goes through the compression pass below |

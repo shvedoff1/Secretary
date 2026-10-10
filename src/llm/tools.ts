@@ -18,6 +18,7 @@ import {
   addPoiJsonSchema,
   spendingReportJsonSchema,
   summarizeChatJsonSchema,
+  viewMediaJsonSchema,
   calendarEventsJsonSchema,
   setTimezoneJsonSchema,
   logFoodJsonSchema,
@@ -42,6 +43,7 @@ export const SURF_FORECAST_TOOL = 'surf_forecast';
 export const ADD_POI_TOOL = 'add_poi';
 export const SPENDING_REPORT_TOOL = 'spending_report';
 export const SUMMARIZE_CHAT_TOOL = 'summarize_chat';
+export const VIEW_MEDIA_TOOL = 'view_media';
 export const CALENDAR_EVENTS_TOOL = 'calendar_events';
 export const SET_TIMEZONE_TOOL = 'set_timezone';
 export const LOG_FOOD_TOOL = 'log_food';
@@ -108,6 +110,10 @@ export interface ToolOptions {
    *  пересказ вчерашнего" task needs it. Off when ENABLE_CHAT_LOG is off (nothing
    *  is recorded) and in tutor chats. */
   enableSummary?: boolean;
+  /** Expose view_media (open ONE logged picture / video still by its «[медиа #N]»
+   *  ref). Only where the summary tool is, and only where the caller can download
+   *  from Telegram (the live chat flow). */
+  enableMediaView?: boolean;
   /** Expose the calendar_events tool. Only where a calendar is actually connected
    *  (keeps every other chat's cached tool prefix untouched, like dota). Read-only,
    *  so it stays on for scheduled runs («каждое утро скажи, что в календаре»);
@@ -293,8 +299,17 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
     tools.push({
       name: SUMMARIZE_CHAT_TOOL,
       description:
-        "Read back what was actually SAID in this chat — the raw message log, including every message you never replied to — and recap it. Call this whenever the user asks what happened/was discussed here: «что было в последних 200 сообщениях», «перескажи, что я пропустил», «о чём тут болтали вчера», «краткая выжимка за сегодня», «what did I miss». Ask by COUNT (limit) when the user names a number of messages, or by chat-LOCAL DATES (fromDate/toDate) when they name a period. The tool returns the transcript itself — YOU write the summary from it, in the user's language and your usual voice, and you never invent anything that isn't there. This is NOT memory (recall_memory searches remembered FACTS; this reads the literal chat log) and NOT money (that's spending_report). The log is bounded in size and age, so it may not reach as far back as asked — the tool says so, and you must pass that on rather than filling the gap.",
+        "Read back what was actually SAID in this chat — the raw message log, including every message you never replied to — and recap it. Call this whenever the user asks what happened/was discussed here: «что было в последних 200 сообщениях», «перескажи, что я пропустил», «о чём тут болтали вчера», «краткая выжимка за сегодня», «what did I miss». Ask by COUNT (limit) when the user names a number of messages, or by chat-LOCAL DATES (fromDate/toDate) when they name a period. The tool returns the transcript itself — YOU write the summary from it, in the user's language and your usual voice, and you never invent anything that isn't there. This is NOT memory (recall_memory searches remembered FACTS; this reads the literal chat log) and NOT money (that's spending_report). The log is bounded in size and age, so it may not reach as far back as asked — the tool says so, and you must pass that on rather than filling the gap. In a PRIVATE chat it can also read ANOTHER chat the user is a member of (the `chat` argument) — «что в рабочем чате сегодня» asked in the DM.",
       input_schema: summarizeChatJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableSummary && opts.enableMediaView) {
+    tools.push({
+      name: VIEW_MEDIA_TOOL,
+      description:
+        "Look at ONE picture from the chat log: the number from a «[медиа #N]» tag in a summarize_chat transcript. Photos open in full; for a VIDEO you get only its preview frame. Pictures are NOT seen when the log is read — call this only when the answer genuinely depends on what is in that specific image (the user asks what is on a screenshot, a bug candidate's screenshot would settle what broke). Never open media in bulk «just to check» — each one costs a picture's worth of tokens; give the link instead when the user only needs to find it.",
+      input_schema: viewMediaJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

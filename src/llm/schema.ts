@@ -222,11 +222,20 @@ export type CalendarEventsInput = z.infer<typeof CalendarEventsZ>;
 
 // Read back the chat's raw message log (chat_message_log) so the model can recap
 // what was said — including everything the bot never replied to.
+// Optional narrowing for work chats: one forum topic, only some channels («из
+// голосовых»), and a FOCUS («кандидаты в баги») that the cheap condense tier keeps
+// in full instead of compressing away. Optional in Zod so older callers/tests that
+// omit them still parse.
+export const SUMMARY_KINDS = ['text', 'voice', 'photo', 'video', 'file'] as const;
 export const SummarizeChatZ = z.object({
   limit: z.number().int().positive().nullable(),
   fromDate: z.string().regex(DATE_RE).nullable(),
   toDate: z.string().regex(DATE_RE).nullable(),
   timezone: z.string().min(1),
+  thread: z.string().trim().min(1).max(200).nullable().optional(),
+  kinds: z.array(z.enum(SUMMARY_KINDS)).max(5).nullable().optional(),
+  focus: z.string().trim().min(1).max(500).nullable().optional(),
+  chat: z.string().trim().min(1).max(200).nullable().optional(),
 });
 export type SummarizeChatInput = z.infer<typeof SummarizeChatZ>;
 
@@ -872,8 +881,47 @@ export const summarizeChatJsonSchema = {
       type: 'string',
       description: 'IANA timezone for resolving the local dates and rendering times. Use the chat timezone from the context block.',
     },
+    thread: {
+      type: ['string', 'null'],
+      description:
+        'Forum chats only: read ONE topic («тред»). Its name as listed under "Forum topics" in the context block (forgiving match), its numeric id, "this" for the topic the user is writing in now, or "general" for the General topic. null => the whole chat, every topic (lines are then tagged with their topic).',
+    },
+    kinds: {
+      type: ['array', 'null'],
+      items: { type: 'string', enum: ['text', 'voice', 'photo', 'video', 'file'] },
+      description:
+        'Read only these channels: ["voice"] for «из голосовых», ["photo","video","file"] for «какие скрины/видео кидали». null => everything.',
+    },
+    focus: {
+      type: ['string', 'null'],
+      description:
+        'What the user is actually looking for, when it is narrower than a general recap: «кандидаты в баги», «решения по релизу», «что обещали сделать». Long windows are pre-compressed by a cheaper model, and the focus tells it to keep every relevant detail in full. null => a general recap.',
+    },
+    chat: {
+      type: ['string', 'null'],
+      description:
+        'PRIVATE CHAT ONLY: read ANOTHER chat the user is in — its title (or id) from the "Chats you can ask about" line, or as the user names it («что в рабочем чате», «что было в Dev»). Access is checked (the user must be a member). null => this chat.',
+    },
   },
-  required: ['limit', 'fromDate', 'toDate', 'timezone'],
+  required: ['limit', 'fromDate', 'toDate', 'timezone', 'thread', 'kinds', 'focus', 'chat'],
+} as const;
+
+// Open ONE logged picture / video thumbnail on demand.
+export const ViewMediaZ = z.object({
+  ref: z.number().int().positive(),
+});
+export type ViewMediaInput = z.infer<typeof ViewMediaZ>;
+
+export const viewMediaJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ref: {
+      type: 'integer',
+      description: 'The number from a «[медиа #N]» tag in a summarize_chat transcript.',
+    },
+  },
+  required: ['ref'],
 } as const;
 
 const foodItemJsonSchema = {

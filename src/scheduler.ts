@@ -26,6 +26,7 @@ import { makeDotaLookupHandler } from './dota/lookup.js';
 import { makeFlightStatusHandler } from './flight/handler.js';
 import { makeSpendingReportHandler } from './spending/handler.js';
 import { makeSummarizeChatHandler } from './summary/handler.js';
+import { makeChatReadCheck } from './summary/access.js';
 import {
   makeCalendarEventsHandler,
   upcomingCalendarLines,
@@ -273,7 +274,14 @@ async function runTask(bot: Bot, task: ScheduledTask): Promise<void> {
         spendingReport: makeSpendingReportHandler(task.chatId),
         // Recapping the chat log stays live as well: «каждое утро перескажи, что
         // было вчера» is exactly a scheduled summary, and the tool only reads.
-        summarizeChat: makeSummarizeChatHandler(task.chatId),
+        // A task in someone's DM («каждое утро саммари рабочего чата») may read a
+        // work chat its creator is a member of — re-checked at every firing.
+        summarizeChat: makeSummarizeChatHandler(task.chatId, {
+          crossChat:
+            task.tgUserId !== null && task.chatId === task.tgUserId
+              ? { canRead: makeChatReadCheck(bot.api, task.tgUserId) }
+              : undefined,
+        }),
         // Calendar reads stay live too (read-only, chat-scoped).
         calendarEvents: makeCalendarEventsHandler(task.chatId),
       },

@@ -4,6 +4,7 @@
 // day separators, the "how many lines were cut" bookkeeping — are unit-testable.
 
 import type { LoggedMessage } from '../db/repos/chatLog.repo.js';
+import { messageLink } from '../util/telegramLink.js';
 import { previousDateStr, startOfZonedDayMs, zonedDayRange, zonedParts } from '../util/day.js';
 
 export interface SummaryWindowInput {
@@ -104,17 +105,62 @@ function channelTag(kind: LoggedMessage['kind']): string {
   if (kind === 'voice') return ' (голосовое)';
   if (kind === 'photo') return ' (фото)';
   if (kind === 'file') return ' (файл)';
+  if (kind === 'video') return ' (видео)';
   return '';
 }
 
-function oneLine(msg: LoggedMessage, tz: string): string {
-  const { hour, minute } = zonedParts(msg.createdAt, tz);
+/**
+ * How lines are decorated beyond «[time] Author: text». Everything is optional so
+ * the plain shape (episode notes, old callers) stays exactly as it was.
+ */
+export interface LineOptions {
+  tz: string;
+  /** The chat the lines belong to — needed to build t.me links. */
+  chatId?: number;
+  /** Tag each line with its forum topic («{QA}») — for a window spanning topics. */
+  topicNames?: ReadonlyMap<number, string> | null;
+  /**
+   * Which lines get a link back to their source message: 'media' (voice / photo /
+   * video / file — the lines worth citing, and the ones the reader can't re-read
+   * in text) or 'all' (a focused ask like bug candidates, where any line may be
+   * the one to cite). Default: none.
+   */
+  links?: 'none' | 'media' | 'all';
+}
+
+function asOptions(opts: string | LineOptions): LineOptions {
+  return typeof opts === 'string' ? { tz: opts } : opts;
+}
+
+function topicTag(msg: LoggedMessage, names: ReadonlyMap<number, string> | null | undefined): string {
+  if (!names) return '';
+  if (msg.threadId == null) return ' {General}';
+  return ` {${names.get(msg.threadId) ?? `тред ${msg.threadId}`}}`;
+}
+
+function suffixes(msg: LoggedMessage, o: LineOptions): string {
+  let out = '';
+  // A media line is a REFERENCE: the picture itself stays in Telegram until
+  // someone asks to look at this exact one (view_media takes the number).
+  if (msg.mediaFileId) out += ` [медиа #${msg.id}]`;
+  const wantLink =
+    o.links === 'all' || (o.links === 'media' && (msg.kind !== 'text' || !!msg.mediaFileId));
+  if (wantLink && o.chatId != null && msg.role === 'user') {
+    const link = messageLink(o.chatId, msg.messageId, msg.threadId);
+    if (link) out += ` ${link}`;
+  }
+  return out;
+}
+
+function oneLine(msg: LoggedMessage, opts: string | LineOptions): string {
+  const o = asOptions(opts);
+  const { hour, minute } = zonedParts(msg.createdAt, o.tz);
   const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   // Newlines inside one message would look like separate speakers in the transcript.
   const body = msg.content.replace(/\s*\n+\s*/g, ' ⏎ ').trim();
   const cut =
     body.length > MAX_LINE_CHARS ? `${body.slice(0, MAX_LINE_CHARS)}… [обрезано]` : body;
-  return `[${time}] ${speaker(msg)}${channelTag(msg.kind)}: ${cut}`;
+  return `[${time}]${topicTag(msg, o.topicNames)} ${speaker(msg)}${channelTag(msg.kind)}: ${cut}${suffixes(msg, o)}`;
 }
 
 /**
@@ -129,12 +175,12 @@ function oneLine(msg: LoggedMessage, tz: string): string {
  */
 export function renderTranscript(
   messages: LoggedMessage[],
-  opts: { tz: string; charBudget: number },
+  opts: LineOptions & { charBudget: number },
 ): RenderedTranscript {
   if (messages.length === 0) return { text: '', used: 0, dropped: 0 };
-  const kept = takeNewestWithin(messages, opts.tz, opts.charBudget);
+  const kept = takeNewestWithin(messages, opts, opts.charBudget);
   return {
-    text: renderLines(kept, opts.tz),
+    text: renderLines(kept, opts),
     used: kept.length,
     dropped: messages.length - kept.length,
   };
@@ -145,7 +191,9 @@ export function renderTranscript(
  * the local date changes. Shared by the verbatim path and the condense planner, so
  * both feed the models exactly the same shape of text.
  */
-export function renderLines(messages: LoggedMessage[], tz: string): string {
+export function renderLines(messages: LoggedMessage[], opts: string | LineOptions): string {
+  const o = asOptions(opts);
+  const tz = o.tz;
   const out: string[] = [];
   let currentDay = '';
   for (const msg of messages) {
@@ -154,7 +202,7 @@ export function renderLines(messages: LoggedMessage[], tz: string): string {
       currentDay = dateStr;
       out.push(`— ${humanDay(dateStr, tz)} —`);
     }
-    out.push(oneLine(msg, tz));
+    out.push(oneLine(msg, o));
   }
   return out.join('\n');
 }
@@ -166,7 +214,7 @@ export function renderLines(messages: LoggedMessage[], tz: string): string {
  */
 function takeNewestWithin(
   messages: LoggedMessage[],
-  tz: string,
+  tz: LineOptions,
   charBudget: number,
 ): LoggedMessage[] {
   const kept: LoggedMessage[] = [];
@@ -205,12 +253,12 @@ export interface CondensePlan {
  */
 export function planCondense(
   messages: LoggedMessage[],
-  opts: { tz: string; tailChars: number; chunkChars: number; maxChunks: number },
+  opts: LineOptions & { tailChars: number; chunkChars: number; maxChunks: number },
 ): CondensePlan {
   if (messages.length === 0) {
     return { chunks: [], tail: '', tailCount: 0, condensedCount: 0, dropped: 0 };
   }
-  const tailMessages = takeNewestWithin(messages, opts.tz, opts.tailChars);
+  const tailMessages = takeNewestWithin(messages, opts, opts.tailChars);
   const older = messages.slice(0, messages.length - tailMessages.length);
 
   // Pack the older part newest-first, then flip everything back to chronological.
@@ -219,7 +267,7 @@ export function planCondense(
   let size = 0;
   for (let i = older.length - 1; i >= 0; i--) {
     const msg = older[i]!;
-    const cost = oneLine(msg, opts.tz).length + 1;
+    const cost = oneLine(msg, opts).length + 1;
     if (current.length > 0 && size + cost > opts.chunkChars) {
       packed.push(current);
       current = [];
@@ -235,14 +283,138 @@ export function planCondense(
     .slice(opts.maxChunks)
     .reduce((n, chunk) => n + chunk.length, 0);
   const chunks = within
-    .map((chunk) => renderLines(chunk.slice().reverse(), opts.tz))
+    .map((chunk) => renderLines(chunk.slice().reverse(), opts))
     .reverse();
 
   return {
     chunks,
-    tail: renderLines(tailMessages, opts.tz),
+    tail: renderLines(tailMessages, opts),
     tailCount: tailMessages.length,
     condensedCount: within.reduce((n, chunk) => n + chunk.length, 0),
     dropped,
+  };
+}
+
+export type ThreadResolution =
+  /** null = every topic; 0 = General; >0 = that topic. */
+  | { ok: true; threadId: number | null; label: string | null }
+  | { ok: false; error: string };
+
+const THIS_THREAD = /^(this|current|here|этот|текущий|тут|здесь|этом|этого)(\s+(тред|топик|thread|topic)\w*)?$/i;
+const GENERAL_THREAD = /^(general|общий|основной|главный|general\s+topic)(\s+(тред|топик|чат))?$/i;
+
+/**
+ * Turn the model's `thread` argument into a topic id. Forgiving the way people
+ * name things («тред QA», «багрепорты», «этот тред»): exact name → numeric id →
+ * a UNIQUE containment match. An ambiguous or unknown name is an error that lists
+ * the known topics — guessing the wrong thread would recap the wrong conversation
+ * with full confidence.
+ */
+export function resolveThread(
+  raw: string | null | undefined,
+  topics: readonly { threadId: number; name: string }[],
+  currentThreadId: number | null,
+): ThreadResolution {
+  const want = (raw ?? '').trim().replace(/^#/, '');
+  if (!want) return { ok: true, threadId: null, label: null };
+  const nameOf = (id: number): string =>
+    id === 0 ? 'General' : (topics.find((t) => t.threadId === id)?.name ?? `тред ${id}`);
+
+  if (THIS_THREAD.test(want)) {
+    const id = currentThreadId ?? 0;
+    return { ok: true, threadId: id, label: nameOf(id) };
+  }
+  if (GENERAL_THREAD.test(want)) return { ok: true, threadId: 0, label: 'General' };
+  if (/^\d+$/.test(want)) {
+    const id = Number(want);
+    return { ok: true, threadId: id, label: nameOf(id) };
+  }
+
+  const norm = (s: string): string =>
+    s.toLowerCase().replace(/ё/g, 'е').replace(/^(тред|топик|thread|topic)\s+/, '').trim();
+  const q = norm(want);
+  const exact = topics.filter((t) => norm(t.name) === q);
+  if (exact.length === 1) return { ok: true, threadId: exact[0]!.threadId, label: exact[0]!.name };
+  const partial = topics.filter((t) => {
+    const n = norm(t.name);
+    return n.includes(q) || (n.length >= 3 && q.includes(n));
+  });
+  if (partial.length === 1) {
+    return { ok: true, threadId: partial[0]!.threadId, label: partial[0]!.name };
+  }
+  const known = topics.length
+    ? topics.map((t) => `«${t.name}» (id ${t.threadId})`).join(', ')
+    : 'none learned yet — topic names are picked up as messages arrive';
+  return {
+    ok: false,
+    error:
+      partial.length > 1
+        ? `Topic «${want}» is ambiguous: it matches ${partial.map((t) => `«${t.name}»`).join(', ')}. Ask the user which one, or retry with the exact name.`
+        : `No forum topic matches «${want}». Known topics: ${known}. Retry with one of them (or its id), or ask the user which thread they mean.`,
+  };
+}
+
+/**
+ * The context-block line that tells the model this is a forum chat: the topics it
+ * knows and the one the current message is in («что было в этом треде» needs the
+ * latter). null for a chat without topics — no line, stable block shape.
+ */
+export function forumTopicsLine(
+  topics: readonly { threadId: number; name: string }[],
+  currentThreadId: number | null,
+): string | null {
+  if (topics.length === 0 && currentThreadId == null) return null;
+  const MAX = 30;
+  const shown = topics.slice(0, MAX).map((t) => `«${t.name}» (id ${t.threadId})`);
+  if (topics.length > MAX) shown.push(`…+${topics.length - MAX}`);
+  const here =
+    currentThreadId == null
+      ? 'General'
+      : `«${topics.find((t) => t.threadId === currentThreadId)?.name ?? `тред ${currentThreadId}`}» (id ${currentThreadId})`;
+  return `Forum topics (threads; summarize_chat.thread scopes a recap to one): ${shown.length ? shown.join(', ') : 'names not learned yet'}. This message is in: ${here}.`;
+}
+
+export type ChatResolution =
+  | { ok: true; chatId: number; label: string }
+  | { ok: false; error: string };
+
+/**
+ * Turn the model's `chat` argument (asked from the DM) into a chat id: exact title
+ * → numeric id → a UNIQUE containment match. Same stance as resolveThread — an
+ * ambiguous or unknown name is an error, never a guess, because guessing would
+ * recap the wrong team's chat. Resolution is not access (see summary/access.ts).
+ */
+export function resolveChatRef(
+  raw: string,
+  chats: readonly { chatId: number; title: string | null }[],
+): ChatResolution {
+  const want = raw.trim();
+  const label = (c: { chatId: number; title: string | null }): string => c.title ?? `чат ${c.chatId}`;
+  if (/^-?\d+$/.test(want)) {
+    const id = Number(want);
+    const known = chats.find((c) => c.chatId === id);
+    return known
+      ? { ok: true, chatId: id, label: label(known) }
+      : { ok: false, error: `No logged chat with id ${want}.` };
+  }
+  const norm = (s: string): string =>
+    s.toLowerCase().replace(/ё/g, 'е').replace(/[«»"']/g, '').replace(/^(чат|chat)\s+/, '').trim();
+  const q = norm(want);
+  const titled = chats.filter((c) => c.title);
+  const exact = titled.filter((c) => norm(c.title!) === q);
+  if (exact.length === 1) return { ok: true, chatId: exact[0]!.chatId, label: label(exact[0]!) };
+  const partial = titled.filter((c) => {
+    const n = norm(c.title!);
+    return q.length >= 2 && (n.includes(q) || (n.length >= 3 && q.includes(n)));
+  });
+  if (partial.length === 1) {
+    return { ok: true, chatId: partial[0]!.chatId, label: label(partial[0]!) };
+  }
+  return {
+    ok: false,
+    error:
+      partial.length > 1
+        ? `Chat «${want}» is ambiguous: it matches ${partial.map((c) => `«${label(c)}»`).join(', ')}. Ask the user which one.`
+        : `No logged chat matches «${want}». Use one from the "Chats you can ask about" line, or ask the user for the exact chat name.`,
   };
 }

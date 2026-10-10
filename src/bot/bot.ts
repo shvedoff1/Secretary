@@ -46,6 +46,7 @@ import {
   cmdSetup,
   cmdTrust,
   cmdChime,
+  cmdListen,
   cmdHumor,
   cmdReact,
   cmdChatLog,
@@ -55,6 +56,8 @@ import {
 import { onMessage } from './handlers/onMessage.js';
 import { onPhoto } from './handlers/onPhoto.js';
 import { onDocument } from './handlers/onDocument.js';
+import { onVideo } from './handlers/onVideo.js';
+import { learnTopicName } from './threads.js';
 import { onVoice } from './handlers/onVoice.js';
 import { onBotMembership, handleModeCallback } from './handlers/onBotMembership.js';
 import { onInlineQuery, onChosenInlineResult } from './handlers/onInlineQuery.js';
@@ -106,6 +109,9 @@ export function buildBot(token: string): Bot {
     if (ctx.chat && 'title' in ctx.chat && ctx.chat.title) {
       setChatTitle(ctx.chat.id, ctx.chat.title);
     }
+    // Forum topic names are only ever revealed in passing (Telegram has no
+    // "list topics" call for bots) — pick them up from every message.
+    if (ctx.chat?.id != null && ctx.message) learnTopicName(ctx.chat.id, ctx.message);
     // No playful reactions where the mode structurally forbids them (the tutor's
     // study room); everywhere else the per-chat /react switch decides inside
     // maybeAutoReact.
@@ -166,6 +172,7 @@ export function buildBot(token: string): Bot {
   bot.command('setup', cmdSetup);
   bot.command('trust', cmdTrust);
   bot.command('chime', cmdChime);
+  bot.command('listen', cmdListen);
   bot.command('humor', cmdHumor);
   bot.command('react', cmdReact);
   bot.command('chatlog', cmdChatLog);
@@ -185,6 +192,7 @@ export function buildBot(token: string): Bot {
   bot.on('message:photo', onPhoto);
   bot.on('message:document', onDocument);
   bot.on('message:voice', onVoice);
+  bot.on(['message:video', 'message:video_note'], onVideo);
   bot.on('message:text', onMessage);
 
   // Let the batch-expiry timer clear its reaction marks (it has no ctx of its own).

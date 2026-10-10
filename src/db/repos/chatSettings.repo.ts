@@ -244,3 +244,27 @@ export function setChatTrusted(chatId: number, trusted: boolean): void {
     )
     .run(chatId, trusted ? 1 : 0);
 }
+
+/**
+ * Per-chat LISTEN-ONLY switch (migration 035). On = a voice note is answered only
+ * when it is addressed to the bot (a reply to it, its name in the transcript, a
+ * DM); every other note is transcribed and logged silently — the «сидит в рабочем
+ * чате и всё запоминает» setup. Default OFF (every voice note is answered).
+ */
+export function isListenOnly(chatId: number): boolean {
+  const row = getDb()
+    .prepare('SELECT listen_only FROM chat_settings WHERE chat_id = ?')
+    .get(chatId) as { listen_only: number | null } | undefined;
+  return !!row?.listen_only;
+}
+
+export function setListenOnly(chatId: number, on: boolean): void {
+  getDb()
+    .prepare(
+      `INSERT INTO chat_settings (chat_id, listen_only, updated_at)
+       VALUES (?, ?, unixepoch() * 1000)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         listen_only = excluded.listen_only, updated_at = excluded.updated_at`,
+    )
+    .run(chatId, on ? 1 : 0);
+}

@@ -72,3 +72,28 @@ describe('config OpenAI humorizer latency knobs', () => {
     expect(() => loadConfig()).toThrow(/OPENAI_REASONING_EFFORT/);
   });
 });
+
+describe('config chat log bounds', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    for (const [k, v] of Object.entries(REQUIRED_ENV)) process.env[k] = v;
+    delete process.env.CHAT_LOG_KEEP_PER_CHAT;
+    delete process.env.CHAT_LOG_RETENTION_DAYS;
+  });
+
+  it('keeps months of a busy work chat by default', async () => {
+    const { loadConfig } = await import('../src/config.js');
+    expect(loadConfig().CHAT_LOG_KEEP_PER_CHAT).toBe(50_000);
+    expect(loadConfig().CHAT_LOG_RETENTION_DAYS).toBe(365);
+  });
+
+  it('still honours overrides', async () => {
+    process.env.CHAT_LOG_KEEP_PER_CHAT = '1000';
+    process.env.CHAT_LOG_RETENTION_DAYS = '7';
+    const { loadConfig } = await import('../src/config.js');
+    expect(loadConfig().CHAT_LOG_KEEP_PER_CHAT).toBe(1000);
+    expect(loadConfig().CHAT_LOG_RETENTION_DAYS).toBe(7);
+    delete process.env.CHAT_LOG_KEEP_PER_CHAT;
+    delete process.env.CHAT_LOG_RETENTION_DAYS;
+  });
+});

@@ -37,6 +37,12 @@ vi.mock('../src/bot/flows/memory.js', () => ({
 vi.mock('../src/bot/handlers/onPhoto.js', () => ({
   handlePhotoTurn: vi.fn(),
 }));
+vi.mock('../src/db/repos/chatSettings.repo.js', () => ({
+  isListenOnly: vi.fn(() => false),
+}));
+vi.mock('../src/bot/chatLog.js', () => ({
+  recordChatLog: vi.fn(),
+}));
 
 import { onVoice } from '../src/bot/handlers/onVoice.js';
 import { isTranscriptionEnabled, transcribeAudio } from '../src/llm/transcribe.js';
@@ -46,6 +52,8 @@ import { handlePhotoTurn } from '../src/bot/handlers/onPhoto.js';
 import { learnFromMessage } from '../src/bot/flows/lexicon.js';
 import { learnMemoryFromMessage } from '../src/bot/flows/memory.js';
 import { bufferForward } from '../src/bot/forwardBuffer.js';
+import { isListenOnly } from '../src/db/repos/chatSettings.repo.js';
+import { recordChatLog } from '../src/bot/chatLog.js';
 
 const mockEnabled = vi.mocked(isTranscriptionEnabled);
 const mockTranscribe = vi.mocked(transcribeAudio);
@@ -77,6 +85,7 @@ function fakeCtx(over: { chat?: Record<string, unknown>; message?: Record<string
 beforeEach(() => {
   vi.clearAllMocks();
   mockByName.mockReturnValue(false); // off unless a test opts in
+  vi.mocked(isListenOnly).mockReturnValue(false);
 });
 
 describe('onVoice reaction lifecycle', () => {
@@ -338,5 +347,75 @@ describe('onVoice and forwarded notes', () => {
       text: 'привет, это чужой голос',
     });
     expect(react).toHaveBeenLastCalledWith('🫡');
+  });
+});
+
+describe('onVoice in a listen-only chat (/listen on)', () => {
+  beforeEach(() => {
+    mockEnabled.mockReturnValue(true);
+    vi.mocked(isListenOnly).mockReturnValue(true);
+  });
+
+  it('logs and learns a note people say to EACH OTHER, but stays completely silent', async () => {
+    mockTranscribe.mockResolvedValue('на айфоне корзина не открывается после логина');
+    mockAddressed.mockReturnValue(false);
+
+    const { ctx, react, reply, sendMessage } = fakeCtx({
+      chat: { id: -1001234567890, type: 'supergroup', title: 'Dev' },
+      message: { message_id: 77, is_topic_message: true, message_thread_id: 12 },
+    });
+    await onVoice(ctx);
+
+    // Logged with its thread + message id, so a recap can scope and link it.
+    expect(recordChatLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'voice',
+        content: 'на айфоне корзина не открывается после логина',
+        threadId: 12,
+        messageId: 77,
+      }),
+    );
+    expect(learnMemoryFromMessage).toHaveBeenCalled();
+    // …and nothing visible: no answer, no ✍ blinking, no admin DM of every note.
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(react).not.toHaveBeenCalled();
+    expect(reply).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('still answers a note that calls the bot by name with a request', async () => {
+    mockTranscribe.mockResolvedValue('Скай, сделай саммари по багам');
+    mockAddressed.mockReturnValue(false);
+    mockByName.mockReturnValue(true);
+    mockRun.mockResolvedValue('replied');
+
+    const { ctx } = fakeCtx();
+    await onVoice(ctx);
+
+    expect(mockRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('still answers a note that replies to the bot', async () => {
+    mockTranscribe.mockResolvedValue('а подробнее?');
+    mockAddressed.mockReturnValue(true);
+    mockRun.mockResolvedValue('replied');
+
+    const { ctx } = fakeCtx();
+    await onVoice(ctx);
+
+    expect(mockRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not apply in a DM — a DM voice note is always a question to the bot', async () => {
+    mockTranscribe.mockResolvedValue('что у меня завтра');
+    mockAddressed.mockReturnValue(true);
+    mockRun.mockResolvedValue('replied');
+
+    const { ctx, react } = fakeCtx({ chat: { id: 2, type: 'private' } });
+    await onVoice(ctx);
+
+    expect(isListenOnly).not.toHaveBeenCalled();
+    expect(react).toHaveBeenCalledWith(WRITING);
+    expect(mockRun).toHaveBeenCalledTimes(1);
   });
 });

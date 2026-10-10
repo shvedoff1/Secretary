@@ -7,6 +7,7 @@ import { runAndRespond, senderName } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { forwardOrigin, isForwarded } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
+import { logRefs } from '../threads.js';
 import { bufferForward, isForwardBufferEnabled, FORWARD_MARK } from '../forwardBuffer.js';
 import { FILE_ATTACHMENT_MARKER } from '../../llm/prompts.js';
 import { armPendingFile, type PendingFile } from '../pendingFile.js';
@@ -52,6 +53,16 @@ export async function onDocument(ctx: Context): Promise<void> {
     senderName: senderName(ctx),
     content: caption ? `(файл: ${fileName}) ${caption}` : `(файл: ${fileName})`,
     forwarded: isForwarded(ctx.message),
+    ...logRefs(ctx.message),
+    // An IMAGE sent as a file can be opened later by view_media, a VIDEO sent as a
+    // file by its thumbnail; other files keep just their name + link (reading a
+    // PDF is an explicit ask, not a recap step).
+    mediaFileId:
+      classifyFile(doc.mime_type, doc.file_name) === 'image'
+        ? doc.file_id
+        : (doc.mime_type ?? '').startsWith('video/')
+          ? (doc.thumbnail?.file_id ?? null)
+          : null,
   });
 
   // A FORWARDED file joins the pack like a forwarded photo — as its name and

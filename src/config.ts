@@ -84,9 +84,13 @@ const ConfigSchema = z.object({
   // the `summarize_chat` tool; storage costs no tokens, only the summary does.
   ENABLE_CHAT_LOG: boolish.default(true),
   // Hard bounds on the log, applied per chat: keep at most this many lines...
-  CHAT_LOG_KEEP_PER_CHAT: z.coerce.number().int().positive().default(4000),
+  // Generous on purpose: a busy work chat («кандидаты в баги за месяц», «что
+  // решили по релизу в августе») needs months of history, and storage is cheap —
+  // ~50k short lines is ~15 MB of SQLite and costs no tokens (a recap reads only
+  // its window, capped by SUMMARY_MAX_MESSAGES).
+  CHAT_LOG_KEEP_PER_CHAT: z.coerce.number().int().positive().default(50_000),
   // ...and drop anything older than this, whichever bites first.
-  CHAT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  CHAT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
   // How many messages a summary reads when the user doesn't name a number.
   SUMMARY_DEFAULT_MESSAGES: z.coerce.number().int().positive().default(200),
   // Ceiling on one summarize_chat call. Generous because a big window no longer

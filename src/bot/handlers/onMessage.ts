@@ -19,6 +19,7 @@ import { getChatMode } from '../../db/repos/chatSettings.repo.js';
 import { modeAllowsChime, modeAllowsSlang } from '../../modes.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
+import { logRefs } from '../threads.js';
 import {
   bufferForward,
   isForwardBufferEnabled,
@@ -68,6 +69,7 @@ export async function onMessage(ctx: Context): Promise<void> {
     senderName: senderName(ctx),
     content: text,
     forwarded: isForwarded(ctx.message),
+    ...logRefs(ctx.message),
   });
 
   // FORWARDED message → the batch, not a reply. Forwards are someone else's words

@@ -45,6 +45,19 @@ describe('condenseChunk', () => {
     expect(await condenseChunk('что-то')).toBeNull();
   });
 
+  it('carries a FOCUS in the user turn, keeping the system prompt static', async () => {
+    createMock.mockResolvedValue(reply('Петя: корзина пустая после логина'));
+    const { condenseChunk } = await import('../src/llm/summarize.js');
+    await condenseChunk('[10:00] Петя (голосовое): корзина пустая', 'кандидаты в баги');
+    await condenseChunk('[10:00] Петя (голосовое): корзина пустая');
+    const [focused, plain] = createMock.mock.calls.map((c) => c[0]);
+    expect(focused.messages[0].content).toContain('READER IS LOOKING FOR: «кандидаты в баги»');
+    expect(plain.messages[0].content).not.toContain('READER IS LOOKING FOR');
+    expect(focused.system).toBe(plain.system);
+    // Links / media refs must survive the compression — the prompt says so.
+    expect(plain.system).toContain('[медиа #N]');
+  });
+
   it('never calls the model for an empty chunk', async () => {
     const { condenseChunk } = await import('../src/llm/summarize.js');
     expect(await condenseChunk('  ')).toBeNull();

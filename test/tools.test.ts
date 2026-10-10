@@ -251,3 +251,14 @@ describe('buildTools', () => {
     expect('input_schema' in tool!).toBe(true);
   });
 });
+
+describe('view_media gating', () => {
+  it('is exposed only next to summarize_chat AND when the caller can download', () => {
+    const base = { enableWebSearch: false, enableExpense: false };
+    expect(names(buildTools({ ...base, enableSummary: true }))).not.toContain('view_media');
+    expect(names(buildTools({ ...base, enableMediaView: true }))).not.toContain('view_media');
+    expect(names(buildTools({ ...base, enableSummary: true, enableMediaView: true }))).toContain(
+      'view_media',
+    );
+  });
+});

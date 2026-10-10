@@ -11,6 +11,7 @@ import { runAndRespond, senderName } from '../flows/assist.js';
 import { downloadTelegramFile } from '../../util/telegramFile.js';
 import { forwardOrigin, isForwarded } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
+import { logRefs } from '../threads.js';
 import {
   bufferForward,
   isForwardBufferEnabled,
@@ -33,6 +34,10 @@ export async function onPhoto(ctx: Context): Promise<void> {
     senderName: senderName(ctx),
     content: caption || '(фото без подписи)',
     forwarded: isForwarded(ctx.message),
+    ...logRefs(ctx.message),
+    // Kept as a REFERENCE only — nothing is downloaded until someone asks to look
+    // at this exact picture (view_media). The largest size is what's worth opening.
+    mediaFileId: photos[photos.length - 1]!.file_id,
   });
 
   // A FORWARDED photo goes to the forward batch, not the assistant: it's someone

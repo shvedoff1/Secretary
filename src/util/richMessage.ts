@@ -8,6 +8,9 @@ export interface RichSendOptions {
   /** Suppress the link preview in the fallback paths (rich messages don't blow up
    *  bare URLs into a preview, so it only matters when we degrade). */
   disableLinkPreview?: boolean;
+  /** Forum topic to post into. Without it a reply with no reply target lands in
+   *  the forum's General topic instead of the thread the question came from. */
+  messageThreadId?: number | null;
 }
 
 /**
@@ -29,12 +32,14 @@ export async function sendRichMarkdown(
 ): Promise<void> {
   const reply_parameters =
     opts.replyToMessageId != null ? { message_id: opts.replyToMessageId } : undefined;
+  const thread =
+    opts.messageThreadId != null ? { message_thread_id: opts.messageThreadId } : {};
 
   try {
     await api.sendRichMessage(
       chatId,
       { markdown: text },
-      reply_parameters ? { reply_parameters } : {},
+      { ...(reply_parameters ? { reply_parameters } : {}), ...thread },
     );
     return;
   } catch (err) {
@@ -48,6 +53,7 @@ export async function sendRichMarkdown(
     await api.sendMessage(chatId, mdToTelegramHtml(text), {
       parse_mode: 'HTML',
       ...(reply_parameters ? { reply_parameters } : {}),
+      ...thread,
       ...linkPreview,
     });
     return;
@@ -55,6 +61,7 @@ export async function sendRichMarkdown(
     logger.warn({ err, chatId }, 'HTML reply failed, falling back to plain text');
     await api.sendMessage(chatId, stripMarkdown(text), {
       ...(reply_parameters ? { reply_parameters } : {}),
+      ...thread,
       ...linkPreview,
     });
   }

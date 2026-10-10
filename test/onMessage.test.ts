@@ -448,6 +448,9 @@ describe('onMessage chat log', () => {
       senderName: 'Tester',
       content: 'да ну его, поехали завтра',
       forwarded: false,
+      // Not a forum message, and the fake ctx carries no message id.
+      threadId: null,
+      messageId: null,
     });
   });
 

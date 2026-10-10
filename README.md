@@ -110,8 +110,9 @@ added without touching the core.
   скрине?», `view_media`). For a chat where people talk to EACH OTHER in voice, turn on
   listen-only with `/listen <chatId> on`: every voice note is transcribed and logged
   silently, and the bot answers only when it is called by name or replied to. Needs
-  privacy mode OFF (see Setup) so the bot sees every message; mind the log bounds
-  (`CHAT_LOG_KEEP_PER_CHAT`, `CHAT_LOG_RETENTION_DAYS`) for a busy chat.
+  privacy mode OFF (see Setup) so the bot sees every message. The log keeps up to a
+  year / 50k messages per chat by default (`CHAT_LOG_RETENTION_DAYS`,
+  `CHAT_LOG_KEEP_PER_CHAT`).
   You can also ask about a work chat **from your DM with the bot** («что сегодня было
   в Dev?», «какие баги накидали в рабочем чате за неделю?», or a daily DM task «каждое
   утро присылай саммари рабочего чата»). The bot answers only about chats you are a
@@ -218,8 +219,8 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `FORWARD_BUFFER_MAX` | no | `50` | Max messages kept per pack (the pack lands in one LLM turn) |
 | `LEARN_FROM_FORWARDS` | no | `false` | Let passive learning (slang + memory) read **forwarded** messages too. Off by default: a forward is someone else's words about someone else's life |
 | `ENABLE_CHAT_LOG` | no | `true` | Keep a rolling per-chat log of every message (incl. the ones the bot never answers) so it can recap what was said. `false` = nothing is recorded and the `summarize_chat` tool disappears |
-| `CHAT_LOG_KEEP_PER_CHAT` | no | `4000` | Max messages kept per chat |
-| `CHAT_LOG_RETENTION_DAYS` | no | `30` | Drop logged messages older than this |
+| `CHAT_LOG_KEEP_PER_CHAT` | no | `50000` | Max messages kept per chat (~15 MB of SQLite at the cap; costs no tokens) |
+| `CHAT_LOG_RETENTION_DAYS` | no | `365` | Drop logged messages older than this |
 | `SUMMARY_DEFAULT_MESSAGES` | no | `200` | How many messages a recap reads when no count/period is named |
 | `SUMMARY_MAX_MESSAGES` | no | `1000` | Ceiling on one recap |
 | `SUMMARY_CHAR_BUDGET` | no | `14000` | How much transcript may reach the main model **verbatim**; a bigger window goes through the compression pass below |

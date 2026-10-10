@@ -10,6 +10,9 @@ import {
   listFoodEntries,
   removeFoodEntries,
   setFoodGoal,
+  getDayNote,
+  listDayNotes,
+  setDayNote,
   type FoodEntry,
   type Meal,
 } from '../db/repos/food.repo.js';
@@ -24,6 +27,8 @@ import {
   kcalHeadline,
   macrosLine,
   macrosShort,
+  mergeDayNote,
+  DAY_NOTE_MAX,
   MEAL_LABELS,
   renderDay,
   renderPeriod,
@@ -139,6 +144,30 @@ export function makeLogFoodHandler(
           `Цель записана: ${fmtNum(g.kcal)} ккал в день${macros.length ? ` (${macros.join(' · ')} г)` : ''}.` +
           MODEL_NOTE,
         card: dayCard(today),
+      };
+    }
+
+    if (input.action === 'note') {
+      // A short per-day note («была тренировка»). Future dates are a misread,
+      // like for food: clamped to today.
+      const date = input.date && input.date <= today ? input.date : today;
+      const existing = getDayNote(chatId, tgUserId, date);
+      const raw = input.note?.trim() ?? '';
+      if (!raw) {
+        setDayNote(chatId, tgUserId, date, '');
+        return {
+          text: existing ? `Заметку за ${date} убрал.` : `Заметки за ${date} и так не было.`,
+          card: dayCard(date),
+        };
+      }
+      const merged = mergeDayNote(existing, raw, input.noteReplace === true);
+      setDayNote(chatId, tgUserId, date, merged.text);
+      return {
+        text:
+          `Заметка к ${date === today ? 'сегодня' : date}: «${merged.text}».` +
+          (merged.cut ? ` (Обрезал до ${DAY_NOTE_MAX} символов — скажи пользователю.)` : '') +
+          ' Она уже видна в таблице дня под твоим ответом — ответь одной короткой строкой.',
+        card: dayCard(date),
       };
     }
 
@@ -285,8 +314,9 @@ export function renderFoodReport(
   }
   const goal = getFoodGoal(chatId, tgUserId);
   const entries = listFoodEntries(chatId, tgUserId, from, to);
-  if (from === to) return renderDay(entries, goal, from, dayLabel(from, today));
-  return renderPeriod(entries, goal, from, to);
+  const notes = listDayNotes(chatId, tgUserId, from, to);
+  if (from === to) return renderDay(entries, goal, from, dayLabel(from, today), notes.get(from) ?? null);
+  return renderPeriod(entries, goal, from, to, notes);
 }
 
 /** The context-block line for the sender (null when they have no diary today). */
@@ -295,8 +325,18 @@ export function foodContextFor(chatId: number, tgUserId: number, now: number = D
   const yesterday = shiftDays(today, -1);
   return foodContextLine(
     [
-      { label: 'today', date: today, entries: listFoodEntries(chatId, tgUserId, today, today) },
-      { label: 'yesterday', date: yesterday, entries: listFoodEntries(chatId, tgUserId, yesterday, yesterday) },
+      {
+        label: 'today',
+        date: today,
+        entries: listFoodEntries(chatId, tgUserId, today, today),
+        note: getDayNote(chatId, tgUserId, today),
+      },
+      {
+        label: 'yesterday',
+        date: yesterday,
+        entries: listFoodEntries(chatId, tgUserId, yesterday, yesterday),
+        note: getDayNote(chatId, tgUserId, yesterday),
+      },
     ],
     getFoodGoal(chatId, tgUserId),
   );

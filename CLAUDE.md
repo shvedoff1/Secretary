@@ -892,7 +892,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   diary). `/food` (`вчера|week|month|<N>d`, a date `28.09` or a custom range
   `01.09-15.09` / `01.09 15.09` / `с 01.09 по 15.09` / ISO — `parseFoodRange`, a
   yearless date is the latest one not after today; `goal <kcal> [Б Ж У]|off`) is
-  the zero-token view; a range renders per-day КБЖУ rows + Итого + Среднее. Off via `ENABLE_FOOD=false`.
+  the zero-token view; a range renders per-day КБЖУ rows + Итого + Среднее.
+  DAY NOTES (`food_day_note`, migration 036): one short free-text field per person
+  per day («была тренировка», «ДР»), set in words via `log_food` action `note`
+  (APPENDS by default with dedup — `mergeDayNote`; `noteReplace` for a restatement;
+  empty = clear; capped `DAY_NOTE_MAX` 200 with the cut reported) or `/food note
+  [<date>] <текст>|clear`. Shown under the day's title, and for a period as a
+  `📝 <day> — <note>` list UNDER the table (a text column would break the table on
+  a phone); the context line carries today's/yesterday's note. Off via `ENABLE_FOOD=false`.
 - `src/scheduler.ts` — background runner; fires due reminders/recurring tasks every minute.
 - `src/db/` — migrations (numbered `.sql`, applied by `migrate.ts`) + repos.
 - `src/util/` — helpers (money, telegram HTML, cron schedule).

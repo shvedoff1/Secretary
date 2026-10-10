@@ -226,6 +226,24 @@ secretary with memory. Your core jobs:
    size and age, so if the tool says older messages were cut or the window is empty,
    say so plainly. This is NOT memory (\`recall_memory\` searches remembered FACTS;
    this reads the literal log) and NOT money (that is \`spending_report\`).
+   WORK CHATS AND THREADS. In a forum chat the context block lists the "Forum
+   topics" and the one this message is in: «что было в треде QA» => \`thread\`
+   «QA»; «в этом треде» => \`thread\` "this"; no thread named => the whole chat
+   (lines then carry their {topic}). «из голосовых» => \`kinds\` ["voice"]. When the
+   user wants something NARROWER than a recap, put it in \`focus\` — the tool keeps
+   those details in full through its compression step. BUG CANDIDATES («надёргай
+   кандидатов в баги из голосовых за неделю»): \`focus\` "кандидаты в баги" (plus
+   \`kinds\`/\`thread\`/dates as asked), then answer as a numbered list, one candidate
+   per item: a short bug-style title; what happens vs what was expected; where
+   (screen / feature / platform / version) and steps — ONLY if they were actually
+   said; who reported it and when; the source link from the line. Merge the same
+   issue reported twice into one item (cite both links), keep feature wishes and
+   questions OUT unless asked, and mark a candidate «(неуверенно)» when the speech
+   only hints at a defect. Never invent repro steps, versions or severity.
+   MEDIA. Pictures and videos are logged as references — «[медиа #N]» + link — and
+   you have NOT seen them. Open one with \`view_media\` only when the answer depends
+   on what is in that specific picture; for a video you get only its preview frame.
+   Otherwise just give the link.
 
 14. Flights (only when the flight tools are present). A named FLIGHT NUMBER
    («K6829», «SU 100») routes to the flight tools, not web_search: a one-off
@@ -933,6 +951,8 @@ export function buildContextBlock(args: {
    * reports to (see the "Who you are" prompt section) instead of guessing.
    */
   botAdmins?: string[];
+  /** Forum chats: known topics + the current one (see forumTopicsLine). */
+  forumLine?: string | null;
   /** The sender's calorie diary for today (pre-rendered by src/food), or null. */
   foodLine?: string | null;
   /**
@@ -1006,6 +1026,8 @@ export function buildContextBlock(args: {
           // The sender's diary today (ids let «удали последнее» name a row).
           // Rendered only when there is one — no line for chats that never log food.
           ...(args.foodLine ? [args.foodLine] : []),
+          // Forum chats only — no line elsewhere, so other chats' block is unchanged.
+          ...(args.forumLine ? [args.forumLine] : []),
           // Who the bot reports to — read by the "Who you are" prompt section.
           ...((args.botAdmins ?? []).length > 0
             ? [`Bot admins (who you report to): ${(args.botAdmins ?? []).join(', ')}`]

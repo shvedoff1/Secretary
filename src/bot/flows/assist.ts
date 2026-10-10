@@ -30,6 +30,9 @@ import { makeSurfForecastHandler } from '../../surf/index.js';
 import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { makeSummarizeChatHandler } from '../../summary/handler.js';
+import { makeViewMediaHandler } from '../../summary/media.js';
+import { forumTopicsLine } from '../../summary/transcript.js';
+import { listTopics } from '../../db/repos/topic.repo.js';
 import {
   makeCalendarEventsHandler,
   upcomingCalendarLines,
@@ -138,6 +141,7 @@ import {
 } from '../../db/repos/pending.repo.js';
 import { previewKeyboard } from '../keyboards.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
+import { threadIdOf } from '../threads.js';
 import { looksLikeExpense } from '../../util/money.js';
 import { FORWARDED_MESSAGE_MARKER, VOICE_TRANSCRIPT_MARKER } from '../../llm/prompts.js';
 import { forwardOrigin } from '../forwarded.js';
@@ -321,6 +325,8 @@ async function replyMarkdown(
 ): Promise<void> {
   await sendRichMarkdown(ctx.api, ctx.chat!.id, text, {
     replyToMessageId: extra.reply_to_message_id,
+    // Answer inside the forum thread the question came from.
+    messageThreadId: threadIdOf(ctx.msg),
   });
 }
 
@@ -1139,6 +1145,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         rules: listRules(chatId).map((r) => r.text),
         // Who runs the bot here, so «кто ты и чей ты?» names real admins.
         botAdmins: botAdminLabels(chatId),
+        // Forum chats: which topics exist and which one this message is in.
+        forumLine: expenseOnly ? null : forumTopicsLine(listTopics(chatId), threadIdOf(ctx.msg)),
         // The sender's calorie diary today — only when the feature is on and it's
         // a chat where the diary tools exist (not tutor, not the silent scan).
         foodLine:
@@ -1166,7 +1174,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
         spendingReport: makeSpendingReportHandler(chatId),
-        summarizeChat: makeSummarizeChatHandler(chatId),
+        summarizeChat: makeSummarizeChatHandler(chatId, { currentThreadId: threadIdOf(ctx.msg) }),
+        viewMedia: makeViewMediaHandler(chatId, ctx.api),
         calendarEvents: makeCalendarEventsHandler(chatId),
         logFood: makeLogFoodHandler(chatId, tgUserId),
         foodReport: makeFoodReportHandler(chatId, tgUserId),
@@ -1411,7 +1420,8 @@ async function rewordPendingInner(
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
       spendingReport: makeSpendingReportHandler(chatId),
-      summarizeChat: makeSummarizeChatHandler(chatId),
+      summarizeChat: makeSummarizeChatHandler(chatId, { currentThreadId: threadIdOf(ctx.msg) }),
+        viewMedia: makeViewMediaHandler(chatId, ctx.api),
       calendarEvents: makeCalendarEventsHandler(chatId),
       logFood: makeLogFoodHandler(chatId, tgUserId),
       foodReport: makeFoodReportHandler(chatId, tgUserId),

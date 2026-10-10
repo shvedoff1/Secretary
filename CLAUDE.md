@@ -81,7 +81,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
 - `src/llm/` — Claude assistant (tool-use router): `record_expense | remember |
   edit_memory | learn_expense_pattern | edit_lexicon | set_rule | set_timezone |
   schedule_task | manage_task | surf_forecast | add_poi | spending_report |
-  summarize_chat | log_food | food_report | web_search`. REMINDER TIMING is split by shape so the model never
+  summarize_chat | view_media | log_food | food_report | web_search`. REMINDER TIMING is split by shape so the model never
   does timezone arithmetic: a RELATIVE delay («через час 50», «на 1.50 от сейчас»)
   is passed as `schedule_task.inMinutes` and the handler (`resolveTiming` in
   `flows/assist.ts`) computes the fire instant from the server clock, storing a
@@ -307,6 +307,31 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   compress are a reported GAP, all-failed falls back to the truncated verbatim window,
   and overflow says the recap starts partway in. Off via `ENABLE_SUMMARY_CONDENSE=false`
   (back to plain oldest-first truncation). The handler is async because of this pass.
+  WORK CHATS / FORUM THREADS (migration 035): every log line also stores
+  `thread_id` (forum topic; NULL = General / non-forum, via `threadIdOf` — only
+  `is_topic_message` counts, a non-forum reply thread also carries
+  `message_thread_id`), `message_id` (→ `t.me/c/…` source links, `messageLink` in
+  `util/telegramLink.ts`, supergroups only — never a fabricated link) and
+  `media_file_id`. Topic NAMES live in `chat_topic` (`topic.repo.ts`), learned in the
+  global message middleware by `learnTopicName` from creation/rename service messages
+  and from the topic-root `reply_to_message` every topic message carries (Telegram
+  has no "list topics" call for bots). `summarize_chat` gained `thread` (name/id/
+  "this"/"general", resolved by the pure `resolveThread` — ambiguous/unknown is an
+  ERROR listing known topics, never a guess), `kinds` (["voice"] = «из голосовых»)
+  and `focus` («кандидаты в баги»: links on EVERY line, a focused closing task, and
+  the focus rides into the Haiku condense pass's USER turn so its system prompt stays
+  static); a window spanning several topics tags lines `{Topic}`. The context block
+  gets a "Forum topics" line (`forumTopicsLine`, forum chats only) naming the current
+  topic. Replies go into the asker's thread (`messageThreadId` on
+  `sendRichMarkdown`; `ctx.reply` already does it). MEDIA is logged as a REFERENCE,
+  never processed on arrival: photos (largest size), image files, videos/«кружочки»
+  (`onVideo.ts`, kind `video`, thumbnail file_id) render as `[медиа #<logId>]` + link,
+  and `view_media` (`src/summary/media.ts`; exposed only next to summarize_chat AND
+  when the caller passes a `viewMedia` handler — the live flow, not scheduler/inline)
+  opens ONE of them (magic-byte sniffed, ≤5 MB, a video is said to be only its
+  still). LISTEN-ONLY (`/listen <chatId> on|off` → `chat_settings.listen_only`): a
+  group voice note is transcribed + logged + learned but answered only when addressed
+  (reply to the bot / `addressesBotByName` on the transcript) — no ✍, no admin DM.
 - `src/episodes/` — EPISODIC memory («журнал бесед»), the human-memory middle tier
   between the tiny verbatim history window (`conversation_turn`, ~20 turns) and the
   huge raw log (`chat_message_log`): the model knows WHAT past conversations were

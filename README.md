@@ -97,6 +97,21 @@ added without touching the core.
   messages, `CHAT_LOG_RETENTION_DAYS` days), can be inspected/wiped by the admin with
   `/chatlog <chatId>` (`/chatlog <chatId> clear`), and switched off entirely with
   `ENABLE_CHAT_LOG=false`.
+- **Work chats with threads («кандидаты в баги из голосовых»)**: in a forum supergroup
+  the log remembers which topic every message was posted in (topic names are learned
+  as messages go by), so a recap can be scoped to one thread («что было в треде QA»,
+  «в этом треде») or to one channel («из голосовых»), and a FOCUSED ask («надёргай
+  кандидатов в баги из голосовых за неделю») gets a list of candidates — what breaks,
+  where, who said it, with a `t.me/c/…` link to each source message — instead of a
+  general recap. Replies go into the thread the question came from. Photos, videos and
+  «кружочки» are NOT processed when they arrive (too expensive in a busy chat): they're
+  logged as references (caption, link, a cheap-to-open file id) and the bot opens one
+  specific picture — or a video's preview frame — only when asked («что на том
+  скрине?», `view_media`). For a chat where people talk to EACH OTHER in voice, turn on
+  listen-only with `/listen <chatId> on`: every voice note is transcribed and logged
+  silently, and the bot answers only when it is called by name or replied to. Needs
+  privacy mode OFF (see Setup) so the bot sees every message; mind the log bounds
+  (`CHAT_LOG_KEEP_PER_CHAT`, `CHAT_LOG_RETENTION_DAYS`) for a busy chat.
 - **Chat rules**: standing behaviour instructions in your own words — «все голосовые
   очищай от слов-паразитов и скидывай мне расшифровку», «отвечай короче», «без эмодзи».
   Just tell the bot («с этого момента …») and it records the rule itself, or use
@@ -132,7 +147,8 @@ added without touching the core.
 1. **Create a bot** with [@BotFather](https://t.me/BotFather) → get the token.
    - To let the bot auto-detect expense messages in groups, disable privacy mode:
      BotFather → `/setprivacy` → your bot → **Disable**. (Otherwise it only sees
-     commands, @mentions, and replies.)
+     commands, @mentions, and replies.) The same is needed for chat recaps — a bot
+     that can't see the messages can't log them.
    - For **inline mode** (`@бот вопрос` from any chat): BotFather → `/setinline`
      (set a placeholder, e.g. «спроси секретаря…») **and** `/setinlinefeedback` →
      **Enabled (100%)**. The feedback part is not optional: the bot answers by

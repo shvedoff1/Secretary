@@ -1,7 +1,7 @@
 import type { Context } from 'grammy';
 import { loadConfig } from '../../config.js';
 import { logger } from '../../logger.js';
-import { isAddressed } from '../triggers.js';
+import { addressesBotByName, isAddressed } from '../triggers.js';
 import { runAndRespond, senderName } from '../flows/assist.js';
 import { learnFromMessage } from '../flows/lexicon.js';
 import { learnMemoryFromMessage } from '../flows/memory.js';
@@ -11,6 +11,8 @@ import { setTranscript } from '../transcriptCache.js';
 import { handlePhotoTurn } from './onPhoto.js';
 import { forwardOrigin, isForwarded, passiveLearningAllowed } from '../forwarded.js';
 import { recordChatLog } from '../chatLog.js';
+import { logRefs } from '../threads.js';
+import { isListenOnly } from '../../db/repos/chatSettings.repo.js';
 import {
   bufferForward,
   isForwardBufferEnabled,
@@ -96,8 +98,15 @@ export async function onVoice(ctx: Context): Promise<void> {
     return;
   }
 
-  // Acknowledge receipt; cleared below unless this becomes an expense.
-  await setWriting(ctx);
+  // LISTEN-ONLY chats (/listen): a voice note is a line of the work chat to be
+  // transcribed and remembered, not a question — it's answered only when it is
+  // addressed (DM, a reply to the bot, or the bot named with a request in the
+  // transcript). Everything else stays silent: no ✍ mark, no reply, no admin DM.
+  const listenOnly = ctx.chat.type !== 'private' && isListenOnly(ctx.chat.id);
+
+  // Acknowledge receipt; cleared below unless this becomes an expense. A
+  // listen-only chat gets no mark — dozens of ✍ blinking on and off is noise.
+  if (!listenOnly) await setWriting(ctx);
 
   let transcript: string;
   try {
@@ -131,12 +140,15 @@ export async function onVoice(ctx: Context): Promise<void> {
     senderName: senderName(ctx),
     content: transcript,
     forwarded: isForwarded(ctx.message),
+    ...logRefs(ctx.message),
   });
 
   // DM the admin what we heard, so they can catch flaky transcriptions even in
   // chats they don't actively watch. Best-effort; skip when the admin themselves
   // sent the note in their own DM (they'd just get a duplicate).
-  void dmTranscriptToAdmin(ctx, transcript);
+  // (Not in a listen-only chat: there every note is transcribed, so the DM would
+  // be a second copy of the whole chat.)
+  if (!listenOnly) void dmTranscriptToAdmin(ctx, transcript);
 
   // Learn the chat's slang from the transcript too — every message counts, not
   // just the ones we reply to. Fire-and-forget and best-effort. A FORWARDED voice
@@ -147,6 +159,13 @@ export async function onVoice(ctx: Context): Promise<void> {
   // Build weighted long-term memory from the transcript too. Best-effort.
   if (learnable && ctx.from) {
     void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript);
+  }
+
+  // Listen-only: logged and learned above — that's the job. Answer only a note
+  // that is actually spoken TO the bot.
+  if (listenOnly && !addressed && !addressesBotByName(transcript)) {
+    logger.info({ chatId: ctx.chat.id }, 'voice logged silently (listen-only)');
+    return;
   }
 
   // A FORWARDED voice note is someone else's voice, not the sender talking to the

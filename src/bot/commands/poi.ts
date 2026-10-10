@@ -1,6 +1,7 @@
 import type { Context } from 'grammy';
 import { listPois, deletePoi } from '../../db/repos/poi.repo.js';
 import { renderPoiList } from '../../util/poi.js';
+import { threadIdOf } from '../threads.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 
 export async function cmdPoi(ctx: Context): Promise<void> {
@@ -14,7 +15,10 @@ export async function cmdPoi(ctx: Context): Promise<void> {
     return;
   }
   const md = renderPoiList(pois);
-  await sendRichMarkdown(ctx.api, ctx.chat.id, md, { disableLinkPreview: true });
+  await sendRichMarkdown(ctx.api, ctx.chat.id, md, {
+    disableLinkPreview: true,
+    messageThreadId: threadIdOf(ctx.msg),
+  });
 }
 
 export async function cmdDelPoi(ctx: Context): Promise<void> {

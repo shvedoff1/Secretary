@@ -33,6 +33,10 @@ export function recordChatLog(args: {
   senderName?: string | null;
   content: string;
   forwarded?: boolean;
+  /** Forum topic / Telegram message id / media reference — see migration 035. */
+  threadId?: number | null;
+  messageId?: number | null;
+  mediaFileId?: string | null;
 }): void {
   if (!isChatLogEnabled()) return;
   const cfg = loadConfig();
@@ -44,6 +48,9 @@ export function recordChatLog(args: {
       tgUserId: args.tgUserId,
       senderName: args.senderName ?? null,
       content: args.forwarded ? `[переслано] ${args.content}` : args.content,
+      threadId: args.threadId ?? null,
+      messageId: args.messageId ?? null,
+      mediaFileId: args.mediaFileId ?? null,
     });
     // Trimming on every insert would double the writes on a busy chat for no gain
     // — the bounds are generous, so amortise it.

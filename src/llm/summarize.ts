@@ -15,7 +15,9 @@ the recap — you are preserving what happened in as few words as possible.
 
 KEEP, in the chat's own language: who said/did what (names as written), decisions
 and agreements, plans with dates/times/places, questions left open, numbers, sums,
-links, @handles and any concrete detail someone might ask about later. Keep the
+links, @handles and any concrete detail someone might ask about later. Lines may end
+with a «[медиа #N]» tag and/or a https://t.me/c/… link — copy those VERBATIM onto the
+note they belong to (they are how the reader cites and opens the source). Keep the
 chronological order, and keep the day separators («— 21 августа —») you were given.
 
 DROP: greetings, filler, emoji, repeated jokes, back-and-forth that led nowhere,
@@ -31,9 +33,16 @@ write nothing for it.`;
  * empty output) returns null so the caller can report the gap instead of silently
  * presenting a partial window as complete.
  */
-export async function condenseChunk(chunk: string): Promise<string | null> {
+export async function condenseChunk(
+  chunk: string,
+  focus?: string | null,
+): Promise<string | null> {
   const text = chunk.trim();
   if (!text) return null;
+  // The focus rides in the USER turn so the system prompt stays one static string.
+  const content = focus
+    ? `READER IS LOOKING FOR: «${focus}». Keep every line relevant to it in FULL detail (what exactly happened, where, steps, versions, who, when, its link); compress everything else as hard as usual.\n\n${text}`
+    : text;
   const cfg = loadConfig();
   try {
     const res = await getAnthropic().messages.create({
@@ -43,7 +52,7 @@ export async function condenseChunk(chunk: string): Promise<string | null> {
       // otherwise two recaps of one evening disagree on details.
       temperature: 0,
       system: CONDENSE_SYSTEM,
-      messages: [{ role: 'user', content: text }],
+      messages: [{ role: 'user', content }],
     });
     const out = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -68,8 +77,11 @@ export interface CondensedChunks {
  * Compress every chunk in parallel. Chunks are independent by construction (each
  * is its own stretch of the conversation), so this costs one round-trip, not N.
  */
-export async function condenseChunks(chunks: string[]): Promise<CondensedChunks> {
-  const results = await Promise.all(chunks.map((chunk) => condenseChunk(chunk)));
+export async function condenseChunks(
+  chunks: string[],
+  focus?: string | null,
+): Promise<CondensedChunks> {
+  const results = await Promise.all(chunks.map((chunk) => condenseChunk(chunk, focus)));
   return {
     notes: results.filter((r): r is string => r !== null),
     failed: results.filter((r) => r === null).length,

@@ -8,6 +8,7 @@ import {
   shiftDays,
 } from '../../food/handler.js';
 import { fmtNum } from '../../food/nutrition.js';
+import { threadIdOf } from '../threads.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
 
 export type FoodCommand =
@@ -156,12 +157,13 @@ export async function cmdFood(ctx: Context): Promise<void> {
   const userId = ctx.from.id;
   const today = localToday(foodTimezone(chatId));
   const cmd = parseFoodArgs((ctx.match as string | undefined) ?? '', today);
+  const inThread = { messageThreadId: threadIdOf(ctx.msg) };
 
   switch (cmd.kind) {
     // Tables go out as rich markdown (native Telegram table, aligned <pre> fallback).
     case 'day': {
       const d = shiftDays(today, cmd.offset);
-      await sendRichMarkdown(ctx.api, chatId, renderFoodReport(chatId, userId, d, d, today));
+      await sendRichMarkdown(ctx.api, chatId, renderFoodReport(chatId, userId, d, d, today), inThread);
       return;
     }
     case 'period':
@@ -169,12 +171,18 @@ export async function cmdFood(ctx: Context): Promise<void> {
         ctx.api,
         chatId,
         renderFoodReport(chatId, userId, shiftDays(today, -(cmd.days - 1)), today, today),
+        inThread,
       );
       return;
     case 'range':
       // One day renders as the full diary, a span as the per-day table;
       // renderFoodReport clamps the future and over-long spans (92 days).
-      await sendRichMarkdown(ctx.api, chatId, renderFoodReport(chatId, userId, cmd.from, cmd.to, today));
+      await sendRichMarkdown(
+        ctx.api,
+        chatId,
+        renderFoodReport(chatId, userId, cmd.from, cmd.to, today),
+        inThread,
+      );
       return;
     case 'goal':
       setFoodGoal(chatId, userId, {

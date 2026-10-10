@@ -1,10 +1,15 @@
-import type { Context } from 'grammy';
+import type { Api, Context } from 'grammy';
 import { loadConfig } from '../config.js';
 
 /** Download a Telegram file (by file_id) into a Buffer via the Bot file API. */
 export async function downloadTelegramFile(ctx: Context, fileId: string): Promise<Buffer> {
+  return downloadTelegramFileVia(ctx.api, fileId);
+}
+
+/** Same, from a bare Api (for handlers that outlive the update's ctx). */
+export async function downloadTelegramFileVia(api: Api, fileId: string): Promise<Buffer> {
   const { BOT_TOKEN } = loadConfig();
-  const file = await ctx.api.getFile(fileId);
+  const file = await api.getFile(fileId);
   if (!file.file_path) throw new Error('no file_path from Telegram');
   const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
   const res = await fetch(url);

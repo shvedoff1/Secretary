@@ -87,3 +87,18 @@ describe('sendRichMarkdown', () => {
     });
   });
 });
+
+describe('sendRichMarkdown in a forum topic', () => {
+  it('posts into the given thread on every rung of the ladder', async () => {
+    const { api, richCalls, msgCalls } = makeApi({ richThrows: true, htmlThrows: true });
+    await sendRichMarkdown(api, -100123, 'ответ', { messageThreadId: 12 });
+    expect(richCalls[0]!.other).toEqual({ message_thread_id: 12 });
+    expect(msgCalls.map((c) => c.other.message_thread_id)).toEqual([12, 12]);
+  });
+
+  it('sends no thread field outside topics', async () => {
+    const { api, richCalls } = makeApi();
+    await sendRichMarkdown(api, 42, 'привет', { messageThreadId: null });
+    expect(richCalls[0]!.other).toEqual({});
+  });
+});

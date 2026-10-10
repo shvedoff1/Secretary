@@ -129,6 +129,8 @@ export interface AssistantContext {
   botAdmins?: string[];
   /** Forum chats: the known topics + the one this message is in (pre-rendered). */
   forumLine?: string | null;
+  /** DM only: the work chats the user can ask about from here (pre-rendered). */
+  otherChatsLine?: string | null;
   /** Expose the schedule_task tool (default true; false for scheduled runs). */
   allowReminders?: boolean;
   /** Expose the watch_page tool (default true; false for scheduled runs). */
@@ -469,6 +471,7 @@ export async function runAssistant(
         rules: ctx.rules ?? [],
         botAdmins: ctx.botAdmins ?? [],
         forumLine: ctx.forumLine ?? null,
+        otherChatsLine: ctx.otherChatsLine ?? null,
         // The diary lists dish names — on a spend-shaped turn they'd be one more
         // title source besides the message, so it goes with memory there.
         foodLine: cfg.ENABLE_FOOD && !memoryFree ? (ctx.foodLine ?? null) : null,

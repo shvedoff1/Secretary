@@ -332,6 +332,18 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   still). LISTEN-ONLY (`/listen <chatId> on|off` → `chat_settings.listen_only`): a
   group voice note is transcribed + logged + learned but answered only when addressed
   (reply to the bot / `addressesBotByName` on the transcript) — no ✍, no admin DM.
+  FROM THE DM («что в рабочем чате?»): `summarize_chat.chat` reads ANOTHER chat's
+  log, but only when the handler got `crossChat` — set solely for a PRIVATE chat
+  (`crossChatAccess` in `flows/assist.ts`) and for a DM-owned scheduled task (creator
+  == chat); groups and inline never get it, since the answer would be posted in front
+  of people who may not be in that chat. The chat is resolved by `resolveChatRef`
+  (title/id over `listLoggedChats`; ambiguous = error) and gated by MEMBERSHIP:
+  `makeChatReadCheck` (`src/summary/access.ts`) calls `getChatMember` (member /
+  admin / creator / restricted-with-is_member), cached 10 min, any API error =
+  denied. `view_media` takes the same checker to open a ref from that chat. The DM
+  context block lists the chats the person has POSTED in (`loggedChatsOfUser` →
+  `otherChatsLine`, DB-only, no per-turn Telegram calls); a lurker can still name
+  a chat — the membership check, not the list, is the gate.
 - `src/episodes/` — EPISODIC memory («журнал бесед»), the human-memory middle tier
   between the tiny verbatim history window (`conversation_turn`, ~20 turns) and the
   huge raw log (`chat_message_log`): the model knows WHAT past conversations were

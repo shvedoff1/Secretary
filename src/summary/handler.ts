@@ -1,7 +1,7 @@
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getTimezone } from '../db/repos/chatSettings.repo.js';
-import { countLog, oldestLoggedAt, readLog } from '../db/repos/chatLog.repo.js';
+import { countLog, listLoggedChats, oldestLoggedAt, readLog } from '../db/repos/chatLog.repo.js';
 import { condenseChunks } from '../llm/summarize.js';
 import type { SummarizeChatInput } from '../llm/schema.js';
 import {
@@ -9,9 +9,11 @@ import {
   planCondense,
   renderTranscript,
   resolveSummaryWindow,
+  resolveChatRef,
   resolveThread,
   type LineOptions,
 } from './transcript.js';
+import type { ChatReadCheck } from './access.js';
 import { listTopics } from '../db/repos/topic.repo.js';
 import { zonedParts } from '../util/day.js';
 
@@ -46,6 +48,12 @@ export function makeSummarizeChatHandler(
   opts: {
     /** Forum topic the asking message came from («что было в этом треде»). */
     currentThreadId?: number | null;
+    /**
+     * Reading ANOTHER chat's log by `input.chat` — DM only (an answer about a work
+     * chat must never land in a third chat) and only for a current MEMBER of that
+     * chat (see summary/access.ts). Absent => `chat` is refused.
+     */
+    crossChat?: { canRead: ChatReadCheck };
   } = {},
 ): (input: SummarizeChatInput) => Promise<string> {
   return async (input) => {
@@ -60,8 +68,28 @@ export function makeSummarizeChatHandler(
       maxLimit: cfg.SUMMARY_MAX_MESSAGES,
     });
 
-    const topics = listTopics(chatId);
-    const thread = resolveThread(input.thread, topics, opts.currentThreadId ?? null);
+    // Which chat's log: this one, or — from the DM — the work chat the user named.
+    let target = chatId;
+    let currentThreadId = opts.currentThreadId ?? null;
+    let chatNote = '';
+    if (input.chat?.trim()) {
+      if (!opts.crossChat) {
+        return 'Reading ANOTHER chat is only possible from a private chat with the bot (an answer about one chat must not be posted into a different one). Here you can only recap THIS chat — call again with chat=null, or tell the user to ask in the DM.';
+      }
+      const resolved = resolveChatRef(input.chat, listLoggedChats());
+      if (!resolved.ok) return resolved.error;
+      if (resolved.chatId !== chatId) {
+        if (!(await opts.crossChat.canRead(resolved.chatId))) {
+          logger.info({ chatId, target: resolved.chatId }, 'summarize_chat cross-chat read denied');
+          return `The user is not a member of «${resolved.label}» (or the bot can't check), so you may NOT read or describe that chat. Tell them plainly you only answer about chats they are in.`;
+        }
+        target = resolved.chatId;
+        currentThreadId = null; // «этот тред» means nothing from the DM
+        chatNote = ` Chat: «${resolved.label}» (read from the DM — the user is a member).`;
+      }
+    }
+    const topics = listTopics(target);
+    const thread = resolveThread(input.thread, topics, currentThreadId);
     if (!thread.ok) return thread.error;
     const kinds = input.kinds?.length ? input.kinds : null;
     const filter = {
@@ -76,40 +104,40 @@ export function makeSummarizeChatHandler(
     ]
       .filter(Boolean)
       .join(', ');
-    const scopeNote = scope ? ` Scope: ${scope}.` : '';
+    const scopeNote = `${chatNote}${scope ? ` Scope: ${scope}.` : ''}`;
     const focus = input.focus?.trim() || null;
     const task = focus ? focusedTask(focus) : TASK;
 
     let messages;
     try {
-      messages = readLog(chatId, { limit: window.limit, ...filter });
+      messages = readLog(target, { limit: window.limit, ...filter });
     } catch (err) {
-      logger.error({ err, chatId }, 'summarize_chat log read failed');
+      logger.error({ err, chatId: target }, 'summarize_chat log read failed');
       return 'Could not read the chat log. Tell the user the log is unavailable right now.';
     }
 
     if (messages.length === 0) {
-      const total = countLog(chatId);
-      const oldest = oldestLoggedAt(chatId);
+      const total = countLog(target);
+      const oldest = oldestLoggedAt(target);
       // An empty window is not the same as an empty log — say which, so the model
       // answers «за вчера тут тишина» instead of «я ничего не помню».
       if (total === 0) {
         return 'The chat log is EMPTY — nothing has been logged for this chat yet (logging starts from the moment the feature was switched on). Tell the user you have nothing recorded yet.';
       }
-      if (scope && countLog(chatId, { fromMs: window.fromMs, toMs: window.toMs }) > 0) {
+      if (scope && countLog(target, { fromMs: window.fromMs, toMs: window.toMs }) > 0) {
         return `No messages in the requested window (${window.label}) match the scope (${scope}), though the window itself has other messages. Tell the user exactly that — and offer to look wider.`;
       }
       return `No messages in the requested window (${window.label}). The log holds ${total} message(s) for this chat, the oldest from ${humanDay(zonedParts(oldest ?? now, tz).dateStr, tz)}. Tell the user that period is empty, and offer the period you do have.`;
     }
 
-    const inWindow = countLog(chatId, filter);
+    const inWindow = countLog(target, filter);
     // Topic tags only when the window actually spans several topics (in a single
     // thread, or a chat without forums, they'd be noise on every line).
     const spansTopics =
       thread.threadId === null && new Set(messages.map((m) => m.threadId ?? 0)).size > 1;
     const lineOpts: LineOptions = {
       tz,
-      chatId,
+      chatId: target,
       topicNames: spansTopics ? new Map(topics.map((t) => [t.threadId, t.name])) : null,
       // A focused ask (bug candidates) cites any line; a plain recap only the
       // voice/media lines a reader can't skim in the chat.
@@ -128,7 +156,7 @@ export function makeSummarizeChatHandler(
         );
       }
       logger.info(
-        { chatId, requested: window.limit, rendered: verbatim.used, mode: 'verbatim' },
+        { chatId: target, requested: window.limit, rendered: verbatim.used, mode: 'verbatim' },
         'summarize_chat window',
       );
       return [HEADER, notes.join(' '), '', verbatim.text, '', task].join('\n');
@@ -137,7 +165,7 @@ export function makeSummarizeChatHandler(
     // Too big to pass verbatim. Without the condense pass all we can do is cut.
     if (!cfg.ENABLE_SUMMARY_CONDENSE) {
       logger.info(
-        { chatId, rendered: verbatim.used, dropped: verbatim.dropped, mode: 'truncated' },
+        { chatId: target, rendered: verbatim.used, dropped: verbatim.dropped, mode: 'truncated' },
         'summarize_chat window',
       );
       return [
@@ -159,7 +187,7 @@ export function makeSummarizeChatHandler(
     const { notes, failed } = await condenseChunks(plan.chunks, focus);
     logger.info(
       {
-        chatId,
+        chatId: target,
         requested: window.limit,
         condensed: plan.condensedCount,
         verbatimTail: plan.tailCount,

@@ -112,6 +112,11 @@ added without touching the core.
   silently, and the bot answers only when it is called by name or replied to. Needs
   privacy mode OFF (see Setup) so the bot sees every message; mind the log bounds
   (`CHAT_LOG_KEEP_PER_CHAT`, `CHAT_LOG_RETENTION_DAYS`) for a busy chat.
+  You can also ask about a work chat **from your DM with the bot** («что сегодня было
+  в Dev?», «какие баги накидали в рабочем чате за неделю?», or a daily DM task «каждое
+  утро присылай саммари рабочего чата»). The bot answers only about chats you are a
+  member of right now (checked with Telegram), and never answers about another chat
+  inside a group.
 - **Chat rules**: standing behaviour instructions in your own words — «все голосовые
   очищай от слов-паразитов и скидывай мне расшифровку», «отвечай короче», «без эмодзи».
   Just tell the bot («с этого момента …») and it records the rule itself, or use

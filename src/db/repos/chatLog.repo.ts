@@ -207,3 +207,57 @@ export function oldestLoggedAt(chatId: number): number | null {
     .get(chatId) as { t: number | null };
   return row.t ?? null;
 }
+
+/** A group chat whose log can be read (titles from chat_settings, best-effort). */
+export interface LoggedChat {
+  chatId: number;
+  title: string | null;
+}
+
+/**
+ * Group chats that HAVE a log, with their titles — the pool a «что там в рабочем
+ * чате» asked from the DM is resolved against. Resolution is not access: the
+ * caller still checks the asker is a member before reading a line.
+ */
+export function listLoggedChats(): LoggedChat[] {
+  return (
+    getDb()
+      .prepare(
+        `SELECT l.chat_id AS chat_id, s.title AS title
+         FROM (SELECT DISTINCT chat_id FROM chat_message_log WHERE chat_id < 0) l
+         LEFT JOIN chat_settings s ON s.chat_id = l.chat_id`,
+      )
+      .all() as { chat_id: number; title: string | null }[]
+  ).map((r) => ({ chatId: r.chat_id, title: r.title }));
+}
+
+/**
+ * Group chats where this person has posted something that is still in the log —
+ * the cheap, DB-only list the DM context block shows («из лички можно спросить
+ * про…»). No Telegram calls per turn; membership is checked only on an actual read.
+ */
+export function loggedChatsOfUser(tgUserId: number, limit = 10): LoggedChat[] {
+  return (
+    getDb()
+      .prepare(
+        `SELECT l.chat_id AS chat_id, s.title AS title
+         FROM (
+           SELECT chat_id, MAX(created_at) AS last_at FROM chat_message_log
+           WHERE tg_user_id = ? AND chat_id < 0
+           GROUP BY chat_id
+         ) l
+         LEFT JOIN chat_settings s ON s.chat_id = l.chat_id
+         ORDER BY l.last_at DESC
+         LIMIT ?`,
+      )
+      .all(tgUserId, limit) as { chat_id: number; title: string | null }[]
+  ).map((r) => ({ chatId: r.chat_id, title: r.title }));
+}
+
+/** One logged line by id regardless of chat — the caller MUST check access to its chat. */
+export function getLogEntryUnscoped(id: number): (LoggedMessage & { chatId: number }) | null {
+  const row = getDb()
+    .prepare(`SELECT ${LOG_COLUMNS}, chat_id FROM chat_message_log WHERE id = ?`)
+    .get(id) as (LogRow & { chat_id: number }) | undefined;
+  return row ? { ...toMessage(row), chatId: row.chat_id } : null;
+}

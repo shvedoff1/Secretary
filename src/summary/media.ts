@@ -10,7 +10,12 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { Api } from 'grammy';
 import { logger } from '../logger.js';
-import { getLogEntry } from '../db/repos/chatLog.repo.js';
+import {
+  getLogEntry,
+  getLogEntryUnscoped,
+  type LoggedMessage,
+} from '../db/repos/chatLog.repo.js';
+import type { ChatReadCheck } from './access.js';
 import { downloadTelegramFileVia } from '../util/telegramFile.js';
 import { messageLink } from '../util/telegramLink.js';
 import type { ViewMediaInput } from '../llm/schema.js';
@@ -46,13 +51,23 @@ export function sniffImageType(buf: Buffer): ImageType | null {
 export function makeViewMediaHandler(
   chatId: number,
   api: Api,
+  /** DM only: a ref from ANOTHER chat's recap opens if the asker is a member there. */
+  opts: { canRead?: ChatReadCheck } = {},
 ): (input: ViewMediaInput) => Promise<MediaToolContent> {
   return async ({ ref }) => {
-    const entry = getLogEntry(chatId, ref);
-    if (!entry) {
-      return `No logged message #${ref} in this chat (it may have aged out of the log). Tell the user you can't open it.`;
+    let entry: LoggedMessage | null = getLogEntry(chatId, ref);
+    let entryChat = chatId;
+    if (!entry && opts.canRead) {
+      const other = getLogEntryUnscoped(ref);
+      if (other && other.chatId < 0 && (await opts.canRead(other.chatId))) {
+        entry = other;
+        entryChat = other.chatId;
+      }
     }
-    const link = messageLink(chatId, entry.messageId, entry.threadId);
+    if (!entry) {
+      return `No logged message #${ref} you can open (it may have aged out of the log, or belong to a chat the user is not in). Tell the user you can't open it.`;
+    }
+    const link = messageLink(entryChat, entry.messageId, entry.threadId);
     const where = link ? ` Source: ${link}` : '';
     if (!entry.mediaFileId) {
       return `Message #${ref} has nothing to open (a ${entry.kind} message without a picture).${where}`;

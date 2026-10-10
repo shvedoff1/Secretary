@@ -31,6 +31,8 @@ import { makeDotaLookupHandler } from '../../dota/lookup.js';
 import { makeSpendingReportHandler } from '../../spending/handler.js';
 import { makeSummarizeChatHandler } from '../../summary/handler.js';
 import { makeViewMediaHandler } from '../../summary/media.js';
+import { makeChatReadCheck, otherChatsLine, type ChatReadCheck } from '../../summary/access.js';
+import { loggedChatsOfUser } from '../../db/repos/chatLog.repo.js';
 import { forumTopicsLine } from '../../summary/transcript.js';
 import { listTopics } from '../../db/repos/topic.repo.js';
 import {
@@ -302,6 +304,16 @@ async function setThinking(ctx: Context): Promise<void> {
   } catch {
     /* reactions are best-effort */
   }
+}
+
+/**
+ * Cross-chat log reads («что там в рабочем чате?») are allowed only from the DM,
+ * and only for chats the asker is a member of. In a group the answer would be
+ * posted in front of people who may not be in the other chat, so: undefined.
+ */
+function crossChatAccess(ctx: Context): { canRead: ChatReadCheck } | undefined {
+  if (ctx.chat?.type !== 'private' || !ctx.from) return undefined;
+  return { canRead: makeChatReadCheck(ctx.api, ctx.from.id) };
 }
 
 async function clearThinking(ctx: Context): Promise<void> {
@@ -1147,6 +1159,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         botAdmins: botAdminLabels(chatId),
         // Forum chats: which topics exist and which one this message is in.
         forumLine: expenseOnly ? null : forumTopicsLine(listTopics(chatId), threadIdOf(ctx.msg)),
+        // DM only: the work chats this person can ask about from here.
+        otherChatsLine:
+          ctx.chat?.type === 'private' && ctx.from && cfg.ENABLE_CHAT_LOG
+            ? otherChatsLine(loggedChatsOfUser(ctx.from.id))
+            : null,
         // The sender's calorie diary today — only when the feature is on and it's
         // a chat where the diary tools exist (not tutor, not the silent scan).
         foodLine:
@@ -1174,8 +1191,11 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         surfForecast: makeSurfForecastHandler(),
         addPoi: makeAddPoiHandler(chatId, tgUserId),
         spendingReport: makeSpendingReportHandler(chatId),
-        summarizeChat: makeSummarizeChatHandler(chatId, { currentThreadId: threadIdOf(ctx.msg) }),
-        viewMedia: makeViewMediaHandler(chatId, ctx.api),
+        summarizeChat: makeSummarizeChatHandler(chatId, {
+          currentThreadId: threadIdOf(ctx.msg),
+          crossChat: crossChatAccess(ctx),
+        }),
+        viewMedia: makeViewMediaHandler(chatId, ctx.api, { canRead: crossChatAccess(ctx)?.canRead }),
         calendarEvents: makeCalendarEventsHandler(chatId),
         logFood: makeLogFoodHandler(chatId, tgUserId),
         foodReport: makeFoodReportHandler(chatId, tgUserId),
@@ -1420,8 +1440,11 @@ async function rewordPendingInner(
       surfForecast: makeSurfForecastHandler(),
       addPoi: makeAddPoiHandler(chatId, tgUserId),
       spendingReport: makeSpendingReportHandler(chatId),
-      summarizeChat: makeSummarizeChatHandler(chatId, { currentThreadId: threadIdOf(ctx.msg) }),
-        viewMedia: makeViewMediaHandler(chatId, ctx.api),
+      summarizeChat: makeSummarizeChatHandler(chatId, {
+          currentThreadId: threadIdOf(ctx.msg),
+          crossChat: crossChatAccess(ctx),
+        }),
+        viewMedia: makeViewMediaHandler(chatId, ctx.api, { canRead: crossChatAccess(ctx)?.canRead }),
       calendarEvents: makeCalendarEventsHandler(chatId),
       logFood: makeLogFoodHandler(chatId, tgUserId),
       foodReport: makeFoodReportHandler(chatId, tgUserId),

@@ -244,6 +244,13 @@ secretary with memory. Your core jobs:
    you have NOT seen them. Open one with \`view_media\` only when the answer depends
    on what is in that specific picture; for a video you get only its preview frame.
    Otherwise just give the link.
+   FROM THE DM ABOUT A WORK CHAT («что сегодня в рабочем чате?», «какие баги
+   накидали в Dev за неделю»): in a PRIVATE chat, \`summarize_chat\` takes \`chat\`
+   — the chat's title from the "Chats you can ask about" line, or as the user names
+   it — with the same thread/kinds/focus/dates. The tool checks the user is a
+   member; if it refuses, say so and do NOT describe that chat from memory or the
+   journal. Never pass \`chat\` outside a DM — an answer about one chat must not
+   be posted into another.
 
 14. Flights (only when the flight tools are present). A named FLIGHT NUMBER
    («K6829», «SU 100») routes to the flight tools, not web_search: a one-off
@@ -953,6 +960,8 @@ export function buildContextBlock(args: {
   botAdmins?: string[];
   /** Forum chats: known topics + the current one (see forumTopicsLine). */
   forumLine?: string | null;
+  /** DM only: chats whose log the user may ask about (see otherChatsLine). */
+  otherChatsLine?: string | null;
   /** The sender's calorie diary for today (pre-rendered by src/food), or null. */
   foodLine?: string | null;
   /**
@@ -1028,6 +1037,7 @@ export function buildContextBlock(args: {
           ...(args.foodLine ? [args.foodLine] : []),
           // Forum chats only — no line elsewhere, so other chats' block is unchanged.
           ...(args.forumLine ? [args.forumLine] : []),
+          ...(args.otherChatsLine ? [args.otherChatsLine] : []),
           // Who the bot reports to — read by the "Who you are" prompt section.
           ...((args.botAdmins ?? []).length > 0
             ? [`Bot admins (who you report to): ${(args.botAdmins ?? []).join(', ')}`]

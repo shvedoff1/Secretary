@@ -373,3 +373,48 @@ export function forumTopicsLine(
       : `«${topics.find((t) => t.threadId === currentThreadId)?.name ?? `тред ${currentThreadId}`}» (id ${currentThreadId})`;
   return `Forum topics (threads; summarize_chat.thread scopes a recap to one): ${shown.length ? shown.join(', ') : 'names not learned yet'}. This message is in: ${here}.`;
 }
+
+export type ChatResolution =
+  | { ok: true; chatId: number; label: string }
+  | { ok: false; error: string };
+
+/**
+ * Turn the model's `chat` argument (asked from the DM) into a chat id: exact title
+ * → numeric id → a UNIQUE containment match. Same stance as resolveThread — an
+ * ambiguous or unknown name is an error, never a guess, because guessing would
+ * recap the wrong team's chat. Resolution is not access (see summary/access.ts).
+ */
+export function resolveChatRef(
+  raw: string,
+  chats: readonly { chatId: number; title: string | null }[],
+): ChatResolution {
+  const want = raw.trim();
+  const label = (c: { chatId: number; title: string | null }): string => c.title ?? `чат ${c.chatId}`;
+  if (/^-?\d+$/.test(want)) {
+    const id = Number(want);
+    const known = chats.find((c) => c.chatId === id);
+    return known
+      ? { ok: true, chatId: id, label: label(known) }
+      : { ok: false, error: `No logged chat with id ${want}.` };
+  }
+  const norm = (s: string): string =>
+    s.toLowerCase().replace(/ё/g, 'е').replace(/[«»"']/g, '').replace(/^(чат|chat)\s+/, '').trim();
+  const q = norm(want);
+  const titled = chats.filter((c) => c.title);
+  const exact = titled.filter((c) => norm(c.title!) === q);
+  if (exact.length === 1) return { ok: true, chatId: exact[0]!.chatId, label: label(exact[0]!) };
+  const partial = titled.filter((c) => {
+    const n = norm(c.title!);
+    return q.length >= 2 && (n.includes(q) || (n.length >= 3 && q.includes(n)));
+  });
+  if (partial.length === 1) {
+    return { ok: true, chatId: partial[0]!.chatId, label: label(partial[0]!) };
+  }
+  return {
+    ok: false,
+    error:
+      partial.length > 1
+        ? `Chat «${want}» is ambiguous: it matches ${partial.map((c) => `«${label(c)}»`).join(', ')}. Ask the user which one.`
+        : `No logged chat matches «${want}». Use one from the "Chats you can ask about" line, or ask the user for the exact chat name.`,
+  };
+}

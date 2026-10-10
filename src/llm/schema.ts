@@ -235,6 +235,7 @@ export const SummarizeChatZ = z.object({
   thread: z.string().trim().min(1).max(200).nullable().optional(),
   kinds: z.array(z.enum(SUMMARY_KINDS)).max(5).nullable().optional(),
   focus: z.string().trim().min(1).max(500).nullable().optional(),
+  chat: z.string().trim().min(1).max(200).nullable().optional(),
 });
 export type SummarizeChatInput = z.infer<typeof SummarizeChatZ>;
 
@@ -896,8 +897,13 @@ export const summarizeChatJsonSchema = {
       description:
         'What the user is actually looking for, when it is narrower than a general recap: «кандидаты в баги», «решения по релизу», «что обещали сделать». Long windows are pre-compressed by a cheaper model, and the focus tells it to keep every relevant detail in full. null => a general recap.',
     },
+    chat: {
+      type: ['string', 'null'],
+      description:
+        'PRIVATE CHAT ONLY: read ANOTHER chat the user is in — its title (or id) from the "Chats you can ask about" line, or as the user names it («что в рабочем чате», «что было в Dev»). Access is checked (the user must be a member). null => this chat.',
+    },
   },
-  required: ['limit', 'fromDate', 'toDate', 'timezone', 'thread', 'kinds', 'focus'],
+  required: ['limit', 'fromDate', 'toDate', 'timezone', 'thread', 'kinds', 'focus', 'chat'],
 } as const;
 
 // Open ONE logged picture / video thumbnail on demand.

@@ -131,6 +131,24 @@ describe('food dispatch and context', () => {
     expect(second.content).toContain('За сегодня всего: 105 ккал');
   });
 
+  it('carries the day-type button request out with the card', async () => {
+    logFood.mockImplementationOnce(() => ({ text: 'ok', card: '|t|', dayTypePick: '2026-10-20' }) as never);
+    responses = [
+      tool('log_food', {
+        action: 'add',
+        items: [{ name: 'Банан', grams: 120, kcal: 105, protein: 1, fat: 0, carbs: 27 }],
+        meal: null,
+        date: null,
+        entryIds: null,
+        goal: null,
+      }),
+      text('Записал.'),
+    ];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const res = await runAssistant(ctx(), handlers);
+    expect(res).toMatchObject({ kind: 'text', card: '|t|', dayTypePick: '2026-10-20' });
+  });
+
   it('a card-only turn (model said nothing) is still a reply, not «…»', async () => {
     responses = [tool('food_report', { fromDate: null, toDate: null }), text('')];
     const { runAssistant } = await import('../src/llm/assistant.js');

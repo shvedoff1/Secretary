@@ -1,3 +1,4 @@
+import { handleDayTypeCallback } from './handlers/onFoodDayType.js';
 import { Bot } from 'grammy';
 import { sequentialize } from '@grammyjs/runner';
 import { logger } from '../logger.js';
@@ -183,6 +184,7 @@ export function buildBot(token: string): Bot {
   bot.callbackQuery(/^u:/, handleUserCallback);
   bot.callbackQuery(/^e:/, handleExpenseCallback);
   bot.callbackQuery(/^m:/, handleModeCallback);
+  bot.callbackQuery(/^fdt:/, handleDayTypeCallback);
 
   // Reaction taps: the forward batch's "process now" button. Delivered only
   // because index.ts requests message_reaction in allowed_updates; runs behind

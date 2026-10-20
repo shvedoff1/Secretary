@@ -306,6 +306,9 @@ export type AssistantResult =
       // appends under `text` verbatim — after any tone pass, so no rewrite and
       // no model re-typing can touch its figures. Last diary call of the turn wins.
       card?: string;
+      // The diary asks which DAY TYPE this is (chat-local date): the caller
+      // attaches the type buttons to the reply that carries the card.
+      dayTypePick?: string;
     };
 
 const MAX_ITERATIONS = 6;
@@ -497,6 +500,7 @@ export async function runAssistant(
   let usedTool = false;
   // The diary table to show under the reply (see AssistantResult.card).
   let card: string | undefined;
+  let dayTypePick: string | undefined;
 
   // Normalise stored history into a valid alternating prefix (first turn user, no
   // two same-role turns in a row) before appending the current user message —
@@ -888,6 +892,7 @@ export async function runAssistant(
           }
           const out = parsed.success ? handlers.logFood(parsed.data) : null;
           if (out?.card) card = out.card;
+          if (out?.dayTypePick) dayTypePick = out.dayTypePick;
           const confirmation = out ? out.text : 'Could not parse the food entry.';
           toolResults.push({
             type: 'tool_result',
@@ -960,6 +965,7 @@ export async function runAssistant(
       scheduled,
       humorizable: !usedTool && !tutor,
       ...(card ? { card } : {}),
+      ...(dayTypePick && card ? { dayTypePick } : {}),
     };
   }
 

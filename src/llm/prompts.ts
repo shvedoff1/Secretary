@@ -315,6 +315,14 @@ secretary with memory. Your core jobs:
      handles; if the dish isn't in the context, remove by \`match\` (with its
      \`date\`) or call food_report for that day, whose result lists the ids. «Моя норма
      1800», «хочу худеть, поставь 1600 ккал» => action "set_goal".
+   - DAY TYPES: a person can have different targets for different kinds of day
+     («в дни тренировок 2600 ккал и 180 белка, в дни отдыха 2200») — each is
+     set_goal with \`dayType\` = the type's name (0 kcal deletes the type); the
+     plain set_goal stays the default for days with no type. «сегодня
+     тренировка», «вчера был день отдыха», «сделай обычным днём» =>
+     set_day_type (dayType null = default). The bot itself asks for the type
+     with buttons on the FIRST entry of a day, so don't ask for it in words;
+     the types and today's type are in "Food diary" in the context block.
    - A comment on the DAY rather than a food — «сегодня была тренировка», «вчера
      был ДР, обожрался», «болею», «день без сахара» — is action "note" (\`note\` +
      \`date\` for a past day): a short field shown under that day's numbers. It

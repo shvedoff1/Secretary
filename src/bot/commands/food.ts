@@ -3,6 +3,13 @@ import { loadConfig } from '../../config.js';
 import { foodAllowedIn } from '../../core/chatScope.js';
 import {
   clearFoodGoal,
+  deleteDayType,
+  findDayType,
+  getDayKind,
+  getFoodGoal,
+  listDayTypes,
+  setDayKind,
+  upsertDayType,
   getDayNote,
   removeFoodEntries,
   setDayNote,
@@ -17,6 +24,7 @@ import {
 import { DAY_NOTE_MAX, fmtNum, mergeDayNote } from '../../food/nutrition.js';
 import { threadIdOf } from '../threads.js';
 import { sendRichMarkdown } from '../../util/richMessage.js';
+import { dayTypeKeyboard } from '../../food/dayTypeKeyboard.js';
 
 export type FoodCommand =
   | { kind: 'day'; offset: number }
@@ -26,12 +34,28 @@ export type FoodCommand =
   | { kind: 'goal_off' }
   | { kind: 'del'; ids: number[] }
   | { kind: 'note'; date: string; text: string | null }
+  | { kind: 'types' }
+  | {
+      kind: 'type_set';
+      name: string;
+      kcal: number;
+      protein: number | null;
+      fat: number | null;
+      carbs: number | null;
+    }
+  | { kind: 'type_del'; name: string }
+  | { kind: 'day_pick'; date: string }
+  | { kind: 'day_set'; date: string; name: string | null }
   | { kind: 'help' };
 
 const WEEK = new Set(['week', 'неделя', 'неделю', '7']);
 const MONTH = new Set(['month', 'месяц', '30']);
 const NOTE = new Set(['note', 'заметка', 'коммент', 'комментарий']);
 const CLEAR_NOTE = new Set(['clear', 'off', 'удали', 'убери', 'сброс', '-']);
+const TYPES = new Set(['types', 'типы']);
+const TYPE = new Set(['type', 'тип']);
+const DAY = new Set(['day', 'день']);
+const DEFAULT_DAY = new Set(['обычный', 'обычн', 'default', 'none', 'без', 'clear']);
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -137,6 +161,40 @@ export function parseFoodArgs(
       carbs: nums[3] ?? null,
     };
   }
+  if (TYPES.has(head)) return { kind: 'types' };
+  if (TYPE.has(head)) {
+    // «/food type add тренировка 2600 180 70 300» · «/food type del отдых» —
+    // the verb is optional before a definition («/food type отдых 2200»).
+    const words = raw.trim().split(/\s+/).slice(1);
+    const verb = (words[0] ?? '').toLowerCase();
+    if (['del', 'rm', 'удали', 'удалить', '-'].includes(verb)) {
+      const name = words.slice(1).join(' ').trim();
+      return name ? { kind: 'type_del', name } : { kind: 'help' };
+    }
+    const body = (['add', 'set', 'добавь', 'добавить', '+'].includes(verb) ? words.slice(1) : words).join(' ');
+    const firstNum = body.search(/\d/);
+    if (firstNum <= 0) return { kind: 'help' };
+    const name = body.slice(0, firstNum).replace(/[\[\]():,—-]+$/g, '').trim();
+    const nums = (body.slice(firstNum).match(/\d+(?:[.,]\d+)?/g) ?? []).map((x) => Number(x.replace(',', '.')));
+    if (!name || nums.length === 0 || nums.length > 4 || nums[0]! <= 0) return { kind: 'help' };
+    return {
+      kind: 'type_set',
+      name,
+      kcal: Math.round(nums[0]!),
+      protein: nums[1] ?? null,
+      fat: nums[2] ?? null,
+      carbs: nums[3] ?? null,
+    };
+  }
+  if (DAY.has(head)) {
+    // «/food day» (buttons) · «/food day отдых» · «/food day 28.09 тренировка».
+    const words = raw.trim().split(/\s+/).slice(1);
+    const dated = words[0] ? parseFoodDate(words[0], today) : null;
+    const date = dated ?? today;
+    const name = (dated ? words.slice(1) : words).join(' ').trim();
+    if (!name) return { kind: 'day_pick', date };
+    return { kind: 'day_set', date, name: DEFAULT_DAY.has(name.toLowerCase()) ? null : name };
+  }
   if (NOTE.has(head)) {
     // «/food note была тренировка» (today) · «/food note 28.09 болел» · «… clear».
     const raw2 = raw.trim().slice(raw.trim().split(/\s+/)[0]!.length).trim();
@@ -161,6 +219,8 @@ const HELP =
   '/food — сегодня · /food вчера · /food 28.09 — конкретный день\n' +
   'Статистика по дням (ккал и БЖУ): /food week · /food month · /food 14d · /food 01.09-15.09\n' +
   '/food goal 2000 — дневная цель в ккал; можно сразу с БЖУ в граммах: /food goal 2400 150 65 300 · /food goal off\n' +
+  'Типы дней (своя норма КБЖУ на каждый): /food type add тренировка 2600 180 70 300 · /food types · /food type del отдых\n' +
+  '/food day — выбрать тип сегодняшнего дня кнопками · /food day отдых · /food day 28.09 тренировка\n' +
   '/food note была тренировка — заметка к сегодня · /food note 28.09 болел · /food note clear\n' +
   'Поправить или удалить запись — просто скажи: «убери шпроты», «курицы было 150 г». ' +
   'Заметку тоже можно словами: «сегодня была тренировка».';
@@ -212,6 +272,76 @@ export async function cmdFood(ctx: Context): Promise<void> {
         inThread,
       );
       return;
+    case 'types': {
+      const types = listDayTypes(chatId, userId);
+      const def = getFoodGoal(chatId, userId);
+      if (types.length === 0) {
+        await ctx.reply(
+          'Типов дней пока нет. Например:\n/food type add тренировка 2600 180 70 300\n/food type add отдых 2200 150 70 220\n' +
+            'Потом в первой записи за день я спрошу кнопками, какой сегодня день.',
+        );
+        return;
+      }
+      const line = (name: string, g: { kcal: number; protein: number | null; fat: number | null; carbs: number | null }) =>
+        `• ${name}: ${fmtNum(g.kcal)} ккал${g.protein !== null ? ` · Б ${fmtNum(g.protein)}` : ''}${g.fat !== null ? ` · Ж ${fmtNum(g.fat)}` : ''}${g.carbs !== null ? ` · У ${fmtNum(g.carbs)}` : ''}`;
+      await ctx.reply(
+        ['Типы дней:', ...types.map((t) => line(t.name, t)), ...(def ? [line('обычный (без типа)', def)] : [])].join('\n') +
+          '\n\nСменить тип дня: /food day',
+      );
+      return;
+    }
+    case 'type_set': {
+      const res = upsertDayType(chatId, userId, cmd.name, {
+        kcal: cmd.kcal,
+        protein: cmd.protein,
+        fat: cmd.fat,
+        carbs: cmd.carbs,
+      });
+      if (res.status === 'full') {
+        await ctx.reply(`Типов уже ${res.max} — это максимум. Удали лишний: /food type del <название>`);
+        return;
+      }
+      await ctx.reply(
+        `${res.status === 'created' ? '✅ Тип добавлен' : '✏️ Тип обновлён'}: ${res.type.name} — ${fmtNum(res.type.kcal)} ккал. Все типы: /food types`,
+      );
+      return;
+    }
+    case 'type_del': {
+      const t = findDayType(chatId, userId, cmd.name);
+      if (!t) {
+        await ctx.reply('Такого типа нет (или подходит несколько). Список: /food types');
+        return;
+      }
+      deleteDayType(chatId, userId, t.id);
+      await ctx.reply(`🗑️ Тип «${t.name}» удалён — его дни считаются по обычной цели.`);
+      return;
+    }
+    case 'day_pick': {
+      const types = listDayTypes(chatId, userId);
+      if (types.length === 0) {
+        await ctx.reply('Сначала заведи типы дней: /food type add тренировка 2600 180 70 300');
+        return;
+      }
+      const current = getDayKind(chatId, userId, cmd.date);
+      await sendRichMarkdown(ctx.api, chatId, `Какой день ${cmd.date === today ? 'сегодня' : cmd.date}?`, {
+        replyMarkup: dayTypeKeyboard(types, cmd.date, current?.id ?? null),
+      });
+      return;
+    }
+    case 'day_set': {
+      if (cmd.name === null) {
+        setDayKind(chatId, userId, cmd.date, null);
+      } else {
+        const t = findDayType(chatId, userId, cmd.name);
+        if (!t) {
+          await ctx.reply('Такого типа нет (или подходит несколько). Список: /food types');
+          return;
+        }
+        setDayKind(chatId, userId, cmd.date, t.id);
+      }
+      await sendRichMarkdown(ctx.api, chatId, renderFoodReport(chatId, userId, cmd.date, cmd.date, today));
+      return;
+    }
     case 'note': {
       if (cmd.text === null) {
         setDayNote(chatId, userId, cmd.date, '');

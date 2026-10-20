@@ -899,7 +899,23 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   empty = clear; capped `DAY_NOTE_MAX` 200 with the cut reported) or `/food note
   [<date>] <текст>|clear`. Shown under the day's title, and for a period as a
   `📝 <day> — <note>` list UNDER the table (a text column would break the table on
-  a phone); the context line carries today's/yesterday's note. Off via `ENABLE_FOOD=false`.
+  a phone); the context line carries today's/yesterday's note.
+  DAY TYPES (migration 037: `food_day_type` per person — name NOCASE-unique, own
+  kcal/Б/Ж/У goal, capped `DAY_TYPES_MAX` 8; `food_day_kind` = which type a day is,
+  no row = the default `food_goal`). A day's goal is `goalForDay` (its type's, else
+  the default) — used by every total, card and the context line. Created in words
+  via `log_food set_goal` + `dayType` (0 kcal deletes; its days fall back) or
+  `/food type add <name> <kcal> [Б Ж У]` / `type del` / `/food types`. The type is
+  ASKED, not guessed: the FIRST entry of an untyped day (only for people who have
+  types) returns `dayTypePick` → `AssistantResult.dayTypePick` → the live flow
+  attaches `dayTypeKeyboard` (`fdt:<date>:<typeId>`, 0 = «Обычный») to the reply
+  carrying the card; `handleDayTypeCallback` (DM only — chat id == tapper id, so a
+  diary can't be retyped by anyone else) sets it, clears the buttons and re-sends the
+  day card. Changed later with `set_day_type` in words («сегодня отдых»), `/food day`
+  (buttons, current marked ✓) or `/food day [<date>] <type|обычный>`. Period tables
+  judge EACH day by its own goal (↑, «в цель N из M»), tag typed days in the «День»
+  column (`dayTypeTag`, 4 letters + a legend line), and show a single «Цель» row only
+  when every logged day shares one goal. Off via `ENABLE_FOOD=false`.
 - FEATURE SPLIT BY CHAT KIND (`src/core/chatScope.ts`): the calorie diary is
   PERSONAL and lives in private chats only; shared expenses (Splid, receipts, the
   spend scan, spending_report) live in GROUP chats only. Decided from the chat id

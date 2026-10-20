@@ -1,4 +1,5 @@
 import type { Api } from 'grammy';
+import type { InlineKeyboardMarkup } from 'grammy/types';
 import { logger } from '../logger.js';
 import { mdToTelegramHtml, stripMarkdown } from './telegramHtml.js';
 
@@ -11,6 +12,8 @@ export interface RichSendOptions {
   /** Forum topic to post into. Without it a reply with no reply target lands in
    *  the forum's General topic instead of the thread the question came from. */
   messageThreadId?: number | null;
+  /** Inline buttons under the message (kept on every fallback rung). */
+  replyMarkup?: InlineKeyboardMarkup;
 }
 
 /**
@@ -34,12 +37,13 @@ export async function sendRichMarkdown(
     opts.replyToMessageId != null ? { message_id: opts.replyToMessageId } : undefined;
   const thread =
     opts.messageThreadId != null ? { message_thread_id: opts.messageThreadId } : {};
+  const markup = opts.replyMarkup ? { reply_markup: opts.replyMarkup } : {};
 
   try {
     await api.sendRichMessage(
       chatId,
       { markdown: text },
-      { ...(reply_parameters ? { reply_parameters } : {}), ...thread },
+      { ...(reply_parameters ? { reply_parameters } : {}), ...thread, ...markup },
     );
     return;
   } catch (err) {
@@ -54,6 +58,7 @@ export async function sendRichMarkdown(
       parse_mode: 'HTML',
       ...(reply_parameters ? { reply_parameters } : {}),
       ...thread,
+      ...markup,
       ...linkPreview,
     });
     return;
@@ -62,6 +67,7 @@ export async function sendRichMarkdown(
     await api.sendMessage(chatId, stripMarkdown(text), {
       ...(reply_parameters ? { reply_parameters } : {}),
       ...thread,
+      ...markup,
       ...linkPreview,
     });
   }

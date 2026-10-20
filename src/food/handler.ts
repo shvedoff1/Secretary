@@ -12,8 +12,16 @@ import {
   setFoodGoal,
   getDayNote,
   listDayNotes,
+  getDayKind,
+  listDayKinds,
+  listDayTypes,
+  findDayType,
+  setDayKind,
+  upsertDayType,
+  deleteDayType,
   setDayNote,
   type FoodEntry,
+  type FoodGoal,
   type Meal,
 } from '../db/repos/food.repo.js';
 import type { FoodReportInput, LogFoodInput } from '../llm/schema.js';
@@ -71,6 +79,17 @@ function r1(n: number | null): number | null {
 export interface FoodToolResult {
   text: string;
   card: string | null;
+  /**
+   * Ask which TYPE this day is: set on the first entry of a day that has no type
+   * yet, when the person has day types. The caller attaches the type buttons to
+   * the reply carrying the card (value = the chat-local date).
+   */
+  dayTypePick?: string;
+}
+
+/** A day's goal: its type's when one is chosen, else the person's default goal. */
+export function goalForDay(chatId: number, tgUserId: number, date: string): FoodGoal | null {
+  return getDayKind(chatId, tgUserId, date) ?? getFoodGoal(chatId, tgUserId);
 }
 
 /** The reply as posted: the model's words, then the diary table (if any) under them. */
@@ -124,6 +143,38 @@ export function makeLogFoodHandler(
           card: null,
         };
       }
+      // A NAMED goal is a day type («на тренировочные дни 2600») — created or
+      // updated; the plain goal below stays the default for untyped days.
+      const typeName = input.dayType?.trim();
+      if (typeName && g.kcal <= 0) {
+        const t = findDayType(chatId, tgUserId, typeName);
+        if (!t) return { text: `Типа дня «${typeName}» нет — нечего удалять.`, card: null };
+        deleteDayType(chatId, tgUserId, t.id);
+        return { text: `Тип дня «${t.name}» удалён; его дни считаются по обычной цели.`, card: null };
+      }
+      if (typeName && g.kcal > 0) {
+        const res = upsertDayType(chatId, tgUserId, typeName, {
+          kcal: Math.round(g.kcal),
+          protein: r1(g.protein),
+          fat: r1(g.fat),
+          carbs: r1(g.carbs),
+        });
+        if (res.status === 'full') {
+          return {
+            text: `Типов дней уже ${res.max} — это максимум. Пусть удалит лишний: /food type del <название>.`,
+            card: null,
+          };
+        }
+        return {
+          text:
+            `Тип дня «${res.type.name}» ${res.status === 'created' ? 'создан' : 'обновлён'}: ` +
+            `${fmtNum(res.type.kcal)} ккал${res.type.protein ? ` · Б ${fmtNum(res.type.protein)}` : ''}` +
+            `${res.type.fat ? ` · Ж ${fmtNum(res.type.fat)}` : ''}${res.type.carbs ? ` · У ${fmtNum(res.type.carbs)}` : ''}. ` +
+            'В первой записи каждого дня бот спросит кнопками, какой сегодня день; сменить — словами («сегодня отдых») или /food day. ' +
+            'Ответь одной короткой строкой.',
+          card: null,
+        };
+      }
       if (g.kcal <= 0) {
         const had = clearFoodGoal(chatId, tgUserId);
         return { text: had ? 'Цель по калориям снята.' : 'Цели по калориям и так не было.', card: null };
@@ -144,6 +195,33 @@ export function makeLogFoodHandler(
           `Цель записана: ${fmtNum(g.kcal)} ккал в день${macros.length ? ` (${macros.join(' · ')} г)` : ''}.` +
           MODEL_NOTE,
         card: dayCard(today),
+      };
+    }
+
+    if (input.action === 'set_day_type') {
+      const date = input.date && input.date <= today ? input.date : today;
+      const types = listDayTypes(chatId, tgUserId);
+      const raw = input.dayType?.trim() ?? '';
+      if (!raw || /^(обычн|без тип|default|none)/i.test(raw)) {
+        setDayKind(chatId, tgUserId, date, null);
+        return {
+          text: `День ${date} — без типа, считаю по обычной цели.` + MODEL_NOTE,
+          card: dayCard(date),
+        };
+      }
+      const t = findDayType(chatId, tgUserId, raw);
+      if (!t) {
+        return {
+          text: types.length
+            ? `Типа «${raw}» нет (или подходит несколько). Есть: ${types.map((x) => x.name).join(', ')}. Уточни у пользователя.`
+            : `Типов дней пока нет. Создать: log_food set_goal с dayType (например «тренировка», 2600 ккал) — спроси нормы.`,
+          card: null,
+        };
+      }
+      setDayKind(chatId, tgUserId, date, t.id);
+      return {
+        text: `${date === today ? 'Сегодня' : date} — «${t.name}», цель ${fmtNum(t.kcal)} ккал.` + MODEL_NOTE,
+        card: dayCard(date),
       };
     }
 
@@ -207,9 +285,9 @@ export function makeLogFoodHandler(
           card: null,
         };
       }
-      const goal = getFoodGoal(chatId, tgUserId);
       const dates = [...new Set(removed.map((e) => e.localDate))];
       const totals = dates.map((d) => {
+        const goal = goalForDay(chatId, tgUserId, d);
         const t = sumEntries(listFoodEntries(chatId, tgUserId, d, d));
         return `${d === today ? 'сегодня' : d}: ${kcalHeadline(t.kcal, goal)}, ${macrosLine(t, goal)}`;
       });
@@ -234,6 +312,11 @@ export function makeLogFoodHandler(
     // the clock. A past day with no meal named stays «Другое» — the clock of
     // NOW says nothing about when yesterday's food was eaten.
     const meal = input.meal ?? (date === today ? mealForHour(zonedParts(now, tz).hour) : null);
+    // The FIRST entry of a day with no type yet is where the type is asked —
+    // once, with buttons, only for people who defined day types.
+    const firstOfDay = listFoodEntries(chatId, tgUserId, date, date).length === 0;
+    const askType =
+      firstOfDay && getDayKind(chatId, tgUserId, date) === null && listDayTypes(chatId, tgUserId).length > 0;
     const added = addFoodEntries({
       chatId,
       tgUserId,
@@ -251,14 +334,16 @@ export function makeLogFoodHandler(
     });
     const mealTotals = sumEntries(added);
     const day = sumEntries(listFoodEntries(chatId, tgUserId, date, date));
-    const goal = getFoodGoal(chatId, tgUserId);
+    const goal = goalForDay(chatId, tgUserId, date);
     return {
+      ...(askType ? { dayTypePick: date } : {}),
       text:
         `Записал (${date === today ? 'сегодня' : date}${meal ? `, ${MEAL_LABELS[meal].toLowerCase()}` : ''}): ` +
         `${added.map(itemLine).join('; ')}. ` +
         `За приём: ${fmtNum(mealTotals.kcal)} ккал · ${macrosShort(mealTotals)} г. ` +
         `За ${date === today ? 'сегодня' : 'день'} всего: ${kcalHeadline(day.kcal, goal)}, ${macrosLine(day, goal)}.` +
         (goal ? '' : ' Цели по калориям нет — можно предложить задать словами («моя норма 2000 ккал»).') +
+        (askType ? ' Под ответом будут кнопки выбора типа дня — можешь коротко попросить выбрать.' : '') +
         MODEL_NOTE,
       card: dayCard(date),
     };
@@ -315,8 +400,12 @@ export function renderFoodReport(
   const goal = getFoodGoal(chatId, tgUserId);
   const entries = listFoodEntries(chatId, tgUserId, from, to);
   const notes = listDayNotes(chatId, tgUserId, from, to);
-  if (from === to) return renderDay(entries, goal, from, dayLabel(from, today), notes.get(from) ?? null);
-  return renderPeriod(entries, goal, from, to, notes);
+  const kinds = listDayKinds(chatId, tgUserId, from, to);
+  if (from === to) {
+    const kind = kinds.get(from) ?? null;
+    return renderDay(entries, kind ?? goal, from, dayLabel(from, today), notes.get(from) ?? null, kind?.name ?? null);
+  }
+  return renderPeriod(entries, goal, from, to, notes, kinds);
 }
 
 /** The context-block line for the sender (null when they have no diary today). */
@@ -330,15 +419,19 @@ export function foodContextFor(chatId: number, tgUserId: number, now: number = D
         date: today,
         entries: listFoodEntries(chatId, tgUserId, today, today),
         note: getDayNote(chatId, tgUserId, today),
+        dayType: getDayKind(chatId, tgUserId, today),
       },
       {
         label: 'yesterday',
         date: yesterday,
         entries: listFoodEntries(chatId, tgUserId, yesterday, yesterday),
         note: getDayNote(chatId, tgUserId, yesterday),
+        dayType: getDayKind(chatId, tgUserId, yesterday),
       },
     ],
     getFoodGoal(chatId, tgUserId),
+    12,
+    listDayTypes(chatId, tgUserId),
   );
 }
 

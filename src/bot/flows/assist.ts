@@ -1,3 +1,6 @@
+import { InlineKeyboard } from 'grammy';
+import { listDayTypes } from '../../db/repos/food.repo.js';
+import { dayTypeKeyboard } from '../../food/dayTypeKeyboard.js';
 import { foodAllowedIn, isPrivateChat, splidActiveIn } from '../../core/chatScope.js';
 import {
   foodContextFor,
@@ -335,13 +338,21 @@ async function clearThinking(ctx: Context): Promise<void> {
 async function replyMarkdown(
   ctx: Context,
   text: string,
-  extra: { reply_to_message_id?: number },
+  extra: { reply_to_message_id?: number; reply_markup?: InlineKeyboard },
 ): Promise<void> {
   await sendRichMarkdown(ctx.api, ctx.chat!.id, text, {
     replyToMessageId: extra.reply_to_message_id,
     // Answer inside the forum thread the question came from.
     messageThreadId: threadIdOf(ctx.msg),
+    ...(extra.reply_markup ? { replyMarkup: extra.reply_markup } : {}),
   });
+}
+
+/** The «какой сегодня день?» buttons for a diary reply, when the turn asked for them. */
+function dayTypeMarkup(chatId: number, tgUserId: number, date: string | undefined): InlineKeyboard | undefined {
+  if (!date || !foodAllowedIn(chatId)) return undefined;
+  const types = listDayTypes(chatId, tgUserId);
+  return types.length > 0 ? dayTypeKeyboard(types, date) : undefined;
 }
 
 /**
@@ -1349,6 +1360,7 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // and the next turn's context carries the diary anyway.
   await replyMarkdown(ctx, withFoodCard(replyText, result.card), {
     reply_to_message_id: ctx.message?.message_id,
+    reply_markup: dayTypeMarkup(chatId, tgUserId, result.dayTypePick),
   });
   // The bot's own post belongs in the raw log too — a recap that shows only what
   // people said reads as a monologue and loses what was answered/decided.

@@ -186,8 +186,19 @@ function goalRows(t: Totals, goal: FoodGoal): string[] {
 }
 
 /** Title + progress line above a day table. */
-function dayTitle(t: Totals, goal: FoodGoal | null, dateStr: string, label: string): string {
-  const title = `**${label}, ${weekday(dateStr)} ${shortDate(dateStr)}**`;
+/** «тренировка» → «Тренировка» for titles. */
+function cap(s: string): string {
+  return s ? s[0]!.toUpperCase() + s.slice(1) : s;
+}
+
+function dayTitle(
+  t: Totals,
+  goal: FoodGoal | null,
+  dateStr: string,
+  label: string,
+  dayType: string | null = null,
+): string {
+  const title = `**${label}, ${weekday(dateStr)} ${shortDate(dateStr)}**${dayType ? ` · ${cap(dayType)}` : ''}`;
   if (!goal) return `${title} · ${fmtNum(t.kcal)} ккал`;
   const pct = Math.round((t.kcal / goal.kcal) * 100);
   return `${title} · ${fmtNum(t.kcal)} из ${fmtNum(goal.kcal)} ккал\n${progressBar(t.kcal, goal.kcal)} ${pct}%`;
@@ -204,10 +215,11 @@ export function renderDay(
   dateStr: string,
   label: string,
   note: string | null = null,
+  dayType: string | null = null,
 ): string {
   const noteLine = note ? `📝 ${note}` : null;
   if (entries.length === 0) {
-    const title = `**${label}, ${weekday(dateStr)} ${shortDate(dateStr)}**`;
+    const title = `**${label}, ${weekday(dateStr)} ${shortDate(dateStr)}**${dayType ? ` · ${cap(dayType)}` : ''}`;
     const head = `${title} — пока ничего не записано.${goal ? ` Цель — ${fmtNum(goal.kcal)} ккал.` : ''}`;
     return noteLine ? `${head}\n${noteLine}` : head;
   }
@@ -226,11 +238,22 @@ export function renderDay(
   }
   rows.push(boldRow('Итого', t));
   if (goal) rows.push(...goalRows(t, goal));
-  const out = [dayTitle(t, goal, dateStr, label), ...(noteLine ? [noteLine] : []), '', TABLE_HEAD, ...rows];
+  const out = [dayTitle(t, goal, dateStr, label, dayType), ...(noteLine ? [noteLine] : []), '', TABLE_HEAD, ...rows];
   if (t.missingMacros > 0) {
     out.push('', `*? — БЖУ не оценены (${t.missingMacros} поз.), в итог не вошли*`);
   }
   return out.join('\n');
+}
+
+/** A day type as the period table needs it: its name and its own goal. */
+export type DayTypeInfo = { name: string } & FoodGoal;
+
+const sameGoal = (a: FoodGoal, b: FoodGoal) =>
+  a.kcal === b.kcal && a.protein === b.protein && a.fat === b.fat && a.carbs === b.carbs;
+
+/** A short tag for a day type in the narrow «День» column: «тренировка» → «трен». */
+export function dayTypeTag(name: string): string {
+  return [...name.trim().toLowerCase()].slice(0, 4).join('');
 }
 
 /**
@@ -238,6 +261,12 @@ export function renderDay(
  * show «—» and are kept OUT of the average — an unlogged day is not a
  * zero-calorie day), the average of logged days, the goal, and how many logged
  * days stayed within it.
+ *
+ * With DAY TYPES each day is judged against ITS OWN goal (its type's, else the
+ * default): the row carries the type's short tag and ↑ is decided per day. A
+ * single «Цель» row only makes sense when every logged day shares one goal;
+ * otherwise it is replaced by a footnote, since an average target would be a
+ * number nobody set.
  */
 export function renderPeriod(
   entries: FoodEntry[],
@@ -245,6 +274,7 @@ export function renderPeriod(
   fromDate: string,
   toDate: string,
   notes: Map<string, string> = new Map(),
+  dayTypes: Map<string, DayTypeInfo> = new Map(),
 ): string {
   // Day notes go UNDER the table as their own list: a text column would blow the
   // table's width on a phone, and most days have none.
@@ -258,19 +288,24 @@ export function renderPeriod(
     list.push(e);
     byDay.set(e.localDate, list);
   }
+  const goalFor = (d: string): FoodGoal | null => dayTypes.get(d) ?? goal;
   const title = `**Питание ${shortDate(fromDate)}–${shortDate(toDate)}**`;
   const rows: string[] = [];
-  const logged: Totals[] = [];
+  const logged: { date: string; t: Totals }[] = [];
+  const usedTypes = new Map<string, string>(); // tag → full name, for the legend
   for (const d of days) {
     const list = byDay.get(d);
-    const label = `${weekday(d)} ${shortDate(d)}`;
+    const type = dayTypes.get(d);
+    if (type) usedTypes.set(dayTypeTag(type.name), type.name);
+    const label = `${weekday(d)} ${shortDate(d)}${type ? ` ${dayTypeTag(type.name)}` : ''}`;
     if (!list || list.length === 0) {
       rows.push(row(label, '—', '', '', ''));
       continue;
     }
     const t = sumEntries(list);
-    logged.push(t);
-    const over = goal && t.kcal > goal.kcal ? ' ↑' : '';
+    logged.push({ date: d, t });
+    const g = goalFor(d);
+    const over = g && t.kcal > g.kcal ? ' ↑' : '';
     rows.push(row(label, `${fmtNum(t.kcal)}${over}`, fmtNum(t.protein), fmtNum(t.fat), fmtNum(t.carbs)));
   }
   if (logged.length === 0) {
@@ -278,30 +313,37 @@ export function renderPeriod(
     return noteLines.length ? [empty, '', ...noteLines].join('\n') : empty;
   }
   const n = logged.length;
-  const avg = (k: 'kcal' | 'protein' | 'fat' | 'carbs') => logged.reduce((s, t) => s + t[k], 0) / n;
+  const sum = (k: 'kcal' | 'protein' | 'fat' | 'carbs') => logged.reduce((s, x) => s + x.t[k], 0);
   const avgTotals: Totals = {
-    kcal: avg('kcal'),
-    protein: avg('protein'),
-    fat: avg('fat'),
-    carbs: avg('carbs'),
+    kcal: sum('kcal') / n,
+    protein: sum('protein') / n,
+    fat: sum('fat') / n,
+    carbs: sum('carbs') / n,
     missingMacros: 0,
   };
   // Total over the logged days (plain), then the per-day average (bold) — the
   // average is the number people compare against the goal.
-  const sum = (k: 'kcal' | 'protein' | 'fat' | 'carbs') => logged.reduce((s, t) => s + t[k], 0);
   rows.push(row('Итого', fmtNum(sum('kcal')), fmtNum(sum('protein')), fmtNum(sum('fat')), fmtNum(sum('carbs'))));
   rows.push(boldRow('Среднее', avgTotals));
-  if (goal) {
+  const goals = logged.map((x) => goalFor(x.date));
+  const withGoal = logged.filter((x) => goalFor(x.date) !== null);
+  const first = goals.find((g): g is FoodGoal => g !== null) ?? null;
+  const uniform = first !== null && goals.every((g) => g !== null && sameGoal(g, first));
+  if (uniform) {
     const g = (v: number | null) => (v ? fmtNum(v) : '—');
-    rows.push(row('Цель', g(goal.kcal), g(goal.protein), g(goal.fat), g(goal.carbs)));
+    rows.push(row('Цель', g(first.kcal), g(first.protein), g(first.fat), g(first.carbs)));
   }
   const out = [title, '', TABLE_HEAD.replace('| |', '| День |'), ...rows, ''];
   const footnotes = [`среднее по ${n} дн. с записями`];
-  if (goal) {
-    const within = logged.filter((t) => t.kcal <= goal.kcal).length;
-    footnotes.push(`в цель по ккал: ${within} из ${n}`, '↑ — перебор');
+  if (withGoal.length > 0) {
+    const within = withGoal.filter((x) => x.t.kcal <= goalFor(x.date)!.kcal).length;
+    footnotes.push(`в цель по ккал: ${within} из ${withGoal.length}`, '↑ — перебор');
+    if (!uniform) footnotes.push('цель у каждого дня своя — по типу дня');
   }
   out.push(`*${footnotes.join(' · ')}*`);
+  if (usedTypes.size > 0) {
+    out.push(`*типы: ${[...usedTypes].map(([tag, name]) => `${tag} — ${name}`).join(', ')}*`);
+  }
   if (noteLines.length) out.push('', ...noteLines);
   return out.join('\n');
 }
@@ -320,27 +362,53 @@ export function entryRef(e: FoodEntry, withDate = false): string {
  * stable for chats that never log food).
  */
 export function foodContextLine(
-  days: { label: string; date: string; entries: FoodEntry[]; note?: string | null }[],
+  days: {
+    label: string;
+    date: string;
+    entries: FoodEntry[];
+    note?: string | null;
+    /** The day's type and its goal, when one is chosen (overrides `goal`). */
+    dayType?: DayTypeInfo | null;
+  }[],
   goal: FoodGoal | null,
   maxItems = 12,
+  /** The person's day types — listed so the model can switch/name them. */
+  types: DayTypeInfo[] = [],
 ): string | null {
   const [first, ...rest] = days;
   if (!first) return null;
-  const others = rest.filter((d) => d.entries.length > 0 || d.note);
-  if (first.entries.length === 0 && !first.note && others.length === 0 && !goal) return null;
-  const part = (d: { label: string; date: string; entries: FoodEntry[]; note?: string | null }) => {
+  const others = rest.filter((d) => d.entries.length > 0 || d.note || d.dayType);
+  if (
+    first.entries.length === 0 &&
+    !first.note &&
+    !first.dayType &&
+    others.length === 0 &&
+    !goal &&
+    types.length === 0
+  ) {
+    return null;
+  }
+  const part = (d: (typeof days)[number]) => {
+    const g = d.dayType ?? goal;
     const t = sumEntries(d.entries);
-    const kcal = goal ? `${fmtNum(t.kcal)} of goal ${fmtNum(goal.kcal)} kcal` : `${fmtNum(t.kcal)} kcal`;
+    const kcal = g ? `${fmtNum(t.kcal)} of goal ${fmtNum(g.kcal)} kcal` : `${fmtNum(t.kcal)} kcal`;
     const shown = d.entries.slice(-maxItems);
     const hidden = d.entries.length - shown.length;
     const items =
       shown.length > 0
         ? `: ${hidden > 0 ? `(+${hidden} earlier) ` : ''}${shown.map((e) => entryRef(e)).join('; ')}`
         : ' — nothing logged yet';
-    return `${d.label} ${d.date}: ${kcal} (${macrosLine(t, goal)})${items}${d.note ? `; day note: «${d.note}»` : ''}`;
+    const typeTag = d.dayType ? ` [day type: ${d.dayType.name}]` : types.length ? ' [day type: not chosen — default goal]' : '';
+    return `${d.label} ${d.date}${typeTag}: ${kcal} (${macrosLine(t, g)})${items}${d.note ? `; day note: «${d.note}»` : ''}`;
   };
+  const typesTail = types.length
+    ? ` | Day types (log_food set_day_type): ${types
+        .map((t) => `${t.name} ${fmtNum(t.kcal)} kcal`)
+        .join('; ')}${goal ? `; default ${fmtNum(goal.kcal)} kcal` : ''}`
+    : '';
   return (
     'Food diary of the sender (#ids are internal handles for log_food remove — never show them): ' +
-    [first, ...others].map(part).join(' | ')
+    [first, ...others].map(part).join(' | ') +
+    typesTail
   );
 }

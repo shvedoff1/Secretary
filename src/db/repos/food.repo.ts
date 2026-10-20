@@ -236,3 +236,161 @@ export function listDayNotes(
     .all(chatId, tgUserId, fromDate, toDate) as { local_date: string; text: string }[];
   return new Map(rows.map((r) => [r.local_date, r.text]));
 }
+
+// --- Day types (migration 037) ----------------------------------------------
+
+export interface DayType extends FoodGoal {
+  id: number;
+  name: string;
+}
+
+/** A person can't need more kinds of day than this — and buttons must fit. */
+export const DAY_TYPES_MAX = 8;
+
+interface DayTypeRow {
+  id: number;
+  name: string;
+  kcal: number;
+  protein: number | null;
+  fat: number | null;
+  carbs: number | null;
+}
+
+/** A person's day types, in creation order (the order the buttons show). */
+export function listDayTypes(chatId: number, tgUserId: number): DayType[] {
+  return getDb()
+    .prepare(
+      `SELECT id, name, kcal, protein, fat, carbs FROM food_day_type
+        WHERE chat_id = ? AND tg_user_id = ? ORDER BY id`,
+    )
+    .all(chatId, tgUserId) as DayTypeRow[];
+}
+
+export function getDayTypeById(chatId: number, tgUserId: number, id: number): DayType | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, name, kcal, protein, fat, carbs FROM food_day_type
+        WHERE chat_id = ? AND tg_user_id = ? AND id = ?`,
+    )
+    .get(chatId, tgUserId, id) as DayTypeRow | undefined;
+  return row ?? null;
+}
+
+/**
+ * Find a type by the name as the person says it: exact (case-insensitive), then
+ * a UNIQUE prefix/containment either way («трен» → «тренировка», «тренировочный»
+ * → «тренировка» via the shared stem). Ambiguous resolves to null.
+ */
+export function findDayType(chatId: number, tgUserId: number, name: string): DayType | null {
+  const n = name.trim().toLowerCase();
+  if (!n) return null;
+  const all = listDayTypes(chatId, tgUserId);
+  const exact = all.filter((t) => t.name.toLowerCase() === n);
+  if (exact.length === 1) return exact[0]!;
+  const stem = (s: string) => s.slice(0, Math.max(4, Math.min(s.length, 5)));
+  const loose = all.filter((t) => {
+    const h = t.name.toLowerCase();
+    return h.startsWith(n) || n.startsWith(h) || h.includes(n) || stem(h) === stem(n);
+  });
+  return loose.length === 1 ? loose[0]! : null;
+}
+
+export type UpsertDayTypeResult =
+  | { status: 'created' | 'updated'; type: DayType }
+  | { status: 'full'; max: number };
+
+/** Create a type or update its goal (matched by exact name, case-insensitive). */
+export function upsertDayType(
+  chatId: number,
+  tgUserId: number,
+  name: string,
+  goal: FoodGoal,
+): UpsertDayTypeResult {
+  const db = getDb();
+  const clean = name.trim().replace(/\s+/g, ' ');
+  const existing = listDayTypes(chatId, tgUserId).find((t) => t.name.toLowerCase() === clean.toLowerCase());
+  if (existing) {
+    db.prepare(
+      'UPDATE food_day_type SET kcal = ?, protein = ?, fat = ?, carbs = ? WHERE id = ?',
+    ).run(goal.kcal, goal.protein, goal.fat, goal.carbs, existing.id);
+    return { status: 'updated', type: getDayTypeById(chatId, tgUserId, existing.id)! };
+  }
+  if (listDayTypes(chatId, tgUserId).length >= DAY_TYPES_MAX) {
+    return { status: 'full', max: DAY_TYPES_MAX };
+  }
+  const info = db
+    .prepare(
+      `INSERT INTO food_day_type (chat_id, tg_user_id, name, kcal, protein, fat, carbs, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch() * 1000)`,
+    )
+    .run(chatId, tgUserId, clean, goal.kcal, goal.protein, goal.fat, goal.carbs);
+  return { status: 'created', type: getDayTypeById(chatId, tgUserId, Number(info.lastInsertRowid))! };
+}
+
+/** Delete a type; days that pointed at it fall back to the default goal. */
+export function deleteDayType(chatId: number, tgUserId: number, id: number): boolean {
+  const db = getDb();
+  let changed = false;
+  db.transaction(() => {
+    db.prepare('DELETE FROM food_day_kind WHERE chat_id = ? AND tg_user_id = ? AND type_id = ?').run(
+      chatId,
+      tgUserId,
+      id,
+    );
+    changed =
+      db.prepare('DELETE FROM food_day_type WHERE chat_id = ? AND tg_user_id = ? AND id = ?').run(
+        chatId,
+        tgUserId,
+        id,
+      ).changes > 0;
+  })();
+  return changed;
+}
+
+/** The type chosen for a day, or null (= default goal). */
+export function getDayKind(chatId: number, tgUserId: number, localDate: string): DayType | null {
+  const row = getDb()
+    .prepare(
+      `SELECT t.id, t.name, t.kcal, t.protein, t.fat, t.carbs
+         FROM food_day_kind k JOIN food_day_type t ON t.id = k.type_id
+        WHERE k.chat_id = ? AND k.tg_user_id = ? AND k.local_date = ?`,
+    )
+    .get(chatId, tgUserId, localDate) as DayTypeRow | undefined;
+  return row ?? null;
+}
+
+/** Set a day's type; null returns the day to the default goal. */
+export function setDayKind(chatId: number, tgUserId: number, localDate: string, typeId: number | null): void {
+  const db = getDb();
+  if (typeId === null) {
+    db.prepare('DELETE FROM food_day_kind WHERE chat_id = ? AND tg_user_id = ? AND local_date = ?').run(
+      chatId,
+      tgUserId,
+      localDate,
+    );
+    return;
+  }
+  db.prepare(
+    `INSERT INTO food_day_kind (chat_id, tg_user_id, local_date, type_id, updated_at)
+     VALUES (?, ?, ?, ?, unixepoch() * 1000)
+     ON CONFLICT (chat_id, tg_user_id, local_date) DO UPDATE SET
+       type_id = excluded.type_id, updated_at = excluded.updated_at`,
+  ).run(chatId, tgUserId, localDate, typeId);
+}
+
+/** Day types over an inclusive range, keyed by date. */
+export function listDayKinds(
+  chatId: number,
+  tgUserId: number,
+  fromDate: string,
+  toDate: string,
+): Map<string, DayType> {
+  const rows = getDb()
+    .prepare(
+      `SELECT k.local_date, t.id, t.name, t.kcal, t.protein, t.fat, t.carbs
+         FROM food_day_kind k JOIN food_day_type t ON t.id = k.type_id
+        WHERE k.chat_id = ? AND k.tg_user_id = ? AND k.local_date >= ? AND k.local_date <= ?`,
+    )
+    .all(chatId, tgUserId, fromDate, toDate) as (DayTypeRow & { local_date: string })[];
+  return new Map(rows.map(({ local_date, ...t }) => [local_date, t]));
+}

@@ -9,7 +9,8 @@ const boolish = z
 
 const ConfigSchema = z.object({
   BOT_TOKEN: z.string().min(1, 'BOT_TOKEN is required'),
-  // Required on LLM_PROVIDER=anthropic (the default); unused on openai. An empty
+  // Required on LLM_PROVIDER=anthropic (the default); on openai/deepseek only the
+  // deepseek fallback (photos/PDFs, outages) uses it. An empty
   // value (the deploy writes the line even when the secret is unset) reads as unset.
   ANTHROPIC_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
@@ -26,7 +27,31 @@ const ConfigSchema = z.object({
   // context block and tools stay identical, only the vendor changes. Tiers map
   // onto OpenAI models (`openaiTierFor` in client.ts): the main model → SOL, the
   // precise/calendar model → ASTRA, every hidden pass → LUNA. Needs OPENAI_API_KEY.
-  LLM_PROVIDER: z.enum(['anthropic', 'openai']).default('anthropic'),
+  // 'deepseek' does the same on DeepSeek's Anthropic-compatible endpoint
+  // (`src/llm/deepseek.ts`): same SDK, the request is only cleaned of what DeepSeek
+  // can't take; web_search runs on DeepSeek Search/Fetch; photos/PDFs (and a
+  // DeepSeek outage) go to DEEPSEEK_FALLBACK. Needs DEEPSEEK_API_KEY.
+  LLM_PROVIDER: z.enum(['anthropic', 'openai', 'deepseek']).default('anthropic'),
+  DEEPSEEK_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+  DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com'),
+  // Tier models on deepseek: dialogue → PRO, calendar advice → PRO, hidden passes → FLASH.
+  DEEPSEEK_ASSISTANT_MODEL: z.string().default('deepseek-v4-pro'),
+  DEEPSEEK_PRECISE_MODEL: z.string().default('deepseek-v4-pro'),
+  DEEPSEEK_CHEAP_MODEL: z.string().default('deepseek-flash'),
+  // The model for a turn with a picture: V4.1 Flash is natively multimodal (Pro is
+  // text-only). `off` = photo turns go to DEEPSEEK_FALLBACK instead; a PDF always does.
+  DEEPSEEK_VISION_MODEL: z
+    .string()
+    .default('deepseek-flash')
+    .transform((v) => (['', 'off', 'none'].includes(v.trim().toLowerCase()) ? undefined : v.trim())),
+  // Thinking on the dialogue/precise tiers (hidden passes never think).
+  DEEPSEEK_THINKING: boolish.default(true),
+  // Who answers what DeepSeek can't (photo/PDF turns) or when it is down:
+  // auto = Claude if ANTHROPIC_API_KEY is set, else OpenAI if OPENAI_API_KEY, else
+  // nobody (media is replaced by a note, an outage surfaces as an error).
+  DEEPSEEK_FALLBACK: z.enum(['auto', 'anthropic', 'openai', 'none']).default('auto'),
+  // web_search on deepseek → DeepSeek Search + Fetch APIs (per-request billing).
+  DEEPSEEK_SEARCH: boolish.default(true),
   OPENAI_ASSISTANT_MODEL: z.string().default('gpt-6-sol'),
   OPENAI_PRECISE_MODEL: z.string().default('gpt-6-astra'),
   OPENAI_CHEAP_MODEL: z.string().default('gpt-6-luna'),
@@ -62,6 +87,16 @@ const ConfigSchema = z.object({
       'Голосовое сообщение боту-секретарю про траты и расходы: суммы, рубли, доллары, рупии, имена людей, кто за кого платил и на кого делить.',
     ),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  // Backup speech-to-text: any OpenAI-compatible /audio/transcriptions server —
+  // e.g. the local `whisper` compose service (deploy/docker-compose.yml, profile
+  // `whisper`) at http://whisper:8000/v1. Tried when OpenAI fails or has no key.
+  TRANSCRIBE_FALLBACK_BASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+  TRANSCRIBE_FALLBACK_MODEL: z.string().default('Systran/faster-whisper-small'),
+  TRANSCRIBE_FALLBACK_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+  // Per-attempt cap, so a hung transcription API reaches the fallback.
+  TRANSCRIBE_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  // The local CPU model is slower than the cloud API — give it room.
+  TRANSCRIBE_FALLBACK_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
   // Optional "humorizer" pass: after Anthropic produces an accurate answer, a
   // cheap OpenAI model rewrites the TONE of plain-chat replies to be funnier.
   // Off by default and needs OPENAI_API_KEY; it never runs on factual/tool
@@ -480,6 +515,9 @@ const CheckedConfigSchema = ConfigSchema.superRefine((cfg, ctx) => {
   }
   if (cfg.LLM_PROVIDER === 'openai' && !cfg.OPENAI_API_KEY) {
     ctx.addIssue({ code: 'custom', path: ['OPENAI_API_KEY'], message: 'LLM_PROVIDER=openai needs OPENAI_API_KEY' });
+  }
+  if (cfg.LLM_PROVIDER === 'deepseek' && !cfg.DEEPSEEK_API_KEY) {
+    ctx.addIssue({ code: 'custom', path: ['DEEPSEEK_API_KEY'], message: 'LLM_PROVIDER=deepseek needs DEEPSEEK_API_KEY' });
   }
 });
 

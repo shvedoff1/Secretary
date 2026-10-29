@@ -12,6 +12,9 @@ function setEnv(extra: Record<string, string | undefined>): void {
   delete process.env.OPENAI_TRANSCRIBE_MODEL;
   delete process.env.OPENAI_TRANSCRIBE_PROMPT;
   delete process.env.OPENAI_BASE_URL;
+  delete process.env.TRANSCRIBE_FALLBACK_BASE_URL;
+  delete process.env.TRANSCRIBE_FALLBACK_MODEL;
+  delete process.env.TRANSCRIBE_FALLBACK_API_KEY;
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...extra })) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
@@ -107,5 +110,34 @@ describe('transcribe', () => {
     await expect(transcribeAudio(Buffer.from('x'), 'voice.ogg', 'audio/ogg')).rejects.toThrow(
       /transcription failed: 400/,
     );
+  });
+
+  // Backup speech-to-text (e.g. the local whisper container): tried when OpenAI
+  // fails, and enough on its own when there is no OpenAI key at all.
+  it('falls back to the backup server when OpenAI fails', async () => {
+    setEnv({ OPENAI_API_KEY: 'sk-test', TRANSCRIBE_FALLBACK_BASE_URL: 'http://whisper:8000/v1/' });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('quota', { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ text: ' локально ' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { transcribeAudio } = await import('../src/llm/transcribe.js');
+    expect(await transcribeAudio(Buffer.from('x'), 'voice.ogg', 'audio/ogg')).toBe('локально');
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe('http://whisper:8000/v1/audio/transcriptions');
+    // No key configured for the backup → no Authorization header at all.
+    expect(init.headers).toEqual({});
+    expect((init.body as FormData).get('model')).toBe('Systran/faster-whisper-small');
+  });
+
+  it('works with only the backup configured, and reports its error when both fail', async () => {
+    setEnv({ OPENAI_API_KEY: undefined, TRANSCRIBE_FALLBACK_BASE_URL: 'http://whisper:8000/v1', TRANSCRIBE_FALLBACK_API_KEY: 'local' });
+    const fetchMock = vi.fn(async () => new Response('down', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const mod = await import('../src/llm/transcribe.js');
+    expect(mod.isTranscriptionEnabled()).toBe(true);
+    await expect(mod.transcribeAudio(Buffer.from('x'), 'voice.ogg', 'audio/ogg')).rejects.toThrow(/503/);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers as Record<string, string>).Authorization).toBe('Bearer local');
   });
 });

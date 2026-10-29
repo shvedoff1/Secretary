@@ -968,3 +968,29 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   through config. Same tier rules as above: user-read text never comes from luna.
   `ANTHROPIC_API_KEY` is only required on anthropic, `OPENAI_API_KEY` on openai
   (checked at boot). Reasoning items are not carried across tool iterations.
+  `LLM_PROVIDER=deepseek` is the same contract on DeepSeek, but CLOSER: DeepSeek serves
+  an Anthropic-compatible endpoint, so `client.ts` points the same SDK at
+  `<DEEPSEEK_BASE_URL>/anthropic` and `src/llm/deepseek.ts` only CLEANS the caller's
+  request (`toDeepseekParams`): tier → `DEEPSEEK_ASSISTANT/PRECISE/CHEAP_MODEL`
+  (`tierOf` in `tier.ts`, shared with `openaiTierFor`), adaptive thinking → explicit
+  enabled (dialogue/precise, `DEEPSEEK_THINKING`) / disabled (hidden passes),
+  `output_config`/`cache_control` dropped (DeepSeek caches prefixes itself), text
+  documents → text. Claude's SERVER `web_search` has no DeepSeek counterpart, so it
+  becomes two FUNCTION tools (`web_search`/`web_fetch`, `deepseekSearch.ts` — the only
+  place DeepSeek Search/Fetch HTTP happens) that the shim RUNS ITSELF
+  (`createWithSearch`) and hands back as `server_tool_use` + `*_tool_result` blocks
+  (marked `deepseek_tool_output`) — exactly the shape the dialogue loop already
+  ignores for Claude's searches; `expandEmulated` turns them back into tool_use /
+  tool_result on the next request (trailing results merge into the caller's own
+  tool_result turn). What DeepSeek can't do goes to `DEEPSEEK_FALLBACK`
+  (`resolveFallback`: auto = Claude if its key is set, else OpenAI): a PDF always, a
+  photo only with `DEEPSEEK_VISION_MODEL=off` (default `deepseek-flash` — V4.1 Flash
+  is natively multimodal, Pro is text-only, so a photo turn runs on Flash), and any DeepSeek failure after the
+  SDK's retries — except a `maxRetries: 0` call (the classifier fails open on its
+  own). The fallback gets the caller's request with its CLAUDE ids, through
+  `forFallback` (DeepSeek thinking dropped, emulated searches flattened to text);
+  with no fallback, media is swapped for a note the model must pass on.
+- VOICE BACKUP: `transcribe.ts` tries OpenAI, then `TRANSCRIBE_FALLBACK_BASE_URL`
+  (any OpenAI-compatible STT — the optional `whisper` compose service, faster-whisper
+  on CPU, profile `whisper`, enabled by the deploy Variable `ENABLE_LOCAL_WHISPER`);
+  each attempt is time-capped so a hung API reaches the backup.

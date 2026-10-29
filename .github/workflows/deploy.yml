@@ -89,7 +89,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,ANTHROPIC_EFFORT,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,LLM_PROVIDER,OPENAI_ASSISTANT_MODEL,OPENAI_ASSISTANT_EFFORT,OPENAI_PRECISE_MODEL,OPENAI_PRECISE_EFFORT,OPENAI_CHEAP_MODEL,OPENAI_CHEAP_EFFORT,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,ANTHROPIC_EFFORT,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,LLM_PROVIDER,OPENAI_ASSISTANT_MODEL,OPENAI_ASSISTANT_EFFORT,OPENAI_PRECISE_MODEL,OPENAI_PRECISE_EFFORT,OPENAI_CHEAP_MODEL,OPENAI_CHEAP_EFFORT,DEEPSEEK_API_KEY,DEEPSEEK_ASSISTANT_MODEL,DEEPSEEK_PRECISE_MODEL,DEEPSEEK_CHEAP_MODEL,DEEPSEEK_VISION_MODEL,DEEPSEEK_THINKING,DEEPSEEK_FALLBACK,DEEPSEEK_SEARCH,ENABLE_LOCAL_WHISPER,TRANSCRIBE_FALLBACK_BASE_URL,TRANSCRIBE_FALLBACK_MODEL,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
           script: |
             set -euo pipefail
 
@@ -174,6 +174,22 @@ jobs:
             if [ -n "${OPENAI_CHEAP_EFFORT:-}" ]; then
               echo "OPENAI_CHEAP_EFFORT=$OPENAI_CHEAP_EFFORT" >> .env
             fi
+            # Optional: run EVERY model call on DeepSeek (LLM_PROVIDER=deepseek,
+            # needs DEEPSEEK_API_KEY). Photos run on DeepSeek Flash; PDFs and outages go to
+            # DEEPSEEK_FALLBACK (auto = Claude if ANTHROPIC_API_KEY, else OpenAI).
+            # Each value is only written when set, so unset keeps the in-app defaults.
+            for v in DEEPSEEK_API_KEY DEEPSEEK_ASSISTANT_MODEL DEEPSEEK_PRECISE_MODEL DEEPSEEK_CHEAP_MODEL DEEPSEEK_VISION_MODEL DEEPSEEK_THINKING DEEPSEEK_FALLBACK DEEPSEEK_SEARCH TRANSCRIBE_FALLBACK_MODEL; do
+              if [ -n "${!v:-}" ]; then echo "$v=${!v}" >> .env; fi
+            done
+            # Optional: local Whisper as the BACKUP speech-to-text (compose profile
+            # `whisper`). ENABLE_LOCAL_WHISPER=true starts the container and points
+            # the bot's fallback at it; an explicit TRANSCRIBE_FALLBACK_BASE_URL wins.
+            if [ "${ENABLE_LOCAL_WHISPER:-}" = "true" ]; then
+              echo "COMPOSE_PROFILES=whisper" >> .env
+              echo "TRANSCRIBE_FALLBACK_BASE_URL=${TRANSCRIBE_FALLBACK_BASE_URL:-http://whisper:8000/v1}" >> .env
+            elif [ -n "${TRANSCRIBE_FALLBACK_BASE_URL:-}" ]; then
+              echo "TRANSCRIBE_FALLBACK_BASE_URL=$TRANSCRIBE_FALLBACK_BASE_URL" >> .env
+            fi
             # Optional: flight feed keys (flight_status / watch_flight). Only
             # written when present — without a key the flight tools are simply
             # not offered to the model. AeroAPI wins over aviationstack in-app
@@ -203,6 +219,15 @@ jobs:
             # Confirm Anthropic is reachable from the box (expect 200/401, not 403).
             sleep 3
             docker compose exec -T bot node -e "fetch('https://api.anthropic.com/v1/models',{headers:{'x-api-key':process.env.ANTHROPIC_API_KEY||'','anthropic-version':'2023-06-01'}}).then(r=>console.log('anthropic reachable, status',r.status)).catch(e=>console.log('anthropic check failed:',e.message))" || true
+            if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+              docker compose exec -T bot node -e "fetch('https://api.deepseek.com/models',{headers:{authorization:'Bearer '+(process.env.DEEPSEEK_API_KEY||'')}}).then(r=>console.log('deepseek reachable, status',r.status)).catch(e=>console.log('deepseek check failed:',e.message))" || true
+            fi
+            if [ "${ENABLE_LOCAL_WHISPER:-}" = "true" ]; then
+              # Ask the whisper server to fetch its model now (servers that load on
+              # first use just ignore this) so the first voice note isn't the one
+              # waiting for a ~0.5 GB download.
+              docker compose exec -T bot node -e "const m=process.env.TRANSCRIBE_FALLBACK_MODEL||'Systran/faster-whisper-small';fetch('http://whisper:8000/v1/models/'+m,{method:'POST'}).then(r=>console.log('whisper model warm-up, status',r.status)).catch(e=>console.log('whisper check failed:',e.message))" || true
+            fi
             docker image prune -f
         env:
           DEPLOY_IMAGE: ${{ needs.image.outputs.image }}
@@ -228,6 +253,17 @@ jobs:
           OPENAI_PRECISE_EFFORT: ${{ secrets.OPENAI_PRECISE_EFFORT || vars.OPENAI_PRECISE_EFFORT }}
           OPENAI_CHEAP_MODEL: ${{ secrets.OPENAI_CHEAP_MODEL || vars.OPENAI_CHEAP_MODEL }}
           OPENAI_CHEAP_EFFORT: ${{ secrets.OPENAI_CHEAP_EFFORT || vars.OPENAI_CHEAP_EFFORT }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_ASSISTANT_MODEL: ${{ secrets.DEEPSEEK_ASSISTANT_MODEL || vars.DEEPSEEK_ASSISTANT_MODEL }}
+          DEEPSEEK_PRECISE_MODEL: ${{ secrets.DEEPSEEK_PRECISE_MODEL || vars.DEEPSEEK_PRECISE_MODEL }}
+          DEEPSEEK_CHEAP_MODEL: ${{ secrets.DEEPSEEK_CHEAP_MODEL || vars.DEEPSEEK_CHEAP_MODEL }}
+          DEEPSEEK_VISION_MODEL: ${{ secrets.DEEPSEEK_VISION_MODEL || vars.DEEPSEEK_VISION_MODEL }}
+          DEEPSEEK_THINKING: ${{ secrets.DEEPSEEK_THINKING || vars.DEEPSEEK_THINKING }}
+          DEEPSEEK_FALLBACK: ${{ secrets.DEEPSEEK_FALLBACK || vars.DEEPSEEK_FALLBACK }}
+          DEEPSEEK_SEARCH: ${{ secrets.DEEPSEEK_SEARCH || vars.DEEPSEEK_SEARCH }}
+          ENABLE_LOCAL_WHISPER: ${{ secrets.ENABLE_LOCAL_WHISPER || vars.ENABLE_LOCAL_WHISPER }}
+          TRANSCRIBE_FALLBACK_BASE_URL: ${{ secrets.TRANSCRIBE_FALLBACK_BASE_URL || vars.TRANSCRIBE_FALLBACK_BASE_URL }}
+          TRANSCRIBE_FALLBACK_MODEL: ${{ secrets.TRANSCRIBE_FALLBACK_MODEL || vars.TRANSCRIBE_FALLBACK_MODEL }}
           AEROAPI_KEY: ${{ secrets.AEROAPI_KEY }}
           AVIATIONSTACK_API_KEY: ${{ secrets.AVIATIONSTACK_API_KEY }}
           AERODATABOX_API_KEY: ${{ secrets.AERODATABOX_API_KEY }}

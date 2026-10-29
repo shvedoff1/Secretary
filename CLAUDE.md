@@ -708,7 +708,7 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   timer and lexicon/memory buffers are per-chat mutable state, and a correction must not
   overtake the message it corrects), while different chats run in parallel.
 - OpenAI post-passes (humorizer + expense quip) run on `OPENAI_HUMOR_MODEL` (default
-  `gpt-5.5`) and send `reasoning_effort` (config `OPENAI_REASONING_EFFORT`, default `low`)
+  `gpt-6-sol`) and send `reasoning_effort` (config `OPENAI_REASONING_EFFORT`, default `low`)
   so the gpt-5-family model doesn't slow-reason over a trivial tone rewrite — the main
   cause of "openai в разы дольше Клода". `low` (not `minimal`) is the default because pure
   `minimal` made the rewrite lazy (near-verbatim echoes); `none` omits the field for
@@ -951,3 +951,20 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   Thinking depth is `ANTHROPIC_EFFORT` (`low|medium|high|xhigh|max`, unset = the
   model's own default — `high` on Sonnet 5.5), sent as `output_config.effort` on the
   main call only; the deploy workflow passes it through from GitHub Variables.
+- VENDOR SWITCH: `LLM_PROVIDER=openai` (default `anthropic`) runs EVERY model call on
+  OpenAI. It is a TRANSLATOR, not a fork: on openai `getAnthropic()` (`client.ts`)
+  returns a shim with the same `messages.create` surface, and
+  `src/llm/openaiAssistant.ts` maps the very request each caller builds (system prompt
+  → `instructions`, tool schemas → non-strict functions, Claude's web_search → OpenAI's
+  built-in `web_search`, image/PDF/tool_result blocks) onto the Responses API (plain
+  fetch, `store: false`) and the answer back into tool_use/text blocks — so every
+  handler, short-circuit and humorizable flag runs unchanged and NO call site branches
+  on the vendor. Anthropic-only knobs (thinking, temperature, output_config,
+  cache_control) are dropped; depth comes from the tier's effort. The TIER is read off
+  which configured Anthropic id the caller passed (`openaiTierFor`): `ANTHROPIC_MODEL`
+  → `OPENAI_ASSISTANT_MODEL` (sol), `ANTHROPIC_PRECISE_MODEL`/`ANTHROPIC_CALENDAR_MODEL`
+  → `OPENAI_PRECISE_MODEL` (astra), every other id (the `ANTHROPIC_*_MODEL` hidden
+  passes) → `OPENAI_CHEAP_MODEL` (luna) — so a new pass must keep naming its model
+  through config. Same tier rules as above: user-read text never comes from luna.
+  `ANTHROPIC_API_KEY` is only required on anthropic, `OPENAI_API_KEY` on openai
+  (checked at boot). Reasoning items are not carried across tool iterations.

@@ -9,7 +9,9 @@ const boolish = z
 
 const ConfigSchema = z.object({
   BOT_TOKEN: z.string().min(1, 'BOT_TOKEN is required'),
-  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
+  // Required on LLM_PROVIDER=anthropic (the default); unused on openai. An empty
+  // value (the deploy writes the line even when the secret is unset) reads as unset.
+  ANTHROPIC_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
   ADMIN_TELEGRAM_ID: z.coerce.number().int().positive(),
 
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-5-5'),
@@ -17,6 +19,29 @@ const ConfigSchema = z.object({
   // default (`high` on Sonnet 5.5). `medium`/`low` cut thinking tokens — the knob
   // to turn when the per-turn `assistant usage` log shows thinking dominating cost.
   ANTHROPIC_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  // Which vendor runs EVERY model call: the main dialogue loop (live replies,
+  // scheduled tasks, chime, inline) AND the hidden passes and the precise tier.
+  // 'openai' routes them all through the Responses API by swapping the client in
+  // `src/llm/client.ts` for a translator (`src/llm/openaiAssistant.ts`): prompts,
+  // context block and tools stay identical, only the vendor changes. Tiers map
+  // onto OpenAI models (`openaiTierFor` in client.ts): the main model → SOL, the
+  // precise/calendar model → ASTRA, every hidden pass → LUNA. Needs OPENAI_API_KEY.
+  LLM_PROVIDER: z.enum(['anthropic', 'openai']).default('anthropic'),
+  OPENAI_ASSISTANT_MODEL: z.string().default('gpt-6-sol'),
+  OPENAI_PRECISE_MODEL: z.string().default('gpt-6-astra'),
+  OPENAI_CHEAP_MODEL: z.string().default('gpt-6-luna'),
+  // Reasoning depth per tier; 'none' omits the field.
+  OPENAI_ASSISTANT_EFFORT: z
+    .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+    .default('medium'),
+  OPENAI_PRECISE_EFFORT: z
+    .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+    .default('medium'),
+  // Hidden passes want speed and repeatability, not deliberation (the Anthropic
+  // side turns thinking off for them outright).
+  OPENAI_CHEAP_EFFORT: z
+    .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+    .default('low'),
   // The PRECISE tier: user-facing text where a wrong detail costs more than the
   // tokens do — a calendar digest's «выезжай к 17:30, терминал…» before a
   // flight. Small volume (a few short calls a day per chat), so the strongest
@@ -42,7 +67,7 @@ const ConfigSchema = z.object({
   // Off by default and needs OPENAI_API_KEY; it never runs on factual/tool
   // answers (expenses, surf, web search, reminders) so accuracy is preserved.
   ENABLE_HUMOR: boolish.default(false),
-  OPENAI_HUMOR_MODEL: z.string().default('gpt-5.5'),
+  OPENAI_HUMOR_MODEL: z.string().default('gpt-6-sol'),
   // GPT-5-family models are REASONING models: left to their defaults they burn
   // time on hidden reasoning tokens before answering, which makes the humorizer /
   // expense-quip pass feel far slower than Claude even though the task is a trivial
@@ -447,13 +472,24 @@ const ConfigSchema = z.object({
   CHIME_HOUR_PROBABILITY: z.coerce.number().min(0).max(1).default(0.6),
 });
 
+// The key of whichever vendor is in charge must be present — failing at boot
+// beats a 401 on every message.
+const CheckedConfigSchema = ConfigSchema.superRefine((cfg, ctx) => {
+  if (cfg.LLM_PROVIDER === 'anthropic' && !cfg.ANTHROPIC_API_KEY) {
+    ctx.addIssue({ code: 'custom', path: ['ANTHROPIC_API_KEY'], message: 'ANTHROPIC_API_KEY is required' });
+  }
+  if (cfg.LLM_PROVIDER === 'openai' && !cfg.OPENAI_API_KEY) {
+    ctx.addIssue({ code: 'custom', path: ['OPENAI_API_KEY'], message: 'LLM_PROVIDER=openai needs OPENAI_API_KEY' });
+  }
+});
+
 export type Config = z.infer<typeof ConfigSchema>;
 
 let cached: Config | undefined;
 
 export function loadConfig(): Config {
   if (cached) return cached;
-  const parsed = ConfigSchema.safeParse(process.env);
+  const parsed = CheckedConfigSchema.safeParse(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`)

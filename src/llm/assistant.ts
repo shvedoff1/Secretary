@@ -561,7 +561,10 @@ export async function runAssistant(
     // (output includes the thinking tokens).
     logger.info(
       {
-        model: cfg.ANTHROPIC_MODEL,
+        // On LLM_PROVIDER=openai the client is a translator (see client.ts) and
+        // the turn ran on the OpenAI dialogue model instead.
+        provider: cfg.LLM_PROVIDER,
+        model: cfg.LLM_PROVIDER === 'openai' ? cfg.OPENAI_ASSISTANT_MODEL : cfg.ANTHROPIC_MODEL,
         iteration: i,
         input: res.usage.input_tokens,
         output: res.usage.output_tokens,

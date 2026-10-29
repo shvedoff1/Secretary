@@ -89,7 +89,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,ANTHROPIC_EFFORT,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,ANTHROPIC_EFFORT,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,LLM_PROVIDER,OPENAI_ASSISTANT_MODEL,OPENAI_ASSISTANT_EFFORT,OPENAI_PRECISE_MODEL,OPENAI_PRECISE_EFFORT,OPENAI_CHEAP_MODEL,OPENAI_CHEAP_EFFORT,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
           script: |
             set -euo pipefail
 
@@ -148,6 +148,32 @@ jobs:
             if [ -n "${OPENAI_HUMOR_TIMEOUT_MS:-}" ]; then
               echo "OPENAI_HUMOR_TIMEOUT_MS=$OPENAI_HUMOR_TIMEOUT_MS" >> .env
             fi
+            # Optional: run EVERY model call on OpenAI (LLM_PROVIDER=openai, needs
+            # OPENAI_API_KEY; ANTHROPIC_API_KEY may then be empty). Tiers: dialogue →
+            # OPENAI_ASSISTANT_MODEL (sol), calendar advice → OPENAI_PRECISE_MODEL
+            # (astra), hidden passes → OPENAI_CHEAP_MODEL (luna). Each value is only
+            # written when set, so unset keeps the in-app defaults (and Claude).
+            if [ -n "${LLM_PROVIDER:-}" ]; then
+              echo "LLM_PROVIDER=$LLM_PROVIDER" >> .env
+            fi
+            if [ -n "${OPENAI_ASSISTANT_MODEL:-}" ]; then
+              echo "OPENAI_ASSISTANT_MODEL=$OPENAI_ASSISTANT_MODEL" >> .env
+            fi
+            if [ -n "${OPENAI_ASSISTANT_EFFORT:-}" ]; then
+              echo "OPENAI_ASSISTANT_EFFORT=$OPENAI_ASSISTANT_EFFORT" >> .env
+            fi
+            if [ -n "${OPENAI_PRECISE_MODEL:-}" ]; then
+              echo "OPENAI_PRECISE_MODEL=$OPENAI_PRECISE_MODEL" >> .env
+            fi
+            if [ -n "${OPENAI_PRECISE_EFFORT:-}" ]; then
+              echo "OPENAI_PRECISE_EFFORT=$OPENAI_PRECISE_EFFORT" >> .env
+            fi
+            if [ -n "${OPENAI_CHEAP_MODEL:-}" ]; then
+              echo "OPENAI_CHEAP_MODEL=$OPENAI_CHEAP_MODEL" >> .env
+            fi
+            if [ -n "${OPENAI_CHEAP_EFFORT:-}" ]; then
+              echo "OPENAI_CHEAP_EFFORT=$OPENAI_CHEAP_EFFORT" >> .env
+            fi
             # Optional: flight feed keys (flight_status / watch_flight). Only
             # written when present — without a key the flight tools are simply
             # not offered to the model. AeroAPI wins over aviationstack in-app
@@ -195,6 +221,13 @@ jobs:
           OPENAI_HUMOR_MODEL: ${{ secrets.OPENAI_HUMOR_MODEL || vars.OPENAI_HUMOR_MODEL }}
           OPENAI_REASONING_EFFORT: ${{ secrets.OPENAI_REASONING_EFFORT || vars.OPENAI_REASONING_EFFORT }}
           OPENAI_HUMOR_TIMEOUT_MS: ${{ secrets.OPENAI_HUMOR_TIMEOUT_MS || vars.OPENAI_HUMOR_TIMEOUT_MS }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER || vars.LLM_PROVIDER }}
+          OPENAI_ASSISTANT_MODEL: ${{ secrets.OPENAI_ASSISTANT_MODEL || vars.OPENAI_ASSISTANT_MODEL }}
+          OPENAI_ASSISTANT_EFFORT: ${{ secrets.OPENAI_ASSISTANT_EFFORT || vars.OPENAI_ASSISTANT_EFFORT }}
+          OPENAI_PRECISE_MODEL: ${{ secrets.OPENAI_PRECISE_MODEL || vars.OPENAI_PRECISE_MODEL }}
+          OPENAI_PRECISE_EFFORT: ${{ secrets.OPENAI_PRECISE_EFFORT || vars.OPENAI_PRECISE_EFFORT }}
+          OPENAI_CHEAP_MODEL: ${{ secrets.OPENAI_CHEAP_MODEL || vars.OPENAI_CHEAP_MODEL }}
+          OPENAI_CHEAP_EFFORT: ${{ secrets.OPENAI_CHEAP_EFFORT || vars.OPENAI_CHEAP_EFFORT }}
           AEROAPI_KEY: ${{ secrets.AEROAPI_KEY }}
           AVIATIONSTACK_API_KEY: ${{ secrets.AVIATIONSTACK_API_KEY }}
           AERODATABOX_API_KEY: ${{ secrets.AERODATABOX_API_KEY }}

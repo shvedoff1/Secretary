@@ -1,18 +1,79 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { loadConfig } from '../config.js';
+import { loadConfig, type Config } from '../config.js';
+import { createOpenAIMessage, type ReasoningEffort } from './openaiAssistant.js';
 
 let client: Anthropic | undefined;
 
+/**
+ * The model client every call site uses. On LLM_PROVIDER=openai it is a shim
+ * with the same `messages.create` surface that translates to the OpenAI
+ * Responses API (see openaiAssistant.ts), so no caller knows which vendor runs it.
+ */
 export function getAnthropic(): Anthropic {
   if (client) return client;
-  const { ANTHROPIC_API_KEY } = loadConfig();
+  const cfg = loadConfig();
+  if (cfg.LLM_PROVIDER === 'openai') {
+    client = openaiShim();
+    return client;
+  }
   // The SDK retries transient failures (429, 5xx incl. 529 "Overloaded") with
   // exponential backoff + jitter and respects retry-after. Bump from the
   // default 2 so brief overloads don't surface as a user-facing error.
   client = new Anthropic({
-    apiKey: ANTHROPIC_API_KEY,
+    apiKey: cfg.ANTHROPIC_API_KEY,
     maxRetries: 5,
     timeout: 120_000,
   });
   return client;
+}
+
+export interface OpenAITier {
+  model: string;
+  effort: ReasoningEffort;
+}
+
+/**
+ * Which OpenAI model stands in for an Anthropic model id. Callers name their
+ * model by TIER through config (ANTHROPIC_MODEL = the dialogue, the precise/
+ * calendar model = the precise tier, every ANTHROPIC_*_MODEL hidden pass = the
+ * cheap tier), so the tier is read back off which config value was passed:
+ * dialogue → SOL, precise → ASTRA, anything else → LUNA. Pure, for tests.
+ */
+export function openaiTierFor(model: string, cfg: Config): OpenAITier {
+  if (model === cfg.ANTHROPIC_MODEL) {
+    return { model: cfg.OPENAI_ASSISTANT_MODEL, effort: cfg.OPENAI_ASSISTANT_EFFORT };
+  }
+  if (model === cfg.ANTHROPIC_PRECISE_MODEL || model === cfg.ANTHROPIC_CALENDAR_MODEL) {
+    return { model: cfg.OPENAI_PRECISE_MODEL, effort: cfg.OPENAI_PRECISE_EFFORT };
+  }
+  return { model: cfg.OPENAI_CHEAP_MODEL, effort: cfg.OPENAI_CHEAP_EFFORT };
+}
+
+function systemText(system: Anthropic.MessageCreateParams['system']): string {
+  if (!system) return '';
+  if (typeof system === 'string') return system;
+  return system.map((b) => b.text).join('\n\n');
+}
+
+function openaiShim(): Anthropic {
+  const create = async (
+    params: Anthropic.MessageCreateParamsNonStreaming,
+    opts?: { timeout?: number; maxRetries?: number },
+  ) => {
+    const cfg = loadConfig();
+    const tier = openaiTierFor(params.model, cfg);
+    // Anthropic-only knobs (thinking, temperature, output_config, cache_control)
+    // are simply not forwarded: reasoning depth comes from the tier's effort.
+    return createOpenAIMessage({
+      model: tier.model,
+      effort: tier.effort,
+      maxTokens: params.max_tokens,
+      system: systemText(params.system),
+      tools: params.tools ?? [],
+      messages: params.messages,
+      ...(opts?.timeout ? { timeoutMs: opts.timeout } : {}),
+      ...(opts?.maxRetries !== undefined ? { maxRetries: opts.maxRetries } : {}),
+    });
+  };
+  return { messages: { create } } as unknown as Anthropic;
 }

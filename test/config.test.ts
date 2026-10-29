@@ -52,9 +52,9 @@ describe('config OpenAI humorizer latency knobs', () => {
     expect(cfg.OPENAI_HUMOR_TIMEOUT_MS).toBe(20_000);
   });
 
-  it('defaults the humorizer model to gpt-5.5', async () => {
+  it('defaults the humorizer model to gpt-6-sol', async () => {
     const { loadConfig } = await import('../src/config.js');
-    expect(loadConfig().OPENAI_HUMOR_MODEL).toBe('gpt-5.5');
+    expect(loadConfig().OPENAI_HUMOR_MODEL).toBe('gpt-6-sol');
   });
 
   it('honours explicit overrides', async () => {

@@ -195,18 +195,20 @@ The SQLite database lives in `./data` (mounted as a volume).
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `BOT_TOKEN` | yes | — | From @BotFather |
-| `ANTHROPIC_API_KEY` | yes | — | Claude API key |
+| `ANTHROPIC_API_KEY` | yes (unless `LLM_PROVIDER=openai`) | — | Claude API key |
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Model id. Adaptive thinking is on for every turn; per-call token usage is logged as `assistant usage` |
 | `ANTHROPIC_EFFORT` | no | model default (`high` on Sonnet 5.5) | How hard the main model thinks: `low`/`medium`/`high`/`xhigh`/`max`. Set it as a GitHub Variable; the deploy passes it through |
-| `ASSISTANT_PROVIDER` | no | `anthropic` | `openai` runs the main dialogue (live replies, scheduled tasks, chime, inline) on the OpenAI Responses API with the same prompt, context and tools — for comparing vendors. Needs `OPENAI_API_KEY`; hidden passes stay on Anthropic. Set as a GitHub Variable |
-| `OPENAI_ASSISTANT_MODEL` | no | `gpt-5.5` | Dialogue model when `ASSISTANT_PROVIDER=openai` |
-| `OPENAI_ASSISTANT_EFFORT` | no | `medium` | Its reasoning effort: `none\|minimal\|low\|medium\|high\|xhigh` (`none` omits the field) |
+| `LLM_PROVIDER` | no | `anthropic` | `openai` runs EVERY model call (dialogue, scheduled tasks, chime, inline, calendar advice and all hidden passes) on the OpenAI Responses API with the same prompts, context and tools. Needs `OPENAI_API_KEY`; `ANTHROPIC_API_KEY` is then optional. Set as a GitHub Variable |
+| `OPENAI_ASSISTANT_MODEL` | no | `gpt-6-sol` | Dialogue model on `openai` (stands in for `ANTHROPIC_MODEL`) |
+| `OPENAI_PRECISE_MODEL` | no | `gpt-6-astra` | Precise tier on `openai` — the calendar digest advice (stands in for `ANTHROPIC_PRECISE_MODEL`/`ANTHROPIC_CALENDAR_MODEL`) |
+| `OPENAI_CHEAP_MODEL` | no | `gpt-6-luna` | Every hidden pass on `openai` (memory, lexicon, episodes, profiles, condense, classifier, watch verdicts, reconcile) |
+| `OPENAI_ASSISTANT_EFFORT` / `OPENAI_PRECISE_EFFORT` / `OPENAI_CHEAP_EFFORT` | no | `medium` / `medium` / `low` | Reasoning effort per tier: `none\|minimal\|low\|medium\|high\|xhigh` (`none` omits the field) |
 | `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
 | `ENABLE_HUMOR` | no | `false` | Rewrite the **tone** of plain-chat replies via a cheap OpenAI model (facts preserved; factual/tool answers untouched). Needs `OPENAI_API_KEY` |
-| `OPENAI_HUMOR_MODEL` | no | `gpt-5.5` | Model used for the humorizer pass (and the expense quip). Set to a cheaper model (e.g. `gpt-5-mini`) to cut cost |
+| `OPENAI_HUMOR_MODEL` | no | `gpt-6-sol` | Model used for the humorizer pass (and the expense quip). Set to a cheaper model (e.g. `gpt-5-mini`) to cut cost |
 | `OPENAI_REASONING_EFFORT` | no | `low` | Reasoning effort sent to the humorizer/quip model. gpt-5-family models reason before answering by default (the reason the pass felt far slower than Claude); `low` keeps it quick while still doing a real rewrite (`minimal` came out lazy — near-verbatim). Use `none` to omit the field for non-reasoning models (e.g. gpt-4o-mini). One of `none\|minimal\|low\|medium\|high` |
 | `OPENAI_HUMOR_TIMEOUT_MS` | no | `20000` | Hard cap (ms) on a single humorizer/quip OpenAI call; on timeout the humorizer falls back to the original text and the quip is skipped |
 | `ENABLE_EXPENSE_QUIP` | no | `true` | Append a short OpenAI joke to the "✅ Записано" confirmation after an expense is confirmed (display-only, added post-write, so it can't corrupt amounts/names). Needs `OPENAI_API_KEY`; reuses `OPENAI_HUMOR_MODEL` |

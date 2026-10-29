@@ -2,7 +2,6 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { getAnthropic } from './client.js';
-import { createOpenAIMessage } from './openaiAssistant.js';
 import {
   systemPromptFor,
   buildContextBlock,
@@ -358,6 +357,7 @@ export async function runAssistant(
   handlers: AssistantHandlers,
 ): Promise<AssistantResult> {
   const cfg = loadConfig();
+  const anthropic = getAnthropic();
   const tutor = ctx.mode === 'tutor';
   // An expense-only scan (an unaddressed message that merely looks like a spend) is
   // cut to the single tool it may use: it can only record an expense or stay silent,
@@ -523,61 +523,48 @@ export async function runAssistant(
   }
   messages.push({ role: 'user', content: currentContent });
 
-  // The preset picks the prompt: same context block, same tools, same
-  // thinking/token budget — only the system prompt (and hence its own cache
-  // prefix) differs. A custom persona is static per chat, so a custom chat still
-  // forms a stable cache prefix of its own.
-  const systemPrompt = systemPromptFor(ctx.mode ?? 'secretary', ctx.personaPrompt);
-  // ASSISTANT_PROVIDER=openai swaps the vendor under the SAME loop: the request
-  // is translated to the Responses API and the answer back to Anthropic blocks,
-  // so every tool handler below runs unchanged.
-  const openai = cfg.ASSISTANT_PROVIDER === 'openai';
-  const model = openai ? cfg.OPENAI_ASSISTANT_MODEL : cfg.ANTHROPIC_MODEL;
-
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const res = openai
-      ? await createOpenAIMessage({
-          model,
-          maxTokens: 16_000,
-          system: systemPrompt,
-          tools,
-          messages,
-        })
-      : await getAnthropic().messages.create({
-          model,
-          // Thinking spends from this same budget, so it has to leave room for the
-          // reasoning AND the answer / tool-call JSON — a 2048 cap with thinking on
-          // would truncate. 16k stays under the SDK's non-streaming timeout limit.
-          max_tokens: 16_000,
-          // Adaptive thinking on EVERY turn, every mode: the model decides how much
-          // to reason (a «привет» costs little, a receipt split or a bug recap more).
-          // Chosen deliberately for answer quality; costs are watched via the
-          // `assistant usage` log line below. Valid on every current model (Sonnet
-          // 5.5 / Opus 5.5 reject `disabled`, adaptive is accepted everywhere).
-          thinking: { type: 'adaptive' },
-          // Thinking depth: ANTHROPIC_EFFORT, else the model's default.
-          ...(cfg.ANTHROPIC_EFFORT ? { output_config: { effort: cfg.ANTHROPIC_EFFORT } } : {}),
-          // Cache the stable prefix (tools render before system, so one breakpoint on
-          // the system block caches both tool schemas + system prompt). Re-reads cost
-          // ~0.1x: this is the main lever against per-call token cost. Tutor chats
-          // form their own (also static) cache prefix.
-          system: [
-            {
-              type: 'text',
-              text: systemPrompt,
-              cache_control: { type: 'ephemeral' },
-            },
-          ],
-          tools,
-          messages,
-        });
+    const res = await anthropic.messages.create({
+      model: cfg.ANTHROPIC_MODEL,
+      // Thinking spends from this same budget, so it has to leave room for the
+      // reasoning AND the answer / tool-call JSON — a 2048 cap with thinking on
+      // would truncate. 16k stays under the SDK's non-streaming timeout limit.
+      max_tokens: 16_000,
+      // Adaptive thinking on EVERY turn, every mode: the model decides how much
+      // to reason (a «привет» costs little, a receipt split or a bug recap more).
+      // Chosen deliberately for answer quality; costs are watched via the
+      // `assistant usage` log line below. Valid on every current model (Sonnet
+      // 5.5 / Opus 5.5 reject `disabled`, adaptive is accepted everywhere).
+      thinking: { type: 'adaptive' },
+      // Thinking depth: ANTHROPIC_EFFORT, else the model's default.
+      ...(cfg.ANTHROPIC_EFFORT ? { output_config: { effort: cfg.ANTHROPIC_EFFORT } } : {}),
+      // Cache the stable prefix (tools render before system, so one breakpoint on
+      // the system block caches both tool schemas + system prompt). Re-reads cost
+      // ~0.1x: this is the main lever against per-call token cost. Tutor chats
+      // form their own (also static) cache prefix.
+      system: [
+        {
+          type: 'text',
+          // The preset picks the prompt: same context block, same tools, same
+          // thinking/token budget — only the system prompt (and hence its own
+          // cache prefix) differs. A custom persona is static per chat, so a
+          // custom chat still forms a stable cache prefix of its own.
+          text: systemPromptFor(ctx.mode ?? 'secretary', ctx.personaPrompt),
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      tools,
+      messages,
+    });
 
     // INFO, not debug: with thinking on, per-turn spend is the number to watch
     // (output includes the thinking tokens).
     logger.info(
       {
-        provider: cfg.ASSISTANT_PROVIDER,
-        model,
+        // On LLM_PROVIDER=openai the client is a translator (see client.ts) and
+        // the turn ran on the OpenAI dialogue model instead.
+        provider: cfg.LLM_PROVIDER,
+        model: cfg.LLM_PROVIDER === 'openai' ? cfg.OPENAI_ASSISTANT_MODEL : cfg.ANTHROPIC_MODEL,
         iteration: i,
         input: res.usage.input_tokens,
         output: res.usage.output_tokens,

@@ -3,19 +3,22 @@ import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
 
 /**
- * OpenAI backend for the main dialogue loop (`ASSISTANT_PROVIDER=openai`).
+ * OpenAI backend for every model call (`LLM_PROVIDER=openai`).
  *
- * `runAssistant` is written against Anthropic's message shapes — tool_use blocks,
- * tool_result blocks, stop_reason — and its ~20-tool dispatch reads them. Rather
- * than fork that loop, this module is a TRANSLATOR: it takes the exact request the
- * loop would send to Claude (system prompt, tool schemas, messages), maps it onto
- * the OpenAI Responses API, and maps the answer back into Anthropic-shaped content.
- * Prompt, context block, tools and every handler stay identical, so a comparison
+ * The codebase is written against Anthropic's message shapes — tool_use blocks,
+ * tool_result blocks, stop_reason — and `runAssistant`'s ~20-tool dispatch reads
+ * them. Rather than fork each caller, this module is a TRANSLATOR: it takes the
+ * exact request a caller would send to Claude (system prompt, tool schemas,
+ * messages), maps it onto the OpenAI Responses API, and maps the answer back into
+ * Anthropic-shaped content. `client.ts` plugs it in under `getAnthropic()`, so
+ * prompts, context blocks, tools and every handler stay identical — a comparison
  * between the vendors is a comparison of the models, not of two code paths.
  *
  * Plain `fetch`, no SDK — same transport as the humorizer and transcription.
  * The pure converters are exported for tests.
  */
+
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface ModelRequest {
   model: string;
@@ -23,6 +26,11 @@ export interface ModelRequest {
   system: string;
   tools: Anthropic.ToolUnion[];
   messages: Anthropic.MessageParam[];
+  effort: ReasoningEffort;
+  /** Per-attempt cap (default 120s). */
+  timeoutMs?: number;
+  /** Retries after the first attempt (default 3); a latency-bound pass sends 0. */
+  maxRetries?: number;
 }
 
 /** The slice of an Anthropic `Message` the assistant loop reads. */
@@ -260,14 +268,14 @@ export function fromResponsesOutput(body: ResponsesBody): ModelTurn {
 }
 
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504]);
-const MAX_ATTEMPTS = 4;
-const TIMEOUT_MS = 120_000;
+const DEFAULT_RETRIES = 3;
+const DEFAULT_TIMEOUT_MS = 120_000;
 
-/** One dialogue-model call through the OpenAI Responses API. */
+/** One model call through the OpenAI Responses API. */
 export async function createOpenAIMessage(req: ModelRequest): Promise<ModelTurn> {
   const cfg = loadConfig();
   if (!cfg.OPENAI_API_KEY) {
-    throw new Error('ASSISTANT_PROVIDER=openai needs OPENAI_API_KEY');
+    throw new Error('LLM_PROVIDER=openai needs OPENAI_API_KEY');
   }
   const tools = toResponsesTools(req.tools);
   const body = {
@@ -278,14 +286,13 @@ export async function createOpenAIMessage(req: ModelRequest): Promise<ModelTurn>
     input: toResponsesInput(req.messages),
     ...(tools.length > 0 ? { tools } : {}),
     max_output_tokens: req.maxTokens,
-    ...(cfg.OPENAI_ASSISTANT_EFFORT === 'none'
-      ? {}
-      : { reasoning: { effort: cfg.OPENAI_ASSISTANT_EFFORT } }),
+    ...(req.effort === 'none' ? {} : { reasoning: { effort: req.effort } }),
     store: false,
   };
 
   let lastErr: unknown;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+  const attempts = 1 + (req.maxRetries ?? DEFAULT_RETRIES);
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
     let res: Response;
     try {
@@ -296,7 +303,7 @@ export async function createOpenAIMessage(req: ModelRequest): Promise<ModelTurn>
           Authorization: `Bearer ${cfg.OPENAI_API_KEY}`,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(req.timeoutMs ?? DEFAULT_TIMEOUT_MS),
       });
     } catch (err) {
       lastErr = err;

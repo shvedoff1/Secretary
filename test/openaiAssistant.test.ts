@@ -5,9 +5,9 @@ import {
   fromResponsesOutput,
 } from '../src/llm/openaiAssistant.js';
 
-// ASSISTANT_PROVIDER=openai runs the SAME assistant loop through a translator.
-// These pin the translation both ways, and that the loop actually routes to
-// OpenAI (and only there) when the switch is on.
+// LLM_PROVIDER=openai runs every model call through a translator under
+// getAnthropic(). These pin the translation both ways, the tier → model map, and
+// that the dialogue loop and a hidden pass actually route to OpenAI.
 
 describe('toResponsesTools', () => {
   it('maps custom tools to non-strict functions and web_search to the built-in', () => {
@@ -140,16 +140,7 @@ describe('fromResponsesOutput', () => {
   });
 });
 
-// --- the loop really switches vendor -------------------------------------------
-
-const anthropicCreate = vi.fn(async () => ({
-  stop_reason: 'end_turn',
-  content: [{ type: 'text', text: 'claude' }],
-  usage: { input_tokens: 1, output_tokens: 1 },
-}));
-vi.mock('../src/llm/client.js', () => ({
-  getAnthropic: () => ({ messages: { create: anthropicCreate } }),
-}));
+// --- the switch, end to end ----------------------------------------------------
 
 const handlers = {
   remember: () => 'Запомнил.',
@@ -172,29 +163,39 @@ const ctx = {
 } as never;
 
 function responsesReply(output: unknown[]) {
-  return new Response(JSON.stringify({ status: 'completed', output, usage: { input_tokens: 1, output_tokens: 1 } }), {
-    status: 200,
-  });
+  return new Response(
+    JSON.stringify({ status: 'completed', output, usage: { input_tokens: 1, output_tokens: 1 } }),
+    { status: 200 },
+  );
 }
 
-describe('runAssistant with ASSISTANT_PROVIDER=openai', () => {
+const textReply = (text: string) =>
+  responsesReply([{ type: 'message', content: [{ type: 'output_text', text }] }]);
+
+const TOUCHED = [
+  'LLM_PROVIDER',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'OPENAI_ASSISTANT_MODEL',
+  'ANTHROPIC_CALENDAR_MODEL',
+];
+
+describe('LLM_PROVIDER=openai', () => {
   beforeEach(() => {
     vi.resetModules();
-    anthropicCreate.mockClear();
     process.env.BOT_TOKEN = 't';
-    process.env.ANTHROPIC_API_KEY = 'a';
     process.env.ADMIN_TELEGRAM_ID = '1';
-    process.env.ASSISTANT_PROVIDER = 'openai';
+    delete process.env.ANTHROPIC_API_KEY; // not needed on openai
+    process.env.LLM_PROVIDER = 'openai';
     process.env.OPENAI_API_KEY = 'sk-test';
   });
   afterEach(() => {
-    delete process.env.ASSISTANT_PROVIDER;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_ASSISTANT_MODEL;
+    for (const k of TOUCHED) delete process.env[k];
+    process.env.ANTHROPIC_API_KEY = 'x';
     vi.unstubAllGlobals();
   });
 
-  it('runs the tool loop through the Responses API and never touches Anthropic', async () => {
+  it('runs the dialogue tool loop on SOL through the Responses API', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -202,24 +203,23 @@ describe('runAssistant with ASSISTANT_PROVIDER=openai', () => {
           { type: 'function_call', call_id: 'c1', name: 'remember', arguments: '{"content":"любит кофе"}' },
         ]),
       )
-      .mockResolvedValueOnce(
-        responsesReply([{ type: 'message', content: [{ type: 'output_text', text: 'Запомнил ☕' }] }]),
-      );
+      .mockResolvedValueOnce(textReply('Запомнил ☕'));
     vi.stubGlobal('fetch', fetchMock);
-    process.env.OPENAI_ASSISTANT_MODEL = 'gpt-test';
 
     const { runAssistant } = await import('../src/llm/assistant.js');
     const result = await runAssistant(ctx, handlers);
 
-    expect(anthropicCreate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]![0]).toBe('https://api.openai.com/v1/responses');
     const first = JSON.parse(fetchMock.mock.calls[0]![1].body);
-    expect(first.model).toBe('gpt-test');
+    expect(first.model).toBe('gpt-6-sol');
     expect(first.reasoning).toEqual({ effort: 'medium' });
     expect(typeof first.instructions).toBe('string');
+    expect(first.instructions.length).toBeGreaterThan(100);
     expect(first.tools.some((t: { name?: string }) => t.name === 'remember')).toBe(true);
-    // The second call carries the call + its result back.
+    // Anthropic-only knobs never leak into the OpenAI body.
+    expect(first).not.toHaveProperty('thinking');
+    expect(first).not.toHaveProperty('system');
     const second = JSON.parse(fetchMock.mock.calls[1]![1].body);
     expect(second.input.slice(-2)).toEqual([
       { type: 'function_call', call_id: 'c1', name: 'remember', arguments: '{"content":"любит кофе"}' },
@@ -229,21 +229,71 @@ describe('runAssistant with ASSISTANT_PROVIDER=openai', () => {
     expect(result).toMatchObject({ kind: 'text', text: 'Запомнил ☕', humorizable: false });
   });
 
-  it('fails loudly without an OpenAI key', async () => {
-    delete process.env.OPENAI_API_KEY;
-    vi.stubGlobal('fetch', vi.fn());
-    const { runAssistant } = await import('../src/llm/assistant.js');
-    await expect(runAssistant(ctx, handlers)).rejects.toThrow(/OPENAI_API_KEY/);
-  });
-
-  it('defaults to Anthropic when the switch is unset', async () => {
-    delete process.env.ASSISTANT_PROVIDER;
-    const fetchMock = vi.fn();
+  it('honours an OPENAI_ASSISTANT_MODEL override', async () => {
+    process.env.OPENAI_ASSISTANT_MODEL = 'gpt-test';
+    const fetchMock = vi.fn().mockResolvedValue(textReply('йо'));
     vi.stubGlobal('fetch', fetchMock);
     const { runAssistant } = await import('../src/llm/assistant.js');
-    const result = await runAssistant(ctx, handlers);
-    expect(anthropicCreate).toHaveBeenCalledTimes(1);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ text: 'claude' });
+    await runAssistant(ctx, handlers);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).model).toBe('gpt-test');
+  });
+
+  it('runs a hidden pass on LUNA at low effort', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(textReply('заметки'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { condenseChunk } = await import('../src/llm/summarize.js');
+    expect(await condenseChunk('Вася: привет\nПетя: йо')).toBe('заметки');
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(body.model).toBe('gpt-6-luna');
+    expect(body.reasoning).toEqual({ effort: 'low' });
+    // No Anthropic temperature/thinking pass-through on the cheap tier either.
+    expect(body).not.toHaveProperty('temperature');
+  });
+
+  it('maps tiers off the configured Anthropic ids: dialogue → SOL, precise/calendar → ASTRA, rest → LUNA', async () => {
+    process.env.ANTHROPIC_CALENDAR_MODEL = 'claude-calendar-x';
+    const { loadConfig } = await import('../src/config.js');
+    const { openaiTierFor } = await import('../src/llm/client.js');
+    const cfg = loadConfig();
+    expect(openaiTierFor(cfg.ANTHROPIC_MODEL, cfg)).toEqual({ model: 'gpt-6-sol', effort: 'medium' });
+    expect(openaiTierFor(cfg.ANTHROPIC_PRECISE_MODEL, cfg)).toEqual({ model: 'gpt-6-astra', effort: 'medium' });
+    expect(openaiTierFor('claude-calendar-x', cfg).model).toBe('gpt-6-astra');
+    expect(openaiTierFor(cfg.ANTHROPIC_SUMMARY_MODEL, cfg)).toEqual({ model: 'gpt-6-luna', effort: 'low' });
+    expect(openaiTierFor(cfg.ANTHROPIC_CLASSIFY_MODEL, cfg).model).toBe('gpt-6-luna');
+  });
+
+  it('passes a caller timeout / no-retry through (the expense classifier)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('boom', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { getAnthropic } = await import('../src/llm/client.js');
+    await expect(
+      getAnthropic().messages.create(
+        { model: 'claude-haiku-5-5', max_tokens: 10, messages: [{ role: 'user', content: 'x' }] },
+        { timeout: 500, maxRetries: 0 },
+      ),
+    ).rejects.toThrow(/HTTP 503/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('boots without ANTHROPIC_API_KEY but refuses without OPENAI_API_KEY', async () => {
+    const { loadConfig } = await import('../src/config.js');
+    expect(loadConfig().LLM_PROVIDER).toBe('openai');
+    vi.resetModules();
+    delete process.env.OPENAI_API_KEY;
+    const fresh = await import('../src/config.js');
+    expect(() => fresh.loadConfig()).toThrow(/OPENAI_API_KEY/);
+  });
+
+  it('defaults to Anthropic, which still requires its key', async () => {
+    delete process.env.LLM_PROVIDER;
+    let { loadConfig } = await import('../src/config.js');
+    expect(() => loadConfig()).toThrow(/ANTHROPIC_API_KEY/);
+    vi.resetModules();
+    process.env.ANTHROPIC_API_KEY = 'a';
+    ({ loadConfig } = await import('../src/config.js'));
+    expect(loadConfig().LLM_PROVIDER).toBe('anthropic');
+    const { getAnthropic } = await import('../src/llm/client.js');
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    expect(getAnthropic()).toBeInstanceOf(Anthropic);
   });
 });

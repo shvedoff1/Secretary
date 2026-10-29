@@ -20,6 +20,11 @@ jobs:
             cd ~/secretary || { echo "no ~/secretary"; exit 1; }
             echo "=== compose ps ==="
             docker compose ps
+            echo "=== LLM vendor (from .env; keys never printed) ==="
+            grep -E '^(LLM_PROVIDER|ANTHROPIC_MODEL|DEEPSEEK_[A-Z_]*MODEL|DEEPSEEK_FALLBACK|DEEPSEEK_THINKING|DEEPSEEK_SEARCH|OPENAI_ASSISTANT_MODEL)=' .env || echo "(no LLM_PROVIDER line -> anthropic)"
+            grep -qE '^DEEPSEEK_API_KEY=.+' .env && echo "DEEPSEEK_API_KEY=<set>" || echo "DEEPSEEK_API_KEY=<missing>"
+            echo "=== which model answered (last 30 usage / deepseek / fallback lines, 24h) ==="
+            docker compose logs --no-color --since 24h bot | grep -E 'assistant usage|deepseek|fallback' | tail -30
             echo "=== bot logs (tail 200) ==="
             docker compose logs --no-color --tail=200 bot
             echo "=== DB state (config / members / memory / recent turns) ==="

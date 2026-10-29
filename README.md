@@ -195,16 +195,26 @@ The SQLite database lives in `./data` (mounted as a volume).
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `BOT_TOKEN` | yes | — | From @BotFather |
-| `ANTHROPIC_API_KEY` | yes (unless `LLM_PROVIDER=openai`) | — | Claude API key |
+| `ANTHROPIC_API_KEY` | yes (unless `LLM_PROVIDER=openai`/`deepseek`) | — | Claude API key (on `deepseek` it is the default fallback for photos/PDFs and outages) |
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Model id. Adaptive thinking is on for every turn; per-call token usage is logged as `assistant usage` |
 | `ANTHROPIC_EFFORT` | no | model default (`high` on Sonnet 5.5) | How hard the main model thinks: `low`/`medium`/`high`/`xhigh`/`max`. Set it as a GitHub Variable; the deploy passes it through |
-| `LLM_PROVIDER` | no | `anthropic` | `openai` runs EVERY model call (dialogue, scheduled tasks, chime, inline, calendar advice and all hidden passes) on the OpenAI Responses API with the same prompts, context and tools. Needs `OPENAI_API_KEY`; `ANTHROPIC_API_KEY` is then optional. Set as a GitHub Variable |
+| `LLM_PROVIDER` | no | `anthropic` | `openai` runs EVERY model call (dialogue, scheduled tasks, chime, inline, calendar advice and all hidden passes) on the OpenAI Responses API with the same prompts, context and tools. Needs `OPENAI_API_KEY`; `ANTHROPIC_API_KEY` is then optional. Set as a GitHub Variable. `deepseek` does the same on DeepSeek's Anthropic-compatible endpoint (needs `DEEPSEEK_API_KEY`, see below) |
 | `OPENAI_ASSISTANT_MODEL` | no | `gpt-6-sol` | Dialogue model on `openai` (stands in for `ANTHROPIC_MODEL`) |
 | `OPENAI_PRECISE_MODEL` | no | `gpt-6-astra` | Precise tier on `openai` — the calendar digest advice (stands in for `ANTHROPIC_PRECISE_MODEL`/`ANTHROPIC_CALENDAR_MODEL`) |
 | `OPENAI_CHEAP_MODEL` | no | `gpt-6-luna` | Every hidden pass on `openai` (memory, lexicon, episodes, profiles, condense, classifier, watch verdicts, reconcile) |
 | `OPENAI_ASSISTANT_EFFORT` / `OPENAI_PRECISE_EFFORT` / `OPENAI_CHEAP_EFFORT` | no | `medium` / `medium` / `low` | Reasoning effort per tier: `none\|minimal\|low\|medium\|high\|xhigh` (`none` omits the field) |
-| `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
+| `DEEPSEEK_API_KEY` | on `deepseek` | — | DeepSeek key (GitHub Secret). Also pays for web search there |
+| `DEEPSEEK_ASSISTANT_MODEL` / `DEEPSEEK_PRECISE_MODEL` / `DEEPSEEK_CHEAP_MODEL` | no | `deepseek-v4-pro` / `deepseek-v4-pro` / `deepseek-flash` | Tier models on `deepseek`: dialogue / calendar advice / every hidden pass |
+| `DEEPSEEK_VISION_MODEL` | no | — | A DeepSeek model that sees pictures. Unset → a photo turn goes to the fallback (a PDF always does) |
+| `DEEPSEEK_THINKING` | no | `true` | Thinking on the dialogue/precise tiers (hidden passes never think) |
+| `DEEPSEEK_FALLBACK` | no | `auto` | Who takes photo/PDF turns and DeepSeek outages: `auto` (Claude if `ANTHROPIC_API_KEY`, else OpenAI if `OPENAI_API_KEY`) \| `anthropic` \| `openai` \| `none` (media becomes a note, an outage an error) |
+| `DEEPSEEK_SEARCH` | no | `true` | On `deepseek`, `web_search` runs on DeepSeek Search + Fetch (billed per successful request) instead of Claude's server search |
+| `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored unless the backup below is set |
+| `TRANSCRIBE_FALLBACK_BASE_URL` | no | — | Backup speech-to-text: any OpenAI-compatible `/audio/transcriptions` server, tried when OpenAI fails. The deploy sets it to the local whisper container when `ENABLE_LOCAL_WHISPER=true` |
+| `TRANSCRIBE_FALLBACK_MODEL` / `TRANSCRIBE_FALLBACK_API_KEY` | no | `Systran/faster-whisper-small` / — | Model and (optional) key for the backup server |
+| `TRANSCRIBE_TIMEOUT_MS` / `TRANSCRIBE_FALLBACK_TIMEOUT_MS` | no | `60000` / `180000` | Per-attempt caps, so a hung OpenAI reaches the backup |
+| `ENABLE_LOCAL_WHISPER` | no (deploy) | — | GitHub Variable: `true` starts the `whisper` compose service (faster-whisper on CPU, ~1–1.5 GB RAM for `small`) and points the backup at it |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |
 | `ENABLE_HUMOR` | no | `false` | Rewrite the **tone** of plain-chat replies via a cheap OpenAI model (facts preserved; factual/tool answers untouched). Needs `OPENAI_API_KEY` |

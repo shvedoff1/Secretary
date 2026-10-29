@@ -18,3 +18,19 @@ services:
       - ./.env
     volumes:
       - ./data:/app/data
+
+  # OPTIONAL backup speech-to-text: a local Whisper (faster-whisper, CPU) behind
+  # an OpenAI-compatible /v1/audio/transcriptions API. Starts only with the
+  # `whisper` profile (the deploy sets COMPOSE_PROFILES=whisper when the GitHub
+  # Variable ENABLE_LOCAL_WHISPER=true) and is used only when OpenAI fails —
+  # `small` needs ~1-1.5 GB RAM and a few seconds per short voice note on CPU.
+  whisper:
+    image: ${WHISPER_IMAGE:-ghcr.io/speaches-ai/speaches:latest-cpu}
+    container_name: secretary-whisper
+    profiles: [whisper]
+    restart: unless-stopped
+    volumes:
+      - whisper-cache:/home/ubuntu/.cache/huggingface/hub
+
+volumes:
+  whisper-cache:

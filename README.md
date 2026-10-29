@@ -199,6 +199,9 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `ADMIN_TELEGRAM_ID` | yes | — | Admin's numeric Telegram id |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5-5` | Model id. Adaptive thinking is on for every turn; per-call token usage is logged as `assistant usage` |
 | `ANTHROPIC_EFFORT` | no | model default (`high` on Sonnet 5.5) | How hard the main model thinks: `low`/`medium`/`high`/`xhigh`/`max`. Set it as a GitHub Variable; the deploy passes it through |
+| `ASSISTANT_PROVIDER` | no | `anthropic` | `openai` runs the main dialogue (live replies, scheduled tasks, chime, inline) on the OpenAI Responses API with the same prompt, context and tools — for comparing vendors. Needs `OPENAI_API_KEY`; hidden passes stay on Anthropic. Set as a GitHub Variable |
+| `OPENAI_ASSISTANT_MODEL` | no | `gpt-5.5` | Dialogue model when `ASSISTANT_PROVIDER=openai` |
+| `OPENAI_ASSISTANT_EFFORT` | no | `medium` | Its reasoning effort: `none\|minimal\|low\|medium\|high\|xhigh` (`none` omits the field) |
 | `OPENAI_API_KEY` | no | — | Enables voice-message transcription (OpenAI audio API); unset → voice notes ignored |
 | `OPENAI_TRANSCRIBE_MODEL` | no | `whisper-1` | Transcription model |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Override for an OpenAI-compatible endpoint |

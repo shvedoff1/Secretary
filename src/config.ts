@@ -17,6 +17,18 @@ const ConfigSchema = z.object({
   // default (`high` on Sonnet 5.5). `medium`/`low` cut thinking tokens — the knob
   // to turn when the per-turn `assistant usage` log shows thinking dominating cost.
   ANTHROPIC_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  // Which vendor runs the MAIN dialogue loop (every live reply, scheduled task,
+  // chime and inline answer — everything `runAssistant` produces). 'openai'
+  // routes it through the Responses API (`src/llm/openaiAssistant.ts`) with the
+  // SAME prompt, context block and tools, so the two can be compared head to
+  // head; needs OPENAI_API_KEY. Hidden passes (Haiku) and the precise tier stay
+  // on Anthropic either way.
+  ASSISTANT_PROVIDER: z.enum(['anthropic', 'openai']).default('anthropic'),
+  OPENAI_ASSISTANT_MODEL: z.string().default('gpt-5.5'),
+  // Reasoning depth for the OpenAI dialogue model; 'none' omits the field.
+  OPENAI_ASSISTANT_EFFORT: z
+    .enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+    .default('medium'),
   // The PRECISE tier: user-facing text where a wrong detail costs more than the
   // tokens do — a calendar digest's «выезжай к 17:30, терминал…» before a
   // flight. Small volume (a few short calls a day per chat), so the strongest

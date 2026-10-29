@@ -951,3 +951,14 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   Thinking depth is `ANTHROPIC_EFFORT` (`low|medium|high|xhigh|max`, unset = the
   model's own default — `high` on Sonnet 5.5), sent as `output_config.effort` on the
   main call only; the deploy workflow passes it through from GitHub Variables.
+- VENDOR SWITCH: `ASSISTANT_PROVIDER=openai` (default `anthropic`) runs the main
+  dialogue loop on OpenAI (`OPENAI_ASSISTANT_MODEL`, default `gpt-5.5`, reasoning
+  `OPENAI_ASSISTANT_EFFORT`) for a head-to-head comparison. It is a TRANSLATOR, not a
+  fork: `src/llm/openaiAssistant.ts` maps the very request `runAssistant` builds
+  (system prompt → `instructions`, tool schemas → non-strict functions, Claude's
+  web_search → OpenAI's built-in `web_search`, image/PDF/tool_result blocks) onto the
+  Responses API (plain fetch, `store: false`) and the answer back into tool_use/text
+  blocks, so every handler, short-circuit and humorizable flag runs unchanged.
+  Reasoning items are not carried across tool iterations (each call re-reads the
+  translated history). Only the dialogue switches — hidden passes and the precise
+  tier stay on Anthropic.

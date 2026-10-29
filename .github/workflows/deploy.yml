@@ -89,7 +89,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,ANTHROPIC_EFFORT,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
+          envs: DEPLOY_IMAGE,GHCR_USER,GHCR_TOKEN,BOT_TOKEN,ANTHROPIC_API_KEY,ADMIN_TELEGRAM_ID,COMPOSE_B64,ANTHROPIC_MODEL,ANTHROPIC_EFFORT,DEFAULT_CURRENCY,OPENAI_API_KEY,ENABLE_HUMOR,OPENAI_HUMOR_MODEL,OPENAI_REASONING_EFFORT,OPENAI_HUMOR_TIMEOUT_MS,ASSISTANT_PROVIDER,OPENAI_ASSISTANT_MODEL,OPENAI_ASSISTANT_EFFORT,AEROAPI_KEY,AVIATIONSTACK_API_KEY,AERODATABOX_API_KEY
           script: |
             set -euo pipefail
 
@@ -148,6 +148,17 @@ jobs:
             if [ -n "${OPENAI_HUMOR_TIMEOUT_MS:-}" ]; then
               echo "OPENAI_HUMOR_TIMEOUT_MS=$OPENAI_HUMOR_TIMEOUT_MS" >> .env
             fi
+            # Optional: run the main dialogue on OpenAI (ASSISTANT_PROVIDER=openai,
+            # needs OPENAI_API_KEY). Only written when set, so unset stays on Claude.
+            if [ -n "${ASSISTANT_PROVIDER:-}" ]; then
+              echo "ASSISTANT_PROVIDER=$ASSISTANT_PROVIDER" >> .env
+            fi
+            if [ -n "${OPENAI_ASSISTANT_MODEL:-}" ]; then
+              echo "OPENAI_ASSISTANT_MODEL=$OPENAI_ASSISTANT_MODEL" >> .env
+            fi
+            if [ -n "${OPENAI_ASSISTANT_EFFORT:-}" ]; then
+              echo "OPENAI_ASSISTANT_EFFORT=$OPENAI_ASSISTANT_EFFORT" >> .env
+            fi
             # Optional: flight feed keys (flight_status / watch_flight). Only
             # written when present — without a key the flight tools are simply
             # not offered to the model. AeroAPI wins over aviationstack in-app
@@ -195,6 +206,9 @@ jobs:
           OPENAI_HUMOR_MODEL: ${{ secrets.OPENAI_HUMOR_MODEL || vars.OPENAI_HUMOR_MODEL }}
           OPENAI_REASONING_EFFORT: ${{ secrets.OPENAI_REASONING_EFFORT || vars.OPENAI_REASONING_EFFORT }}
           OPENAI_HUMOR_TIMEOUT_MS: ${{ secrets.OPENAI_HUMOR_TIMEOUT_MS || vars.OPENAI_HUMOR_TIMEOUT_MS }}
+          ASSISTANT_PROVIDER: ${{ secrets.ASSISTANT_PROVIDER || vars.ASSISTANT_PROVIDER }}
+          OPENAI_ASSISTANT_MODEL: ${{ secrets.OPENAI_ASSISTANT_MODEL || vars.OPENAI_ASSISTANT_MODEL }}
+          OPENAI_ASSISTANT_EFFORT: ${{ secrets.OPENAI_ASSISTANT_EFFORT || vars.OPENAI_ASSISTANT_EFFORT }}
           AEROAPI_KEY: ${{ secrets.AEROAPI_KEY }}
           AVIATIONSTACK_API_KEY: ${{ secrets.AVIATIONSTACK_API_KEY }}
           AERODATABOX_API_KEY: ${{ secrets.AERODATABOX_API_KEY }}

@@ -282,7 +282,8 @@ describe('deepseekCreate routing', () => {
     messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'A' } }] }],
   } as never;
 
-  it('sends a photo turn to the fallback with the caller’s own model id', async () => {
+  it('sends a photo turn to the fallback with the caller’s own model id when vision is off', async () => {
+    process.env.DEEPSEEK_VISION_MODEL = 'off';
     const { deepseekCreate } = await load();
     const deepseek = vi.fn();
     const fallback = vi.fn().mockResolvedValue(msg([{ type: 'text', text: 'вижу чек' }]));
@@ -292,7 +293,18 @@ describe('deepseekCreate routing', () => {
     expect((res.content[0] as Anthropic.TextBlock).text).toBe('вижу чек');
   });
 
-  it('uses DEEPSEEK_VISION_MODEL for a photo when set', async () => {
+  it('reads a photo on V4.1 Flash by default (it is multimodal), keeping the image', async () => {
+    const { deepseekCreate } = await load();
+    const deepseek = vi.fn().mockResolvedValue(msg([{ type: 'text', text: 'ок' }]));
+    const fallback = vi.fn();
+    await deepseekCreate({ deepseek, fallback })(photoTurn);
+    const sent = deepseek.mock.calls[0]![0] as Anthropic.MessageCreateParamsNonStreaming;
+    expect(sent.model).toBe('deepseek-flash');
+    expect(JSON.stringify(sent.messages)).toContain('"type":"image"');
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('honours a DEEPSEEK_VISION_MODEL override', async () => {
     process.env.DEEPSEEK_VISION_MODEL = 'ds-vision';
     const { deepseekCreate } = await load();
     const deepseek = vi.fn().mockResolvedValue(msg([{ type: 'text', text: 'ок' }]));
@@ -300,7 +312,21 @@ describe('deepseekCreate routing', () => {
     expect((deepseek.mock.calls[0]![0] as { model: string }).model).toBe('ds-vision');
   });
 
-  it('without a fallback, swaps the photo for a note and stays on DeepSeek', async () => {
+  it('still sends a PDF to the fallback', async () => {
+    const { deepseekCreate } = await load();
+    const deepseek = vi.fn();
+    const fallback = vi.fn().mockResolvedValue(msg([{ type: 'text', text: 'прочитал' }]));
+    await deepseekCreate({ deepseek, fallback })({
+      model: 'claude-sonnet-5-5',
+      max_tokens: 100,
+      messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'B' } }] }],
+    } as never);
+    expect(deepseek).not.toHaveBeenCalled();
+    expect(fallback).toHaveBeenCalledOnce();
+  });
+
+  it('without a fallback (and vision off), swaps the photo for a note and stays on DeepSeek', async () => {
+    process.env.DEEPSEEK_VISION_MODEL = 'off';
     const { deepseekCreate } = await load();
     const deepseek = vi.fn().mockResolvedValue(msg([{ type: 'text', text: 'не вижу' }]));
     await deepseekCreate({ deepseek, fallback: null })(photoTurn);

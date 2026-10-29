@@ -206,7 +206,7 @@ The SQLite database lives in `./data` (mounted as a volume).
 | `OPENAI_ASSISTANT_EFFORT` / `OPENAI_PRECISE_EFFORT` / `OPENAI_CHEAP_EFFORT` | no | `medium` / `medium` / `low` | Reasoning effort per tier: `none\|minimal\|low\|medium\|high\|xhigh` (`none` omits the field) |
 | `DEEPSEEK_API_KEY` | on `deepseek` | — | DeepSeek key (GitHub Secret). Also pays for web search there |
 | `DEEPSEEK_ASSISTANT_MODEL` / `DEEPSEEK_PRECISE_MODEL` / `DEEPSEEK_CHEAP_MODEL` | no | `deepseek-v4-pro` / `deepseek-v4-pro` / `deepseek-flash` | Tier models on `deepseek`: dialogue / calendar advice / every hidden pass |
-| `DEEPSEEK_VISION_MODEL` | no | — | A DeepSeek model that sees pictures. Unset → a photo turn goes to the fallback (a PDF always does) |
+| `DEEPSEEK_VISION_MODEL` | no | `deepseek-flash` | Model for turns with a picture (V4.1 Flash is multimodal, Pro is text-only). `off` → photo turns go to the fallback (a PDF always does) |
 | `DEEPSEEK_THINKING` | no | `true` | Thinking on the dialogue/precise tiers (hidden passes never think) |
 | `DEEPSEEK_FALLBACK` | no | `auto` | Who takes photo/PDF turns and DeepSeek outages: `auto` (Claude if `ANTHROPIC_API_KEY`, else OpenAI if `OPENAI_API_KEY`) \| `anthropic` \| `openai` \| `none` (media becomes a note, an outage an error) |
 | `DEEPSEEK_SEARCH` | no | `true` | On `deepseek`, `web_search` runs on DeepSeek Search + Fetch (billed per successful request) instead of Claude's server search |

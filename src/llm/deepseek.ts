@@ -21,8 +21,9 @@ import { DS_SEARCH_TOOLS, isDsSearchTool, runDsSearchTool } from './deepseekSear
  *     server-tool-shaped blocks so the dialogue loop ignores them exactly as it
  *     ignores Claude's own searches (`expandEmulated` turns them back into
  *     tool_use/tool_result on the next request);
- *   - images (unless DEEPSEEK_VISION_MODEL is set) and PDFs → the whole call goes
- *     to DEEPSEEK_FALLBACK (Claude / OpenAI), or the media is replaced by a note
+ *   - images → DEEPSEEK_VISION_MODEL (V4.1 Flash sees pictures; Pro doesn't);
+ *     PDFs (and images with the vision model `off`) → the whole call goes to
+ *     DEEPSEEK_FALLBACK (Claude / OpenAI), or the media is replaced by a note
  *     when there is none;
  *   - DeepSeek DOWN (after the SDK's own retries) → the same fallback, so a vendor
  *     outage doesn't silence the bot.

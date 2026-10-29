@@ -38,9 +38,12 @@ const ConfigSchema = z.object({
   DEEPSEEK_ASSISTANT_MODEL: z.string().default('deepseek-v4-pro'),
   DEEPSEEK_PRECISE_MODEL: z.string().default('deepseek-v4-pro'),
   DEEPSEEK_CHEAP_MODEL: z.string().default('deepseek-flash'),
-  // A model that sees pictures (DeepSeek's text models don't). Unset = a turn with
-  // a photo goes to DEEPSEEK_FALLBACK instead; a PDF always does.
-  DEEPSEEK_VISION_MODEL: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+  // The model for a turn with a picture: V4.1 Flash is natively multimodal (Pro is
+  // text-only). `off` = photo turns go to DEEPSEEK_FALLBACK instead; a PDF always does.
+  DEEPSEEK_VISION_MODEL: z
+    .string()
+    .default('deepseek-flash')
+    .transform((v) => (['', 'off', 'none'].includes(v.trim().toLowerCase()) ? undefined : v.trim())),
   // Thinking on the dialogue/precise tiers (hidden passes never think).
   DEEPSEEK_THINKING: boolish.default(true),
   // Who answers what DeepSeek can't (photo/PDF turns) or when it is down:

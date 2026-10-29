@@ -984,7 +984,8 @@ Anthropic SDK. Splid behind a pluggable provider interface.
   tool_result on the next request (trailing results merge into the caller's own
   tool_result turn). What DeepSeek can't do goes to `DEEPSEEK_FALLBACK`
   (`resolveFallback`: auto = Claude if its key is set, else OpenAI): a PDF always, a
-  photo unless `DEEPSEEK_VISION_MODEL` is set, and any DeepSeek failure after the
+  photo only with `DEEPSEEK_VISION_MODEL=off` (default `deepseek-flash` — V4.1 Flash
+  is natively multimodal, Pro is text-only, so a photo turn runs on Flash), and any DeepSeek failure after the
   SDK's retries — except a `maxRetries: 0` call (the classifier fails open on its
   own). The fallback gets the caller's request with its CLAUDE ids, through
   `forFallback` (DeepSeek thinking dropped, emulated searches flattened to text);

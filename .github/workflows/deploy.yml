@@ -175,7 +175,7 @@ jobs:
               echo "OPENAI_CHEAP_EFFORT=$OPENAI_CHEAP_EFFORT" >> .env
             fi
             # Optional: run EVERY model call on DeepSeek (LLM_PROVIDER=deepseek,
-            # needs DEEPSEEK_API_KEY). Photos/PDFs and DeepSeek outages go to
+            # needs DEEPSEEK_API_KEY). Photos run on DeepSeek Flash; PDFs and outages go to
             # DEEPSEEK_FALLBACK (auto = Claude if ANTHROPIC_API_KEY, else OpenAI).
             # Each value is only written when set, so unset keeps the in-app defaults.
             for v in DEEPSEEK_API_KEY DEEPSEEK_ASSISTANT_MODEL DEEPSEEK_PRECISE_MODEL DEEPSEEK_CHEAP_MODEL DEEPSEEK_VISION_MODEL DEEPSEEK_THINKING DEEPSEEK_FALLBACK DEEPSEEK_SEARCH TRANSCRIBE_FALLBACK_MODEL; do

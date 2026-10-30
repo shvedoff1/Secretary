@@ -253,7 +253,7 @@ export const FoodItemZ = z.object({
 export type FoodItemInput = z.infer<typeof FoodItemZ>;
 
 export const LogFoodZ = z.object({
-  action: z.enum(['add', 'remove', 'set_goal', 'note', 'set_day_type']),
+  action: z.enum(['add', 'update', 'remove', 'set_goal', 'note', 'set_day_type']),
   items: z.array(FoodItemZ).max(30).nullable(),
   meal: z.enum(['breakfast', 'lunch', 'dinner', 'snack']).nullable(),
   date: z.string().regex(DATE_RE).nullable(),
@@ -919,6 +919,14 @@ export const ViewMediaZ = z.object({
 });
 export type ViewMediaInput = z.infer<typeof ViewMediaZ>;
 
+export const ViewFoodPhotoZ = z.object({ entryId: z.number().int().positive() });
+export type ViewFoodPhotoInput = z.infer<typeof ViewFoodPhotoZ>;
+export const viewFoodPhotoJsonSchema = {
+  type: 'object', additionalProperties: false,
+  properties: { entryId: { type: 'integer', description: 'The sender\'s food entry id from Food diary or food_report.' } },
+  required: ['entryId'],
+} as const;
+
 export const viewMediaJsonSchema = {
   type: 'object',
   additionalProperties: false,
@@ -946,7 +954,7 @@ const foodItemJsonSchema = {
     },
     kcal: {
       type: 'number',
-      description: 'Your best ESTIMATE of this portion\'s calories. If a nutrition label is visible, compute from its per-100g values × portion.',
+      description: 'Your best ESTIMATE of this portion\'s calories. If a nutrition label is visible, read the selected basis: per portion values are used directly; ONLY per-100g values are multiplied by portion grams / 100.',
     },
     protein: { type: ['number', 'null'], description: 'Protein, grams, estimated. null if you truly cannot estimate.' },
     fat: { type: ['number', 'null'], description: 'Fat, grams, estimated.' },
@@ -961,14 +969,14 @@ export const logFoodJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['add', 'remove', 'set_goal', 'note', 'set_day_type'],
+      enum: ['add', 'update', 'remove', 'set_goal', 'note', 'set_day_type'],
       description:
-        '"add" — log what the sender ate (items). "remove" — delete logged entries by id (entryIds from "Food diary" in the context block or a food_report index) OR by dish name (match), never ask the user for ids. To CORRECT an entry («картошка была сырая», «курицы было 150 г»), call remove for the old entry and add for the fixed one in the SAME turn, keeping its date and meal. "set_goal" — set the sender\'s daily targets (goal). "set_day_type" — mark a day as one of the sender\'s DAY TYPES (dayType, date): «сегодня тренировка», «вчера был день отдыха», «сделай обычным днём» (dayType null). "note" — a short comment on the DAY (`note`, `date`): «сегодня была тренировка», «вчера день рождения», «болел»; appended to the day\'s note unless noteReplace.',
+        '"add" — log what the sender ate (items). "remove" — delete logged entries by id (entryIds from "Food diary" in the context block or a food_report index) OR by dish name (match), never ask the user for ids. To CORRECT an entry («картошка была сырая», «курицы было 150 г»), use action update with exactly ONE entryIds id or ONE match name and ONE corrected item. The update preserves the existing id, date, meal and source photo atomically; do not remove and re-add. "set_goal" — set the sender\'s daily targets (goal). "set_day_type" — mark a day as one of the sender\'s DAY TYPES (dayType, date): «сегодня тренировка», «вчера был день отдыха», «сделай обычным днём» (dayType null). "note" — a short comment on the DAY (`note`, `date`): «сегодня была тренировка», «вчера день рождения», «болел»; appended to the day\'s note unless noteReplace.',
     },
     items: {
       type: ['array', 'null'],
       items: foodItemJsonSchema,
-      description: 'For add: one item per dish/product of this meal. null for other actions.',
+      description: 'For add: one item per dish/product. For update: exactly ONE corrected item, all nutrition fields for the whole portion. null otherwise.',
     },
     meal: {
       type: ['string', 'null'],
@@ -983,7 +991,7 @@ export const logFoodJsonSchema = {
       type: ['array', 'null'],
       items: { type: 'string' },
       description:
-        'For remove: dish names as the user calls them («шпроты», «картошка») — matched forgivingly against the diary of `date` (or today, then yesterday). Use when you have no id. An ambiguous or missing name removes nothing and returns the candidates with ids. null otherwise.',
+        'For remove or update: dish names as the user calls them («шпроты», «картошка») — matched forgivingly against the diary of `date` (or today, then yesterday). Use when you have no id. An ambiguous or missing name removes nothing and returns the candidates with ids. null otherwise.',
     },
     note: {
       type: ['string', 'null'],
@@ -1003,7 +1011,7 @@ export const logFoodJsonSchema = {
     entryIds: {
       type: ['array', 'null'],
       items: { type: 'integer' },
-      description: 'For remove: entry ids (#N) from the context block or an earlier confirmation. null otherwise.',
+      description: 'For remove or update: entry ids (#N) from the context block or an earlier confirmation. null otherwise.',
     },
     goal: {
       type: ['object', 'null'],

@@ -1,6 +1,8 @@
 name: build & deploy
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     # Diagnostics-only and docs changes shouldn't rebuild/redeploy the bot.

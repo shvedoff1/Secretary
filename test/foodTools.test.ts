@@ -28,6 +28,7 @@ const tool = (name: string, input: Record<string, unknown>) => ({
 });
 
 const logFood = vi.fn(() => ({
+  write: { status: 'saved' as const, message: 'Записал еду в дневник.' },
   text: 'Записал: #1 Банан — 105 ккал. За сегодня всего: 105 ккал.',
   card: '| | ккал |\n|:--|--:|\n| · Банан | 105 |',
 }));
@@ -65,6 +66,71 @@ beforeEach(() => {
   createMock.mockClear();
   logFood.mockClear();
   responses = [];
+});
+
+const bananaInput = {
+  action: 'add', items: [{ name: 'Банан', grams: 120, kcal: 105, protein: 1, fat: 0, carbs: 27 }],
+  meal: null, date: null, entryIds: null, goal: null,
+};
+
+describe('write confirmations require execution', () => {
+  it('does not replay a meal when asked why a past confirmation was false', async () => {
+    responses = [text('Записал.')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(ctx({ userContent: 'Почему ты сказал, что записал банан?' }), handlers);
+    expect(logFood).not.toHaveBeenCalled();
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+  it('retries a fabricated confirmation and actually writes once', async () => {
+    responses = [text('Записал.'), tool('log_food', bananaInput), text('Готово.')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const result = await runAssistant(ctx(), handlers);
+    expect(logFood).toHaveBeenCalledTimes(1);
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ text: 'Записал еду в дневник.', humorizable: false });
+  });
+
+  it('blocks repeated empty confirmations, including a report presented as a write', async () => {
+    responses = [tool('food_report', { fromDate: null, toDate: null }), text('Поправил.'), text('Готово.')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const result = await runAssistant(ctx(), handlers);
+    expect(logFood).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ text: expect.stringContaining('Дневник не изменён'), humorizable: false });
+  });
+
+  it('cannot reinterpret an unchanged/failed result as success', async () => {
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    for (const status of ['unchanged', 'failed'] as const) {
+      const message = status === 'unchanged' ? 'Значения уже совпадают — дневник не изменился.' : 'Не изменил дневник: запись не найдена.';
+      logFood.mockReturnValueOnce({ text: message, card: null, write: { status, message } } as never);
+      responses = [tool('log_food', { ...bananaInput, action: 'update', entryIds: [1] }), text('Исправил.')];
+      expect(await runAssistant(ctx(), handlers)).toMatchObject({ text: message, humorizable: false });
+    }
+  });
+
+  it('blocks a successful-looking reply after invalid input or database failure', async () => {
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    responses = [tool('log_food', { action: 'add' }), text('Записал.')];
+    const invalid = await runAssistant(ctx(), handlers);
+    expect(logFood).not.toHaveBeenCalled();
+    expect(invalid).toMatchObject({ text: expect.stringContaining('Не удалось подтвердить') });
+    logFood.mockImplementationOnce(() => { throw new Error('database unavailable'); });
+    responses = [tool('log_food', bananaInput), text('Готово.')];
+    expect(await runAssistant(ctx(), handlers)).toMatchObject({ text: expect.stringContaining('Не удалось подтвердить') });
+  });
+
+  it('opens an old photo before update and forwards its image through the tool loop', async () => {
+    const viewFoodPhoto = vi.fn(async () => [{ type: 'image', source: {
+      type: 'base64', media_type: 'image/jpeg', data: 'abc',
+    } }]);
+    responses = [tool('view_food_photo', { entryId: 1 }),
+      tool('log_food', { ...bananaInput, action: 'update', entryIds: [1] }), text('Готово.')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    await runAssistant(ctx({ userContent: 'перечитай фото и исправь' }), { ...handlers, viewFoodPhoto } as never);
+    expect(viewFoodPhoto).toHaveBeenCalledWith({ entryId: 1 });
+    expect(logFood).toHaveBeenCalledWith(expect.objectContaining({ action: 'update' }));
+    expect(toolNames()).toContain('view_food_photo');
+  });
 });
 
 describe('food tool exposure', () => {
@@ -123,7 +189,7 @@ describe('food dispatch and context', () => {
     // tone passes), never inside the model's own words.
     expect(res).toMatchObject({
       kind: 'text',
-      text: 'Записал банан, 105 ккал.',
+      text: 'Записал еду в дневник.',
       humorizable: false,
       card: '| | ккал |\n|:--|--:|\n| · Банан | 105 |',
     });
@@ -132,7 +198,8 @@ describe('food dispatch and context', () => {
   });
 
   it('carries the day-type button request out with the card', async () => {
-    logFood.mockImplementationOnce(() => ({ text: 'ok', card: '|t|', dayTypePick: '2026-10-20' }) as never);
+    logFood.mockImplementationOnce(() => ({ text: 'ok', card: '|t|', dayTypePick: '2026-10-20',
+      write: { status: 'saved', message: 'Записал еду в дневник.' } }) as never);
     responses = [
       tool('log_food', {
         action: 'add',

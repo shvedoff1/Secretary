@@ -350,7 +350,7 @@ export function renderPeriod(
 
 /** One entry the way the MODEL sees it: id handle + name + kcal (+ date when asked). */
 export function entryRef(e: FoodEntry, withDate = false): string {
-  return `#${e.id} ${e.name} ${fmtNum(e.kcal)}${withDate ? ` (${e.localDate})` : ''}`;
+  return `#${e.id} ${e.name} ${fmtNum(e.kcal)}${withDate ? ` (${e.localDate})` : ''}${e.source ? ' [фото: view_food_photo по entryId]' : ''}`;
 }
 
 /**

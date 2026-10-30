@@ -73,6 +73,7 @@ describe('photos are looked at, not gated on Splid', () => {
     expect(blocks[0]!.type).toBe('image');
     expect(blocks[1]).toEqual({ type: 'text', text: 'что тут написано?' });
     expect(call.addressed).toBe(true);
+    expect(call.foodPhotoSource).toEqual({ fileId: 'big', mediaType: 'image/jpeg' });
   });
 
   it('never answers a photo with the Splid connect nag', async () => {

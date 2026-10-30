@@ -19,6 +19,7 @@ import {
   spendingReportJsonSchema,
   summarizeChatJsonSchema,
   viewMediaJsonSchema,
+  viewFoodPhotoJsonSchema,
   calendarEventsJsonSchema,
   setTimezoneJsonSchema,
   logFoodJsonSchema,
@@ -44,6 +45,7 @@ export const ADD_POI_TOOL = 'add_poi';
 export const SPENDING_REPORT_TOOL = 'spending_report';
 export const SUMMARIZE_CHAT_TOOL = 'summarize_chat';
 export const VIEW_MEDIA_TOOL = 'view_media';
+export const VIEW_FOOD_PHOTO_TOOL = 'view_food_photo';
 export const CALENDAR_EVENTS_TOOL = 'calendar_events';
 export const SET_TIMEZONE_TOOL = 'set_timezone';
 export const LOG_FOOD_TOOL = 'log_food';
@@ -129,6 +131,7 @@ export interface ToolOptions {
    *  ENABLE_FOOD is off, in tutor chats, on the expense-only scan, and for
    *  scheduled/inline runs (state writes). */
   enableFoodLog?: boolean;
+  enableFoodPhoto?: boolean;
   /** Expose the food_report tool (read the diary back). Read-only, so it stays on
    *  for scheduled runs — «каждый вечер присылай итог по калориям». */
   enableFoodReport?: boolean;
@@ -326,8 +329,16 @@ export function buildTools(opts: ToolOptions): Anthropic.ToolUnion[] {
     tools.push({
       name: LOG_FOOD_TOOL,
       description:
-        "The SENDER's personal calorie diary. action 'add' — log what the sender ATE or is eating right now, told in words, by voice or shown as a PHOTO of a plate/package/nutrition label («съел две сосиски с пюре», «на обед борщ и хлеб», a food photo): one call per meal, one item per dish, each with YOUR estimate of grams, kcal and БЖУ (typical portion when unstated; a visible label's per-100g values × portion). Ask ONE short clarifying question first only when an unknown detail would move the total by roughly a third or more (portion of a calorie-dense dish, oil/mayo/sugar, an unfamiliar restaurant dish) — offer your default in the question so «да» is enough; otherwise log right away and state your assumption. 'remove' — delete entries by id (#N from \"Food diary\" in the context block); to fix an entry remove it and add the corrected one in the same turn. 'set_goal' — daily targets («моя норма 1800 ккал»). 'set_day_type' — mark a day as one of the sender's DAY TYPES (each type has its own КБЖУ goal: «сегодня тренировка», «вчера был отдых»); set_goal with dayType creates/updates a type («в дни тренировок 2600 ккал, белка 180»). 'note' — a short comment on a DAY («сегодня была тренировка», «вчера был ДР»), shown with that day's numbers. NOT for food someone merely wants, plans or talks about, not for another person's meal, and NOT for a purchase to split (that's record_expense). The bot shows the day's table (meals, kcal, БЖУ, goal) under your reply automatically — reply in one short line, never repeat the numbers or show #ids.",
+        "The SENDER's personal calorie diary. action 'add' — log what the sender ATE or is eating right now, told in words, by voice or shown as a PHOTO of a plate/package/nutrition label («съел две сосиски с пюре», «на обед борщ и хлеб», a food photo): one call per meal, one item per dish, each with YOUR estimate of grams, kcal and БЖУ (typical portion when unstated; a visible label: use selected per-portion values directly; scale ONLY per-100g values by portion grams / 100). Ask ONE short clarifying question first only when an unknown detail would move the total by roughly a third or more (portion of a calorie-dense dish, oil/mayo/sugar, an unfamiliar restaurant dish) — offer your default in the question so «да» is enough; otherwise log right away and state your assumption. 'remove' — delete entries by id (#N from \"Food diary\" in the context block); to fix an entry use action 'update' with ONE id or match and ONE corrected item (atomic, preserves date/meal/photo). Reopen its source first with view_food_photo when asked to recheck a label. 'set_goal' — daily targets («моя норма 1800 ккал»). 'set_day_type' — mark a day as one of the sender's DAY TYPES (each type has its own КБЖУ goal: «сегодня тренировка», «вчера был отдых»); set_goal with dayType creates/updates a type («в дни тренировок 2600 ккал, белка 180»). 'note' — a short comment on a DAY («сегодня была тренировка», «вчера был ДР»), shown with that day's numbers. NOT for food someone merely wants, plans or talks about, not for another person's meal, and NOT for a purchase to split (that's record_expense). Never confirm a write without a successful tool result in this turn. The bot shows the day's table (meals, kcal, БЖУ, goal) under your reply automatically — reply in one short line, never repeat the numbers or show #ids.",
       input_schema: logFoodJsonSchema as unknown as Anthropic.Tool.InputSchema,
+    });
+  }
+
+  if (opts.enableFoodPhoto) {
+    tools.push({
+      name: VIEW_FOOD_PHOTO_TOOL,
+      description: 'Reopen the original PHOTO of one entry in the SENDER\'s calorie diary by entryId. When asked to reread a label, recheck calories, or correct a photo-based entry, open its source first; read whether the selected values are per 100 g or per portion. This is read-only, not a new meal. If the entry is not in context, use food_report to find it. Do not claim old photos cannot be reread without trying this tool. If no source is stored, a direct reply to the original photo also reopens it.',
+      input_schema: viewFoodPhotoJsonSchema as unknown as Anthropic.Tool.InputSchema,
     });
   }
 

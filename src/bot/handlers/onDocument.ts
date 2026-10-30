@@ -193,6 +193,9 @@ export async function runFileTurn(
     userContent: blocks,
     addressed: true,
     source: 'file',
+    ...(file.kind === 'image' ? { foodPhotoSource: {
+      fileId: file.fileId, mediaType: imageMediaType(file.mimeType, file.fileName),
+    } } : {}),
     historyText: instruction
       ? `[файл: ${file.fileName}] ${instruction}`
       : `[файл: ${file.fileName}]`,

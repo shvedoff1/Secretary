@@ -29,6 +29,7 @@ import {
   SPENDING_REPORT_TOOL,
   SUMMARIZE_CHAT_TOOL,
   VIEW_MEDIA_TOOL,
+  VIEW_FOOD_PHOTO_TOOL,
   CALENDAR_EVENTS_TOOL,
   SET_TIMEZONE_TOOL,
   LOG_FOOD_TOOL,
@@ -54,6 +55,7 @@ import {
   SpendingReportZ,
   SummarizeChatZ,
   ViewMediaZ,
+  ViewFoodPhotoZ,
   CalendarEventsZ,
   SetTimezoneZ,
   LogFoodZ,
@@ -78,6 +80,7 @@ import {
   type SpendingReportInput,
   type SummarizeChatInput,
   type ViewMediaInput,
+  type ViewFoodPhotoInput,
   type CalendarEventsInput,
   type SetTimezoneInput,
   type LogFoodInput,
@@ -86,6 +89,7 @@ import {
 import type { Turn } from '../db/repos/conversation.repo.js';
 import { flightFeedConfigured } from '../flight/feed.js';
 import type { FoodToolResult } from '../food/handler.js';
+import { claimsCompletedWrite, requestsDiaryWrite, foodReceiptText, type FoodWriteReceipt } from '../food/writeReceipt.js';
 
 export interface AssistantContext {
   /**
@@ -277,6 +281,7 @@ export interface AssistantHandlers {
   setTimezone: (input: SetTimezoneInput) => string;
   /** Calorie diary write (add / remove / set_goal): model text + the day table card. */
   logFood: (input: LogFoodInput) => FoodToolResult;
+  viewFoodPhoto?: (input: ViewFoodPhotoInput) => Promise<Anthropic.ToolResultBlockParam['content']>;
   /** Calorie diary read-back (a day in full or a period): model text + the table card. */
   foodReport: (input: FoodReportInput) => FoodToolResult;
 }
@@ -432,6 +437,7 @@ export async function runAssistant(
     // recurring «вечером присылай итог по калориям».
     enableFoodLog:
       !expenseOnly && !tutor && cfg.ENABLE_FOOD && ctx.foodAvailable !== false && ctx.allowFoodLog !== false,
+    enableFoodPhoto: !expenseOnly && !tutor && cfg.ENABLE_FOOD && ctx.foodAvailable !== false && !!handlers.viewFoodPhoto,
     enableFoodReport: !expenseOnly && !tutor && cfg.ENABLE_FOOD && ctx.foodAvailable !== false,
   });
 
@@ -501,6 +507,14 @@ export async function runAssistant(
   // The diary table to show under the reply (see AssistantResult.card).
   let card: string | undefined;
   let dayTypePick: string | undefined;
+  const foodWrites: FoodWriteReceipt[] = [];
+  let retriedMissingWrite = false;
+  let otherWriteAttempted = false;
+  const foodLoggingEnabled = tools.some((t) => t.name === LOG_FOOD_TOOL);
+  const currentText = typeof ctx.userContent === 'string' ? ctx.userContent
+    : ctx.userContent.filter((b): b is Anthropic.TextBlockParam => b.type === 'text').map((b) => b.text).join('\n');
+  const retryFoodWrite = requestsDiaryWrite(currentText,
+    Array.isArray(ctx.userContent) && ctx.userContent.some((b) => b.type === 'image'));
 
   // Normalise stored history into a valid alternating prefix (first turn user, no
   // two same-role turns in a row) before appending the current user message —
@@ -636,6 +650,11 @@ export async function runAssistant(
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of res.content) {
         if (block.type !== 'tool_use') continue;
+        if ([REMEMBER_TOOL, EDIT_MEMORY_TOOL, LEARN_EXPENSE_TOOL, EDIT_LEXICON_TOOL,
+          SET_RULE_TOOL, EDIT_PING_LIST_TOOL, SCHEDULE_TASK_TOOL, MANAGE_TASK_TOOL,
+          WATCH_PAGE_TOOL, WATCH_FLIGHT_TOOL, SET_TIMEZONE_TOOL, ADD_POI_TOOL].includes(block.name)) {
+          otherWriteAttempted = true;
+        }
         if (block.name === REMEMBER_TOOL) {
           const parsed = RememberZ.safeParse(block.input);
           const confirmation = parsed.success
@@ -893,12 +912,29 @@ export async function runAssistant(
             content: found,
             is_error: !parsed.success,
           });
+        } else if (block.name === VIEW_FOOD_PHOTO_TOOL) {
+          const parsed = ViewFoodPhotoZ.safeParse(block.input);
+          const content = parsed.success && handlers.viewFoodPhoto
+            ? await handlers.viewFoodPhoto(parsed.data)
+            : 'Не удалось открыть фото записи: неверный id или инструмент недоступен.';
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content,
+            is_error: !parsed.success || !handlers.viewFoodPhoto });
         } else if (block.name === LOG_FOOD_TOOL) {
           const parsed = LogFoodZ.safeParse(block.input);
           if (!parsed.success) {
             logger.warn({ err: parsed.error }, 'log_food input failed validation');
           }
-          const out = parsed.success ? handlers.logFood(parsed.data) : null;
+          let out: FoodToolResult | null = null;
+          try {
+            out = parsed.success ? handlers.logFood(parsed.data) : null;
+          } catch (err) {
+            logger.error({ err }, 'food write failed');
+          }
+          const receipt = out?.write ?? {
+            status: 'failed' as const,
+            message: 'Не удалось подтвердить сохранение в дневнике. Проверь дневник перед повторной записью.',
+          };
+          foodWrites.push(receipt);
           if (out?.card) card = out.card;
           if (out?.dayTypePick) dayTypePick = out.dayTypePick;
           const confirmation = out ? out.text : 'Could not parse the food entry.';
@@ -906,7 +942,7 @@ export async function runAssistant(
             type: 'tool_result',
             tool_use_id: block.id,
             content: confirmation,
-            is_error: !parsed.success,
+            is_error: !parsed.success || receipt.status === 'failed',
           });
         } else if (block.name === FOOD_REPORT_TOOL) {
           const parsed = FoodReportZ.safeParse(block.input);
@@ -963,15 +999,27 @@ export async function runAssistant(
       .map((b) => b.text)
       .join('')
       .trim();
+    if (foodLoggingEnabled && foodWrites.length === 0 && !otherWriteAttempted && claimsCompletedWrite(text)) {
+      if (retryFoodWrite && !retriedMissingWrite && i + 1 < MAX_ITERATIONS) {
+        retriedMissingWrite = true;
+        logger.warn('blocked confirmation without a diary write; retrying');
+        messages.push({ role: 'assistant', content: res.content });
+        messages.push({ role: 'user', content: [{ type: 'text', text:
+          '[Проверка выполнения] Ты подтвердил запись/исправление, но в этом ходе нет успешного log_food. Дневник не изменён. Выполни требуемую запись инструментом (update для правки), если данных достаточно. Если нужно перечитать фото, вызови view_food_photo. Иначе объясни, что не выполнено, и уточни недостающие данные. Не повторяй подтверждение без результата инструмента.' }] });
+        continue;
+      }
+      return { kind: 'text', text: 'Дневник не изменён: запись не была выполнена. Попробуй уточнить, что нужно записать или исправить.', humorizable: false, toned: true };
+    }
     // Tutor answers are never humorizable: precision is the whole point of the
     // mode, so the OpenAI tone pass must not touch them (this also covers the
     // scheduler path, which trusts this flag).
     return {
       kind: 'text',
       // With a card attached an empty reply is fine — the table says it all.
-      text: text || (card ? '' : '…'),
+      text: foodWrites.length ? foodReceiptText(foodWrites) : (text || (card ? '' : '…')),
       scheduled,
       humorizable: !usedTool && !tutor,
+      ...(foodWrites.length ? { toned: true } : {}),
       ...(card ? { card } : {}),
       ...(dayTypePick && card ? { dayTypePick } : {}),
     };
@@ -979,8 +1027,9 @@ export async function runAssistant(
 
   return {
     kind: 'text',
-    text: 'Что-то пошло не так, попробуй ещё раз.',
+    text: foodWrites.length ? foodReceiptText(foodWrites) : 'Что-то пошло не так, попробуй ещё раз.',
     scheduled,
+    ...(foodWrites.length ? { humorizable: false, toned: true } : {}),
     ...(card ? { card } : {}),
   };
 }

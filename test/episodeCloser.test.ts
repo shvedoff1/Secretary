@@ -6,6 +6,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const summarizeEpisodeMock = vi.hoisted(() => vi.fn());
 vi.mock('../src/llm/episode.js', () => ({ summarizeEpisode: summarizeEpisodeMock }));
+// Profile refresh has its own integration tests. Do not make real model calls
+// from the episode-close tests when profiles are enabled by default.
+vi.mock('../src/episodes/profileRefresh.js', () => ({
+  refreshProfilesForChat: vi.fn(async () => {}),
+}));
 
 const MIN = 60_000;
 const QUIET = 45 * MIN; // EPISODE_QUIET_MINUTES default

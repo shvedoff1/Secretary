@@ -135,6 +135,7 @@ export async function handlePhotoTurn(
     userContent: blocks,
     addressed,
     source: 'photo',
+    foodPhotoSource: { fileId: largest.file_id, mediaType: 'image/jpeg' },
     historyText: caption ? `[фото] ${caption}` : '[фото]',
     // A photo with an addressed caption is a real ask too — consume the pack.
     includeForwardBatch: true,

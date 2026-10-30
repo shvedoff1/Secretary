@@ -1,5 +1,7 @@
 import { InlineKeyboard } from 'grammy';
 import { listDayTypes } from '../../db/repos/food.repo.js';
+import type { FoodPhotoSource } from '../../db/repos/food.repo.js';
+import { makeFoodPhotoHandler } from '../../food/photo.js';
 import { dayTypeKeyboard } from '../../food/dayTypeKeyboard.js';
 import { foodAllowedIn, isPrivateChat, splidActiveIn } from '../../core/chatScope.js';
 import {
@@ -841,6 +843,8 @@ interface RunArgs {
   source: PendingSource;
   /** Plain text used for conversation history (e.g. caption or message text). */
   historyText: string;
+  /** Actual attachment seen this turn, supplied by Telegram handlers only. */
+  foodPhotoSource?: FoodPhotoSource;
   /**
    * Manage the "thinking" reaction (👀 set while working, cleared when done).
    * Defaults to true. Callers that own the message reaction themselves (the
@@ -1119,6 +1123,14 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
   // stored (it would blow the small history window) — the reply carries the gist.
   const batchTag = batch.entries.length > 0 ? `[+пачка из ${batch.entries.length} пересланных] ` : '';
   const historyText = `${batchTag}${origin ? `[переслано] ` : ''}${args.historyText}`;
+  // Attach a source only when the image is unambiguous. A multi-photo batch
+  // must not silently assign the same unrelated photo to every food entry.
+  const attachedPhotos = batch.entries.flatMap((entry, index) =>
+    entry.image && typeof batchImages.states.get(index) === 'object' ? [entry.image] : []);
+  const imageCount = typeof userContent === 'string' ? 0 : userContent.filter((b) => b.type === 'image').length;
+  const foodPhotoSource = imageCount === 1
+    ? (args.foodPhotoSource ?? (attachedPhotos.length === 1 ? attachedPhotos[0] : undefined))
+    : undefined;
 
   let result: AssistantResult;
   try {
@@ -1227,7 +1239,8 @@ async function runAndRespondInner(ctx: Context, args: RunArgs): Promise<RespondO
         }),
         viewMedia: makeViewMediaHandler(chatId, ctx.api, { canRead: crossChatAccess(ctx)?.canRead }),
         calendarEvents: makeCalendarEventsHandler(chatId),
-        logFood: makeLogFoodHandler(chatId, tgUserId),
+        logFood: makeLogFoodHandler(chatId, tgUserId, Date.now, foodPhotoSource),
+        viewFoodPhoto: makeFoodPhotoHandler(chatId, tgUserId, ctx.api),
         foodReport: makeFoodReportHandler(chatId, tgUserId),
       },
     );

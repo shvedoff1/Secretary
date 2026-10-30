@@ -247,7 +247,7 @@ describe('editing without ids (regression: «мне не видно номера
     ...over,
   });
 
-  it('removes by dish name, falling back to yesterday, and asks for the corrected re-add', async () => {
+  it('removes by dish name, falling back to yesterday, and directs corrections to update', async () => {
     const { food, repo } = await load();
     const log = food.makeLogFoodHandler(-100, 7, afterMidnight);
     log(add([item('Картофель жареный', 450), item('Масло подсолнечное', 180)], { date: '2026-10-01', meal: 'dinner' }));
@@ -256,7 +256,7 @@ describe('editing without ids (regression: «мне не видно номера
     expect(out.text).toContain('Удалил: #');
     expect(out.text).toContain('Картофель жареный');
     expect(out.text).toContain('2026-10-01, dinner');
-    expect(out.text).toContain('теперь добавь исправленную позицию');
+    expect(out.text).toContain('action update');
     expect(repo.listFoodEntries(-100, 7, '2026-10-01', '2026-10-01').map((e) => e.name)).toEqual([
       'Масло подсолнечное',
     ]);

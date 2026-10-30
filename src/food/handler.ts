@@ -5,6 +5,9 @@ import { loadConfig } from '../config.js';
 import { getTimezone } from '../db/repos/chatSettings.repo.js';
 import {
   addFoodEntries,
+  getFoodEntry,
+  updateFoodEntry,
+  type FoodPhotoSource,
   clearFoodGoal,
   getFoodGoal,
   listFoodEntries,
@@ -79,6 +82,8 @@ function r1(n: number | null): number | null {
 export interface FoodToolResult {
   text: string;
   card: string | null;
+  /** Server-owned receipt; model prose is never evidence of a successful write. */
+  write?: { status: 'saved' | 'unchanged' | 'failed'; message: string };
   /**
    * Ask which TYPE this day is: set on the first entry of a day that has no type
    * yet, when the person has day types. The caller attaches the type buttons to
@@ -128,6 +133,7 @@ export function makeLogFoodHandler(
   chatId: number,
   tgUserId: number,
   nowFn: () => number = Date.now,
+  source?: FoodPhotoSource,
 ): (input: LogFoodInput) => FoodToolResult {
   return (input) => {
     const tz = foodTimezone(chatId);
@@ -135,12 +141,48 @@ export function makeLogFoodHandler(
     const today = localToday(tz, now);
     const dayCard = (date: string) => renderFoodReport(chatId, tgUserId, date, date, today);
 
+    if (input.action === 'update') {
+      const fail = (message: string): FoodToolResult => ({
+        text: message, card: null, write: { status: 'failed', message },
+      });
+      // Exactly one target and one replacement: ambiguity must never touch data.
+      if ((input.items?.length ?? 0) !== 1 ||
+          (input.entryIds?.length ?? 0) + (input.match?.length ?? 0) !== 1) {
+        return fail('Не изменил дневник: для правки нужны одна запись и одна исправленная позиция.');
+      }
+      let entry: FoodEntry | null = null;
+      if (input.entryIds?.length) entry = getFoodEntry(chatId, tgUserId, input.entryIds[0]!);
+      else {
+        const found = matchEntries(chatId, tgUserId, input.match![0]!, input.date, today);
+        if (found.status === 'one') entry = found.entry;
+        else return fail(found.status === 'many'
+          ? `Не изменил дневник: подходит несколько записей. Уточни позицию: ${found.entries.map((e) => entryRef(e, true)).join('; ')}`
+          : 'Не изменил дневник: запись не найдена.');
+      }
+      if (!entry) return fail('Не изменил дневник: запись не найдена в дневнике этого человека.');
+      const it = input.items![0]!;
+      const replacement = {
+        name: it.name.trim(), grams: r1(it.grams), kcal: Math.round(it.kcal),
+        protein: r1(it.protein), fat: r1(it.fat), carbs: r1(it.carbs),
+      };
+      const same = Object.entries(replacement).every(([key, value]) => entry![key as keyof FoodEntry] === value);
+      const saved = updateFoodEntry(chatId, tgUserId, entry.id, replacement, source);
+      if (!saved) return fail('Не изменил дневник: запись больше не существует.');
+      const message = same ? 'Значения уже совпадают — дневник не изменился.' : 'Исправил запись в дневнике.';
+      return {
+        text: `${message} Сохранено: ${entryRef(saved, true)}.${MODEL_NOTE}`,
+        card: dayCard(saved.localDate),
+        write: { status: same ? 'unchanged' : 'saved', message },
+      };
+    }
+
     if (input.action === 'set_goal') {
       const g = input.goal;
       if (!g) {
         return {
           text: 'Не передана цель (goal) — спроси у пользователя дневную норму в ккал.',
           card: null,
+          write: { status: 'failed', message: 'Не изменил цель: нужна дневная норма калорий.' },
         };
       }
       // A NAMED goal is a day type («на тренировочные дни 2600») — created or
@@ -148,9 +190,11 @@ export function makeLogFoodHandler(
       const typeName = input.dayType?.trim();
       if (typeName && g.kcal <= 0) {
         const t = findDayType(chatId, tgUserId, typeName);
-        if (!t) return { text: `Типа дня «${typeName}» нет — нечего удалять.`, card: null };
+        if (!t) return { text: `Типа дня «${typeName}» нет — нечего удалять.`, card: null,
+          write: { status: 'unchanged', message: 'Такого типа дня нет — ничего не изменил.' } };
         deleteDayType(chatId, tgUserId, t.id);
-        return { text: `Тип дня «${t.name}» удалён; его дни считаются по обычной цели.`, card: null };
+        return { text: `Тип дня «${t.name}» удалён; его дни считаются по обычной цели.`, card: null,
+          write: { status: 'saved', message: 'Удалил тип дня.' } };
       }
       if (typeName && g.kcal > 0) {
         const res = upsertDayType(chatId, tgUserId, typeName, {
@@ -163,6 +207,7 @@ export function makeLogFoodHandler(
           return {
             text: `Типов дней уже ${res.max} — это максимум. Пусть удалит лишний: /food type del <название>.`,
             card: null,
+            write: { status: 'failed', message: `Не создал тип дня: достигнут лимит ${res.max}.` },
           };
         }
         return {
@@ -173,11 +218,13 @@ export function makeLogFoodHandler(
             'В первой записи каждого дня бот спросит кнопками, какой сегодня день; сменить — словами («сегодня отдых») или /food day. ' +
             'Ответь одной короткой строкой.',
           card: null,
+          write: { status: 'saved', message: 'Сохранил нормы для типа дня.' },
         };
       }
       if (g.kcal <= 0) {
         const had = clearFoodGoal(chatId, tgUserId);
-        return { text: had ? 'Цель по калориям снята.' : 'Цели по калориям и так не было.', card: null };
+        return { text: had ? 'Цель по калориям снята.' : 'Цели по калориям и так не было.', card: null,
+          write: { status: had ? 'saved' : 'unchanged', message: had ? 'Снял цель по калориям.' : 'Цели по калориям и так не было.' } };
       }
       setFoodGoal(chatId, tgUserId, {
         kcal: Math.round(g.kcal),
@@ -195,6 +242,7 @@ export function makeLogFoodHandler(
           `Цель записана: ${fmtNum(g.kcal)} ккал в день${macros.length ? ` (${macros.join(' · ')} г)` : ''}.` +
           MODEL_NOTE,
         card: dayCard(today),
+        write: { status: 'saved', message: 'Сохранил цель по калориям.' },
       };
     }
 
@@ -207,6 +255,7 @@ export function makeLogFoodHandler(
         return {
           text: `День ${date} — без типа, считаю по обычной цели.` + MODEL_NOTE,
           card: dayCard(date),
+          write: { status: 'saved', message: 'Сохранил обычный тип дня.' },
         };
       }
       const t = findDayType(chatId, tgUserId, raw);
@@ -216,12 +265,14 @@ export function makeLogFoodHandler(
             ? `Типа «${raw}» нет (или подходит несколько). Есть: ${types.map((x) => x.name).join(', ')}. Уточни у пользователя.`
             : `Типов дней пока нет. Создать: log_food set_goal с dayType (например «тренировка», 2600 ккал) — спроси нормы.`,
           card: null,
+          write: { status: 'failed', message: 'Не изменил тип дня: название не найдено или неоднозначно.' },
         };
       }
       setDayKind(chatId, tgUserId, date, t.id);
       return {
         text: `${date === today ? 'Сегодня' : date} — «${t.name}», цель ${fmtNum(t.kcal)} ккал.` + MODEL_NOTE,
         card: dayCard(date),
+        write: { status: 'saved', message: 'Сохранил тип дня.' },
       };
     }
 
@@ -236,6 +287,7 @@ export function makeLogFoodHandler(
         return {
           text: existing ? `Заметку за ${date} убрал.` : `Заметки за ${date} и так не было.`,
           card: dayCard(date),
+          write: { status: existing ? 'saved' : 'unchanged', message: existing ? 'Удалил заметку дня.' : 'Заметки дня и так не было.' },
         };
       }
       const merged = mergeDayNote(existing, raw, input.noteReplace === true);
@@ -246,6 +298,7 @@ export function makeLogFoodHandler(
           (merged.cut ? ` (Обрезал до ${DAY_NOTE_MAX} символов — скажи пользователю.)` : '') +
           ' Она уже видна в таблице дня под твоим ответом — ответь одной короткой строкой.',
         card: dayCard(date),
+        write: { status: merged.text === existing ? 'unchanged' : 'saved', message: merged.text === existing ? 'Заметка уже совпадает — ничего не изменил.' : 'Сохранил заметку дня.' },
       };
     }
 
@@ -274,6 +327,7 @@ export function makeLogFoodHandler(
         return {
           text: notes.length ? notes.join(' ') : 'Не указано, что убрать (entryIds или match).',
           card: null,
+          write: { status: 'failed', message: 'Не удалил запись: позиция не найдена или требует уточнения.' },
         };
       }
       const removed = removeFoodEntries(chatId, tgUserId, [...new Set(ids)]);
@@ -283,6 +337,7 @@ export function makeLogFoodHandler(
             `Записей ${ids.map((i) => `#${i}`).join(', ')} в дневнике этого человека нет — ничего не удалил. ` +
             notes.join(' '),
           card: null,
+          write: { status: 'failed', message: 'Не удалил запись: её нет в дневнике этого человека.' },
         };
       }
       const dates = [...new Set(removed.map((e) => e.localDate))];
@@ -292,11 +347,12 @@ export function makeLogFoodHandler(
         return `${d === today ? 'сегодня' : d}: ${kcalHeadline(t.kcal, goal)}, ${macrosLine(t, goal)}`;
       });
       return {
+        write: { status: 'saved', message: notes.length ? 'Удалил найденные записи; часть позиций требует уточнения.' : 'Удалил запись из дневника.' },
         text:
           `Удалил: ${removed.map((e) => `${itemLine(e)} [${e.localDate}${e.meal ? `, ${e.meal}` : ''}]`).join('; ')}. ` +
           `Итого ${totals.join('; ')}.` +
           (notes.length ? ` ${notes.join(' ')}` : '') +
-          ' Если это была правка — теперь добавь исправленную позицию (action add) с той же датой и приёмом пищи.' +
+          ' Для правок питания используй action update вместо удаления и повторного добавления.' +
           MODEL_NOTE,
         // The newest affected day is the one the user is looking at.
         card: dayCard(dates[dates.length - 1]!),
@@ -304,7 +360,10 @@ export function makeLogFoodHandler(
     }
 
     const items = input.items ?? [];
-    if (items.length === 0) return { text: 'Нечего записывать: items пуст.', card: null };
+    if (items.length === 0) return {
+      text: 'Нечего записывать: items пуст.', card: null,
+      write: { status: 'failed', message: 'Не записал еду: не переданы позиции.' },
+    };
     // A date in the future is a misread (or a timezone slip) — clamp to today
     // rather than logging tomorrow's dinner.
     const date = input.date && input.date <= today ? input.date : today;
@@ -318,6 +377,7 @@ export function makeLogFoodHandler(
     const askType =
       firstOfDay && getDayKind(chatId, tgUserId, date) === null && listDayTypes(chatId, tgUserId).length > 0;
     const added = addFoodEntries({
+      source,
       chatId,
       tgUserId,
       localDate: date,
@@ -336,6 +396,7 @@ export function makeLogFoodHandler(
     const day = sumEntries(listFoodEntries(chatId, tgUserId, date, date));
     const goal = goalForDay(chatId, tgUserId, date);
     return {
+      write: { status: 'saved', message: 'Записал еду в дневник.' },
       ...(askType ? { dayTypePick: date } : {}),
       text:
         `Записал (${date === today ? 'сегодня' : date}${meal ? `, ${MEAL_LABELS[meal].toLowerCase()}` : ''}): ` +

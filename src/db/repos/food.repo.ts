@@ -8,6 +8,11 @@ import { getDb } from '../client.js';
  */
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
+export interface FoodPhotoSource {
+  fileId: string;
+  mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+}
+
 export interface FoodEntry {
   id: number;
   chatId: number;
@@ -21,6 +26,7 @@ export interface FoodEntry {
   fat: number | null;
   carbs: number | null;
   createdAt: number;
+  source?: FoodPhotoSource;
 }
 
 export interface FoodGoal {
@@ -43,6 +49,8 @@ interface EntryRow {
   fat: number | null;
   carbs: number | null;
   created_at: number;
+  source_file_id: string | null;
+  source_media_type: FoodPhotoSource['mediaType'] | null;
 }
 
 const MEALS = new Set<string>(['breakfast', 'lunch', 'dinner', 'snack']);
@@ -61,11 +69,14 @@ function rowToEntry(r: EntryRow): FoodEntry {
     fat: r.fat,
     carbs: r.carbs,
     createdAt: r.created_at,
+    ...(r.source_file_id && r.source_media_type
+      ? { source: { fileId: r.source_file_id, mediaType: r.source_media_type } }
+      : {}),
   };
 }
 
 const COLS =
-  'id, chat_id, tg_user_id, local_date, meal, name, grams, kcal, protein, fat, carbs, created_at';
+  'id, chat_id, tg_user_id, local_date, meal, name, grams, kcal, protein, fat, carbs, created_at, source_file_id, source_media_type';
 
 export interface NewFoodEntry {
   name: string;
@@ -84,16 +95,17 @@ export function addFoodEntries(args: {
   meal: Meal | null;
   items: NewFoodEntry[];
   now?: number;
+  source?: FoodPhotoSource;
 }): FoodEntry[] {
   const db = getDb();
   const now = args.now ?? Date.now();
   const insert = db.prepare(
     `INSERT INTO food_entry
-       (chat_id, tg_user_id, local_date, meal, name, grams, kcal, protein, fat, carbs, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (chat_id, tg_user_id, local_date, meal, name, grams, kcal, protein, fat, carbs, created_at, source_file_id, source_media_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const ids: number[] = [];
-  db.transaction(() => {
+  return db.transaction(() => {
     for (const it of args.items) {
       const info = insert.run(
         args.chatId,
@@ -107,15 +119,60 @@ export function addFoodEntries(args: {
         it.fat,
         it.carbs,
         now,
+        args.source?.fileId ?? null,
+        args.source?.mediaType ?? null,
       );
       ids.push(Number(info.lastInsertRowid));
     }
+    if (ids.length === 0) return [];
+    const rows = db
+      .prepare(`SELECT ${COLS} FROM food_entry WHERE chat_id = ? AND tg_user_id = ?
+        AND id IN (${ids.map(() => '?').join(',')}) ORDER BY id`)
+      .all(args.chatId, args.tgUserId, ...ids) as EntryRow[];
+    if (rows.length !== args.items.length || rows.some((row, index) => {
+      const item = args.items[index]!;
+      return row.name !== item.name.trim() || row.kcal !== item.kcal ||
+        row.grams !== item.grams || row.protein !== item.protein ||
+        row.fat !== item.fat || row.carbs !== item.carbs;
+    })) throw new Error('Food insert read-back did not match');
+    return rows.map(rowToEntry);
   })();
-  if (ids.length === 0) return [];
-  const rows = db
-    .prepare(`SELECT ${COLS} FROM food_entry WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY id`)
-    .all(...ids) as EntryRow[];
-  return rows.map(rowToEntry);
+}
+
+/** Read/write only this person's row. Update preserves id, date, meal and source. */
+export function getFoodEntry(chatId: number, tgUserId: number, id: number): FoodEntry | null {
+  const row = getDb().prepare(
+    `SELECT ${COLS} FROM food_entry WHERE chat_id = ? AND tg_user_id = ? AND id = ?`,
+  ).get(chatId, tgUserId, id) as EntryRow | undefined;
+  return row ? rowToEntry(row) : null;
+}
+
+export function updateFoodEntry(
+  chatId: number,
+  tgUserId: number,
+  id: number,
+  item: NewFoodEntry,
+  source?: FoodPhotoSource,
+): FoodEntry | null {
+  const db = getDb();
+  return db.transaction(() => {
+    const before = getFoodEntry(chatId, tgUserId, id);
+    if (!before) return null;
+    const photo = source ?? before.source;
+    db.prepare(`UPDATE food_entry SET name = ?, grams = ?, kcal = ?, protein = ?, fat = ?,
+      carbs = ?, source_file_id = ?, source_media_type = ?
+      WHERE chat_id = ? AND tg_user_id = ? AND id = ?`).run(
+      item.name.trim(), item.grams, item.kcal, item.protein, item.fat, item.carbs,
+      photo?.fileId ?? null, photo?.mediaType ?? null, chatId, tgUserId, id,
+    );
+    const saved = getFoodEntry(chatId, tgUserId, id);
+    if (!saved || saved.name !== item.name.trim() || saved.kcal !== item.kcal ||
+        saved.grams !== item.grams || saved.protein !== item.protein ||
+        saved.fat !== item.fat || saved.carbs !== item.carbs) {
+      throw new Error('Food update read-back did not match');
+    }
+    return saved;
+  })();
 }
 
 /** One person's entries for an inclusive chat-local date range, in logging order. */

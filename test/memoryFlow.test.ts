@@ -68,8 +68,8 @@ describe('learnMemoryFromMessage', () => {
     await flow.learnMemoryFromMessage(1, 200, 'Max', 'b');
     const samples = extractMock.mock.calls[0]![0];
     expect(samples).toEqual([
-      { tgUserId: 100, senderName: 'Sky', content: 'a' },
-      { tgUserId: 200, senderName: 'Max', content: 'b' },
+      { tgUserId: 100, senderName: 'Sky', content: 'a', source: 'text' },
+      { tgUserId: 200, senderName: 'Max', content: 'b', source: 'text' },
     ]);
   });
 

@@ -159,7 +159,7 @@ export async function onVoice(ctx: Context): Promise<void> {
   if (learnable) void learnFromMessage(ctx.chat.id, transcript);
   // Build weighted long-term memory from the transcript too. Best-effort.
   if (learnable && ctx.from) {
-    void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript);
+    void learnMemoryFromMessage(ctx.chat.id, ctx.from.id, senderName(ctx), transcript, 'voice');
   }
 
   // Listen-only: logged and learned above — that's the job. Answer only a note

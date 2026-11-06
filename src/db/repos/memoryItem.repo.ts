@@ -54,11 +54,18 @@ export interface MemoryDraft {
   kind?: MemoryKind;
 }
 
+/**
+ * How a buffered sample reached us. 'voice' is a MACHINE TRANSCRIPT: its wording —
+ * names above all — may be mis-heard, which the extractor is told to allow for.
+ */
+export type MemorySampleSource = 'text' | 'voice';
+
 /** A buffered message awaiting the next extraction batch, with its sender. */
 export interface MemorySample {
   tgUserId: number;
   senderName: string;
   content: string;
+  source: MemorySampleSource;
 }
 
 // --- sample buffer ----------------------------------------------------------
@@ -69,13 +76,14 @@ export function recordSample(
   tgUserId: number,
   senderName: string,
   content: string,
+  source: MemorySampleSource = 'text',
 ): void {
   getDb()
     .prepare(
-      `INSERT INTO chat_memory_sample (chat_id, tg_user_id, sender_name, content, created_at)
-       VALUES (?, ?, ?, ?, unixepoch() * 1000)`,
+      `INSERT INTO chat_memory_sample (chat_id, tg_user_id, sender_name, content, source, created_at)
+       VALUES (?, ?, ?, ?, ?, unixepoch() * 1000)`,
     )
-    .run(chatId, tgUserId, senderName, content);
+    .run(chatId, tgUserId, senderName, content, source);
 }
 
 /** How many samples are buffered for a chat, and the timestamp of the oldest. */
@@ -98,10 +106,15 @@ export function claimSamples(chatId: number): MemorySample[] {
   return db.transaction(() => {
     const rows = db
       .prepare(
-        `SELECT tg_user_id, sender_name, content FROM chat_memory_sample
+        `SELECT tg_user_id, sender_name, content, source FROM chat_memory_sample
          WHERE chat_id = ? ORDER BY created_at ASC, id ASC`,
       )
-      .all(chatId) as { tg_user_id: number; sender_name: string; content: string }[];
+      .all(chatId) as {
+      tg_user_id: number;
+      sender_name: string;
+      content: string;
+      source: string;
+    }[];
     if (rows.length > 0) {
       db.prepare('DELETE FROM chat_memory_sample WHERE chat_id = ?').run(chatId);
     }
@@ -109,6 +122,7 @@ export function claimSamples(chatId: number): MemorySample[] {
       tgUserId: r.tg_user_id,
       senderName: r.sender_name,
       content: r.content,
+      source: r.source === 'voice' ? ('voice' as const) : ('text' as const),
     }));
   })();
 }

@@ -63,19 +63,73 @@ describe('resolveSubject', () => {
   ];
 
   it('resolves an exact name match', () => {
-    expect(resolveSubject('Пётр', senders)).toBe(2);
+    expect(resolveSubject('Пётр', senders)).toEqual({ tgUserId: 2, subject: 'Пётр' });
   });
 
   it('resolves a first-name token of a full sender name', () => {
-    expect(resolveSubject('Маша', senders)).toBe(1);
+    expect(resolveSubject('Маша', senders)).toEqual({ tgUserId: 1, subject: 'Маша' });
   });
 
   it('resolves via prefix when the extractor uses the full name', () => {
-    expect(resolveSubject('Пётр Сидоров', senders)).toBe(2);
+    expect(resolveSubject('Пётр Сидоров', senders)).toEqual({
+      tgUserId: 2,
+      subject: 'Пётр Сидоров',
+    });
   });
 
-  it('returns null for an unknown subject', () => {
-    expect(resolveSubject('Алексей', senders)).toBeNull();
-    expect(resolveSubject('', senders)).toBeNull();
+  it('leaves an unknown subject unkeyed, keeping its spelling', () => {
+    expect(resolveSubject('Алексей', senders)).toEqual({
+      tgUserId: null,
+      subject: 'Алексей',
+    });
+    expect(resolveSubject('', senders)).toEqual({ tgUserId: null, subject: '' });
+  });
+
+  // The voice case: a transcript writes «Швец» where the chat means «Швед». Without
+  // folding, that opens a person who does not exist — invisible in the working set
+  // (it has no tg id) but live in the topic index, in recall_memory and in the
+  // profile cards distilled from the store.
+  it('folds a mis-heard spelling into the person it belongs to', () => {
+    const people = [
+      { tgUserId: 7, name: 'Швед' },
+      { tgUserId: 8, name: 'Иван' },
+    ];
+    expect(resolveSubject('Швец', people)).toEqual({ tgUserId: 7, subject: 'Швед' });
+  });
+
+  it('folds onto a known person who has no tg id, canonicalising the spelling', () => {
+    const people = [{ tgUserId: null, name: 'Шведов' }];
+    expect(resolveSubject('Шведав', people)).toEqual({
+      tgUserId: null,
+      subject: 'Шведов',
+    });
+  });
+
+  it('refuses to guess when two known people are equally near', () => {
+    // Both share the «шве» stem and sit one edit from «Швец» — we cannot tell which
+    // was meant, so the fact stays unkeyed rather than being pinned on the wrong one.
+    const people = [
+      { tgUserId: 1, name: 'Швед' },
+      { tgUserId: 2, name: 'Швет' },
+    ];
+    expect(resolveSubject('Швец', people)).toEqual({
+      tgUserId: null,
+      subject: 'Швец',
+    });
+  });
+
+  it('never invents a person: an unfamiliar name stays its own subject', () => {
+    // Facts about non-participants («Гоша», Аня's brother) must keep working.
+    const people = [{ tgUserId: 1, name: 'Маша Иванова' }];
+    expect(resolveSubject('Гоша', people)).toEqual({ tgUserId: null, subject: 'Гоша' });
+  });
+
+  it('prefers the identified duplicate when a person is both sender and stored', () => {
+    const people = [
+      { tgUserId: null, name: 'Швед' },
+      { tgUserId: 7, name: 'Швед' },
+    ];
+    // Deduped by name — otherwise the fuzzy step would call it ambiguous and give up.
+    expect(resolveSubject('Швец', people)).toEqual({ tgUserId: 7, subject: 'Швед' });
   });
 });

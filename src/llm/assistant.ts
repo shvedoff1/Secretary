@@ -508,6 +508,11 @@ export async function runAssistant(
   let card: string | undefined;
   let dayTypePick: string | undefined;
   const foodWrites: FoodWriteReceipt[] = [];
+  // Validation happens before the handler: no write took place, so a corrected
+  // call can recover without carrying a stale failure into the final receipt.
+  let foodValidationFailure: FoodWriteReceipt | undefined;
+  const foodReceipts = () => foodValidationFailure
+    ? [...foodWrites, foodValidationFailure] : foodWrites;
   let retriedMissingWrite = false;
   let otherWriteAttempted = false;
   const foodLoggingEnabled = tools.some((t) => t.name === LOG_FOOD_TOOL);
@@ -923,10 +928,22 @@ export async function runAssistant(
           const parsed = LogFoodZ.safeParse(block.input);
           if (!parsed.success) {
             logger.warn({ err: parsed.error }, 'log_food input failed validation');
+            foodValidationFailure = {
+              status: 'failed',
+              message: 'Не записал в дневник: не удалось разобрать данные записи.',
+            };
+            const issues = parsed.error.issues.map((issue) =>
+              `${issue.path.join('.') || 'input'}: ${issue.message}`).join('; ');
+            toolResults.push({
+              type: 'tool_result', tool_use_id: block.id, is_error: true,
+              content: `Дневник не изменён: log_food отклонён до записи. Ошибки аргументов: ${issues}. Исправь аргументы и повтори вызов log_food в этом ходе; для неиспользуемых полей передай null.`,
+            });
+            continue;
           }
+          foodValidationFailure = undefined;
           let out: FoodToolResult | null = null;
           try {
-            out = parsed.success ? handlers.logFood(parsed.data) : null;
+            out = handlers.logFood(parsed.data);
           } catch (err) {
             logger.error({ err }, 'food write failed');
           }
@@ -994,12 +1011,13 @@ export async function runAssistant(
       continue;
     }
 
+    const receipts = foodReceipts();
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)
       .join('')
       .trim();
-    if (foodLoggingEnabled && foodWrites.length === 0 && !otherWriteAttempted && claimsCompletedWrite(text)) {
+    if (foodLoggingEnabled && receipts.length === 0 && !otherWriteAttempted && claimsCompletedWrite(text)) {
       if (retryFoodWrite && !retriedMissingWrite && i + 1 < MAX_ITERATIONS) {
         retriedMissingWrite = true;
         logger.warn('blocked confirmation without a diary write; retrying');
@@ -1016,10 +1034,10 @@ export async function runAssistant(
     return {
       kind: 'text',
       // With a card attached an empty reply is fine — the table says it all.
-      text: foodWrites.length ? foodReceiptText(foodWrites) : (text || (card ? '' : '…')),
+      text: receipts.length ? foodReceiptText(receipts) : (text || (card ? '' : '…')),
       scheduled,
       humorizable: !usedTool && !tutor,
-      ...(foodWrites.length ? { toned: true } : {}),
+      ...(receipts.length ? { toned: true } : {}),
       ...(card ? { card } : {}),
       ...(dayTypePick && card ? { dayTypePick } : {}),
     };
@@ -1027,9 +1045,9 @@ export async function runAssistant(
 
   return {
     kind: 'text',
-    text: foodWrites.length ? foodReceiptText(foodWrites) : 'Что-то пошло не так, попробуй ещё раз.',
+    text: foodReceipts().length ? foodReceiptText(foodReceipts()) : 'Что-то пошло не так, попробуй ещё раз.',
     scheduled,
-    ...(foodWrites.length ? { humorizable: false, toned: true } : {}),
+    ...(foodReceipts().length ? { humorizable: false, toned: true } : {}),
     ...(card ? { card } : {}),
   };
 }

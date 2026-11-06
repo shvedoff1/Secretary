@@ -113,10 +113,37 @@ describe('write confirmations require execution', () => {
     responses = [tool('log_food', { action: 'add' }), text('Записал.')];
     const invalid = await runAssistant(ctx(), handlers);
     expect(logFood).not.toHaveBeenCalled();
-    expect(invalid).toMatchObject({ text: expect.stringContaining('Не удалось подтвердить') });
+    expect(invalid).toMatchObject({ text: expect.stringContaining('не удалось разобрать') });
     logFood.mockImplementationOnce(() => { throw new Error('database unavailable'); });
     responses = [tool('log_food', bananaInput), text('Готово.')];
     expect(await runAssistant(ctx(), handlers)).toMatchObject({ text: expect.stringContaining('Не удалось подтвердить') });
+  });
+
+  it('explains invalid arguments and recovers with only the successful receipt', async () => {
+    // Same meal as the reported failure; one mistyped numeric portion.
+    const meal = { ...bananaInput, items: [
+      { name: 'Молоко', grams: 250, kcal: 130, protein: 8, fat: 6, carbs: 12 },
+      { name: 'Тирамису', grams: 130, kcal: 420, protein: 7, fat: 30, carbs: 32 },
+    ] };
+    const invalid = { ...meal, items: [{ ...meal.items[0], grams: '250' }, meal.items[1]] };
+    responses = [tool('log_food', invalid), tool('log_food', meal), text('Готово.')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    const result = await runAssistant(ctx({ userContent: 'Молоко 250 и тирамису 130' }), handlers);
+    expect(logFood).toHaveBeenCalledTimes(1);
+    expect(logFood).toHaveBeenCalledWith(meal);
+    expect(result).toMatchObject({ text: 'Записал еду в дневник.', card: expect.any(String) });
+    const requests = createMock.mock.calls as unknown as [{ messages: { content: unknown }[] }][];
+    expect(JSON.stringify(requests[1][0].messages)).toContain('items.0.grams');
+    expect(JSON.stringify(requests[1][0].messages)).toContain('отклонён до записи');
+  });
+
+  it('does not erase an uncertain database write when a later call succeeds', async () => {
+    logFood.mockImplementationOnce(() => { throw new Error('database unavailable'); });
+    responses = [tool('log_food', bananaInput), tool('log_food', bananaInput), text('Готово.')];
+    const { runAssistant } = await import('../src/llm/assistant.js');
+    expect(await runAssistant(ctx(), handlers)).toMatchObject({
+      text: expect.stringContaining('Изменения выполнены частично'),
+    });
   });
 
   it('opens an old photo before update and forwards its image through the tool loop', async () => {
